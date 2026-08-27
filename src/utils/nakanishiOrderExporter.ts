@@ -1,5 +1,6 @@
 import * as XLSX from 'xlsx';
 import { PurchaseOrderItem } from './csvHelper';
+import { NAKANISHI_XLS_TEMPLATE_BASE64 } from './nakanishiTemplateBase64';
 
 export interface NakanishiOrderOptions {
   operatorName?: string;
@@ -24,9 +25,9 @@ export function formatReiwaDate(date: Date = new Date()): string {
 }
 
 /**
- * 中西電機工業株式会社向け 正式注文書 Excel (.xlsx) 生成ユーティリティ
- * 既存の「注文見積り書_中西電機.xls」のセル構造・様式に100%完全準拠
- * 15件を超える場合は自動で「部品注文書_1」「部品注文書_2」...と複数シートに分割生成 (4A回答に準拠)
+ * 中西電機工業株式会社向け 正式注文書 Excel 出力ユーティリティ
+ * お客様ご提供の「注文見積り書_中西電機.xls」オリジナルバイナリを直接ベーステンプレートとして使用し、
+ * セル位置・枠線・フォント・印刷設定・結合セルを100%完全維持して値のみを流し込みます。
  */
 export class NakanishiOrderExcelExporter {
   static exportNakanishiOrder(
@@ -41,117 +42,100 @@ export class NakanishiOrderExcelExporter {
     const defaultDesiredDelivery = options.defaultDesiredDelivery || '大至急';
     const defaultJobCode = options.defaultJobCode || ''; // ユーザー要望2: 工番はデフォルト空白
 
-    const wb = XLSX.utils.book_new();
+    // オリジナルの .xls テンプレートを完全なスタイル付きで読み込み
+    const wb = XLSX.read(NAKANISHI_XLS_TEMPLATE_BASE64, {
+      type: 'base64',
+      cellStyles: true,
+      cellNF: true,
+    });
+
+    const templateSheet = wb.Sheets['部品注文書'];
+    if (!templateSheet) {
+      throw new Error('テンプレート内に「部品注文書」シートが見つかりません');
+    }
 
     // 15品目ごとにシート分割 (Chunking by 15 items)
     const chunkSize = 15;
     const totalChunks = Math.max(1, Math.ceil(orderItems.length / chunkSize));
+
+    // 新しい出力用ワークブック
+    const outputWb = XLSX.utils.book_new();
 
     for (let chunkIdx = 0; chunkIdx < totalChunks; chunkIdx++) {
       const chunkItems = orderItems.slice(chunkIdx * chunkSize, (chunkIdx + 1) * chunkSize);
       const sheetNumber = chunkIdx + 1;
       const sheetName = totalChunks === 1 ? '部品注文書' : `部品注文書_${sheetNumber}`;
 
-      // 41行 × 14列の空グリッド初期化
-      const data: (string | number)[][] = Array.from({ length: 41 }, () => Array(14).fill(''));
+      // テンプレートシートを深層コピーして書式・結合セルを完全継承
+      const ws: XLSX.WorkSheet = JSON.parse(JSON.stringify(templateSheet));
 
-      // R01: タイトル
-      data[0][1] = '　注  　文  　書　';
+      // ヘッダー情報セット
+      ws['E3'] = { t: 's', v: recipientCompany };
+      ws['K3'] = { t: 's', v: '依頼日' };
+      ws['L3'] = { t: 's', v: todayReiwa };
+      ws['E5'] = { t: 's', v: recipientPerson };
+      ws['F5'] = { t: 's', v: '様' };
+      ws['J10'] = { t: 's', v: '担当' };
+      ws['K10'] = { t: 's', v: operator };
 
-      // R03: 宛先・依頼日
-      data[2][3] = recipientCompany;
-      data[2][9] = '依頼日';
-      data[2][10] = todayReiwa;
-
-      // R05: 宛名・発注元会社名
-      data[4][3] = recipientPerson;
-      data[4][4] = '様';
-      data[4][9] = '株式会社 アイペック';
-
-      // R06: 郵便番号
-      data[5][9] = '  〒519-0323';
-
-      // R07: 挨拶文・住所
-      data[6][1] = 'お世話になっております｡下記注文を宜しくお願い致します。';
-      data[6][9] = '  三重県鈴鹿市伊船町2014番地の7';
-
-      // R08: TEL
-      data[7][9] = '  TEL  059-371-6270';
-
-      // R09: FAX
-      data[8][9] = '  FAX  059-371-6271';
-
-      // R10: 担当
-      data[9][9] = '担当';
-      data[9][10] = operator;
-
-      // R12: 明細ヘッダー (12行目 = index 11)
-      data[11][0] = '積算表NO';
-      data[11][1] = 'NO.';
-      data[11][2] = '工  番';
-      data[11][3] = 'メーカー';
-      data[11][4] = '型　　　　番';
-      data[11][5] = '数量';
-      data[11][6] = '単位';
-      data[11][7] = '仕入単価';
-      data[11][8] = '仕入金額';
-      data[11][9] = '希望納期';
-      data[11][10] = '納期回答';
-      data[11][11] = '納品場所';
-
-      // R13 ~ R27: 明細行 (NO. 1 ~ 15)
+      // 明細行クリア & データセット (Row 13 ~ Row 27)
       for (let i = 0; i < 15; i++) {
-        const rowIdx = 12 + i;
+        const row = 13 + i;
         const globalNo = chunkIdx * chunkSize + i + 1;
-        data[rowIdx][1] = globalNo; // 通番 NO. 1, 2, 3...
+
+        // NO. 列
+        ws[`B${row}`] = { t: 'n', v: globalNo };
 
         const orderItem = chunkItems[i];
         if (orderItem) {
-          data[rowIdx][2] = defaultJobCode; // 工番（デフォルト空白）
-          data[rowIdx][3] = orderItem.item.supplier || ''; // メーカー
+          ws[`C${row}`] = { t: 's', v: defaultJobCode }; // 工番（デフォルト空白）
+          ws[`D${row}`] = { t: 's', v: orderItem.item.supplier || '' }; // メーカー
 
-          // 型番: specがあれば品名+型番、なければ品名（画面で調整可能）
-          const specText = orderItem.item.spec ? `${orderItem.item.name} ${orderItem.item.spec}` : orderItem.item.name;
-          data[rowIdx][4] = orderItem.note || specText;
+          // 型番: 手動編集されたnote、または品名+規格
+          const modelVal = orderItem.note || (orderItem.item.spec ? `${orderItem.item.name} ${orderItem.item.spec}` : orderItem.item.name);
+          ws[`E${row}`] = { t: 's', v: modelVal };
 
-          data[rowIdx][5] = orderItem.orderQuantity; // 数量
-          data[rowIdx][6] = orderItem.orderUnit; // 単位
-          data[rowIdx][9] = defaultDesiredDelivery; // 希望納期
-          data[rowIdx][11] = defaultDeliveryLocation; // 納品場所
+          ws[`F${row}`] = { t: 'n', v: orderItem.orderQuantity }; // 数量 (数値)
+          ws[`G${row}`] = { t: 's', v: orderItem.orderUnit || orderItem.item.baseUnit }; // 単位
+
+          // 単価・金額は空欄（見積回答用）
+          delete ws[`H${row}`];
+          delete ws[`I${row}`];
+
+          ws[`J${row}`] = { t: 's', v: defaultDesiredDelivery }; // 希望納期
+          delete ws[`K${row}`]; // 納期回答は空欄
+          ws[`L${row}`] = { t: 's', v: defaultDeliveryLocation }; // 納品場所
+        } else {
+          // 空白行のサンプルデータをクリア
+          delete ws[`C${row}`];
+          delete ws[`D${row}`];
+          delete ws[`E${row}`];
+          delete ws[`F${row}`];
+          delete ws[`G${row}`];
+          delete ws[`H${row}`];
+          delete ws[`I${row}`];
+          delete ws[`J${row}`];
+          delete ws[`K${row}`];
+          delete ws[`L${row}`];
         }
       }
 
-      // R30 ~ R33: 特記事項
-      data[29][1] = '特記事項';
-      data[30][1] = '※金額･納期は､必ずFAXにてご回答下さい｡';
-      data[31][1] = '※希望納期日に入荷不可の場合は、必ずご連絡願います。';
-      data[32][1] = '※出荷明細・納品書等には、必ず　注文日・上記注番を記載して下さい。';
+      XLSX.utils.book_append_sheet(outputWb, ws, sheetName);
+    }
 
-      // R35: 備考
-      data[34][1] = '備考';
-
-      const ws = XLSX.utils.aoa_to_sheet(data);
-      ws['!cols'] = [
-        { wch: 10 }, // A: 積算表NO
-        { wch: 5 },  // B: NO.
-        { wch: 12 }, // C: 工番
-        { wch: 16 }, // D: メーカー
-        { wch: 32 }, // E: 型番
-        { wch: 8 },  // F: 数量
-        { wch: 6 },  // G: 単位
-        { wch: 10 }, // H: 仕入単価
-        { wch: 10 }, // I: 仕入金額
-        { wch: 12 }, // J: 希望納期 / 会社情報
-        { wch: 14 }, // K: 納期回答 / 依頼日・担当
-        { wch: 12 }, // L: 納品場所
-      ];
-
-      XLSX.utils.book_append_sheet(wb, ws, sheetName);
+    // 見積書シートもテンプレートから追加（必要な場合）
+    if (wb.Sheets['部品見積書']) {
+      const wsEstimate: XLSX.WorkSheet = JSON.parse(JSON.stringify(wb.Sheets['部品見積書']));
+      wsEstimate['E3'] = { t: 's', v: recipientCompany };
+      wsEstimate['L3'] = { t: 's', v: todayReiwa };
+      wsEstimate['E5'] = { t: 's', v: recipientPerson };
+      wsEstimate['K10'] = { t: 's', v: operator };
+      XLSX.utils.book_append_sheet(outputWb, wsEstimate, '部品見積書');
     }
 
     // ファイル書き出し
     const fileName = `注文書_中西電機_${new Date().toISOString().slice(0, 10).replace(/-/g, '')}.xlsx`;
-    XLSX.writeFile(wb, fileName);
+    XLSX.writeFile(outputWb, fileName);
 
     return fileName;
   }
