@@ -42,12 +42,13 @@ export const BatchScanView: React.FC = () => {
       const existing = batchScanList.find(
         (bi) => bi.item.code === code && bi.actionType === defaultAction
       );
+      const specTag = found.spec ? ` [${found.spec}]` : '';
       if (existing) {
         updateBatchItemQty(existing.id, existing.enteredQuantity + 1);
-        addToast('success', `⚡ ${found.name} (+1 数量加算)`);
+        addToast('success', `⚡ ${found.name}${specTag} (+1 数量加算)`);
       } else {
         addToBatch(found, defaultAction, found.baseUnit, 1, 1);
-        addToast('success', `✅ ${found.name} をリストに追加 (+1)`);
+        addToast('success', `✅ ${found.name}${specTag} をリストに追加 (+1)`);
       }
     } else {
       addToast('warning', `⚠️ 未登録コード: ${code}`);
@@ -203,9 +204,16 @@ export const BatchScanView: React.FC = () => {
                     <h4 className="font-extrabold text-sm sm:text-base text-white truncate mt-1">
                       {item.name}
                     </h4>
-                    {item.spec && (
-                      <p className="text-xs text-slate-400 truncate">{item.spec}</p>
-                    )}
+                    {item.spec ? (
+                      <div className="mt-1 flex items-center gap-1.5 flex-wrap">
+                        <span className="px-2 py-0.5 rounded-md bg-amber-500/20 text-amber-300 font-bold text-xs border border-amber-500/40">
+                          規格: {item.spec}
+                        </span>
+                        {item.supplier && (
+                          <span className="text-xs text-slate-400 font-medium">({item.supplier})</span>
+                        )}
+                      </div>
+                    ) : null}
                   </div>
 
                   {/* Right: Quantity & Unit Modifier Controls */}

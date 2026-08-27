@@ -445,14 +445,27 @@ export const ActionBottomSheet: React.FC = () => {
                 <ChevronLeft className="w-5 h-5" />
               </button>
             )}
-            <div>
-              <h2 className="font-extrabold text-sm sm:text-base text-white truncate max-w-[240px]">
+            <div className="flex-1 min-w-0">
+              <h2 className="font-extrabold text-sm sm:text-base text-white truncate">
                 {activeScannedItem ? activeScannedItem.name :
                   currentStep === 'NEW_ITEM_INBOUND' ? '初回入荷数量の入力' : '新規品目登録 & 入荷'}
               </h2>
-              <p className="text-[11px] text-slate-400 font-mono">
-                コード: {activeScannedItem ? activeScannedItem.code : activeScannedCode}
-              </p>
+              {activeScannedItem ? (
+                <div className="flex items-center gap-2 flex-wrap mt-0.5">
+                  {activeScannedItem.spec ? (
+                    <span className="px-2 py-0.5 rounded-lg bg-amber-500/20 text-amber-300 border border-amber-500/40 text-xs font-black">
+                      規格: {activeScannedItem.spec}
+                    </span>
+                  ) : null}
+                  <span className="text-[11px] text-slate-400 font-mono">
+                    コード: {activeScannedItem.code}
+                  </span>
+                </div>
+              ) : (
+                <p className="text-[11px] text-slate-400 font-mono">
+                  コード: {activeScannedCode}
+                </p>
+              )}
             </div>
           </div>
           <button onClick={closeBottomSheet} className="p-2 text-slate-400 hover:text-white rounded-full hover:bg-slate-800 transition">
@@ -521,6 +534,19 @@ export const ActionBottomSheet: React.FC = () => {
                 </div>
               </div>
 
+              {/* 規格・型番の強調表示 */}
+              {activeScannedItem.spec && (
+                <div className="bg-amber-950/40 border border-amber-500/30 px-3.5 py-2.5 rounded-2xl flex items-center justify-between shadow-sm">
+                  <div className="flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-full bg-amber-400"></span>
+                    <span className="text-xs text-amber-200/90 font-bold">規格・型番仕様:</span>
+                  </div>
+                  <span className="text-sm font-black text-amber-300 bg-slate-950/80 px-2.5 py-0.5 rounded-lg border border-amber-500/40 font-mono">
+                    {activeScannedItem.spec}
+                  </span>
+                </div>
+              )}
+
               {/* 入荷 / 出庫 ボタン */}
               <div className="grid grid-cols-2 gap-3">
                 <button type="button" onClick={() => handleSelectAction('IN')}
@@ -564,6 +590,19 @@ export const ActionBottomSheet: React.FC = () => {
 
             return (
               <div className="space-y-3">
+                {/* 品目規格リキャップバー */}
+                <div className="bg-slate-950 p-2.5 rounded-xl border border-slate-800 flex items-center justify-between text-xs">
+                  <div className="truncate flex-1 mr-2">
+                    <span className="text-slate-400">対象品: </span>
+                    <strong className="text-white">{activeScannedItem.name}</strong>
+                  </div>
+                  {activeScannedItem.spec ? (
+                    <span className="px-2 py-0.5 rounded-md bg-amber-500/20 text-amber-300 font-black text-xs border border-amber-500/40 shrink-0">
+                      規格: {activeScannedItem.spec}
+                    </span>
+                  ) : null}
+                </div>
+
                 <div className={`py-2 px-3.5 rounded-xl font-bold text-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-1 ${
                   selectedAction === 'IN'
                     ? 'bg-emerald-950/80 text-emerald-300 border border-emerald-800'
@@ -969,6 +1008,12 @@ export const ActionBottomSheet: React.FC = () => {
                 <span className="text-slate-400 shrink-0">対象品目:</span>
                 <strong className="text-white text-right break-words">{activeScannedItem.name}</strong>
               </div>
+              {activeScannedItem.spec && (
+                <div className="flex justify-between items-center text-slate-300 gap-2">
+                  <span className="text-slate-400 shrink-0">規格・型番:</span>
+                  <strong className="text-amber-300 font-bold font-mono">{activeScannedItem.spec}</strong>
+                </div>
+              )}
               <div className="flex justify-between text-slate-300">
                 <span className="text-slate-400">出庫数量:</span>
                 <strong className="text-rose-400 font-black text-sm">

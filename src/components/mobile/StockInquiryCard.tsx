@@ -32,14 +32,18 @@ export const StockInquiryCard: React.FC<StockInquiryCardProps> = ({ item }) => {
           <h3 className="text-lg sm:text-xl font-black text-white leading-tight">
             {item.name}
           </h3>
+          {item.spec && (
+            <div className="mt-1 flex items-center gap-1.5 flex-wrap">
+              <span className="px-2 py-0.5 rounded-lg bg-amber-500/20 text-amber-300 border border-amber-500/40 text-xs font-black font-mono">
+                規格: {item.spec}
+              </span>
+            </div>
+          )}
           {item.supplier && (
-            <p className="text-xs text-blue-300 mt-0.5 font-bold flex items-center gap-1">
+            <p className="text-xs text-blue-300 mt-1 font-bold flex items-center gap-1">
               <Building2 className="w-3.5 h-3.5 text-blue-400" />
               <span>メーカー: {item.supplier}</span>
             </p>
-          )}
-          {item.spec && (
-            <p className="text-xs text-slate-300 mt-0.5 font-medium">{item.spec}</p>
           )}
         </div>
 
