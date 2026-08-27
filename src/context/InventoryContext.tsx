@@ -92,7 +92,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   soundEnabled: true,
   vibrationEnabled: true,
   debounceMs: 1500,
-  activeOperator: 'OP-現場01',
+  activeOperator: '現場担当-01',
   offlineMode: false,
   viewMode: 'FIELD',
   autoTorch: false,
@@ -139,7 +139,7 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
   const addToast = useCallback((type: 'success' | 'error' | 'info' | 'warning', text: string) => {
     const id = `toast-${Date.now()}-${Math.random().toString(36).slice(2)}`;
     setToasts((prev) => [...prev.slice(-3), { id, type, text }]); // max 4 toasts
-    setTimeout(() => removeToast(id), 4000);
+    setTimeout(() => removeToast(id), 3800);
   }, [removeToast]);
 
   // ─── Network ───
@@ -167,7 +167,7 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
         }
       }
       await refreshPendingCount();
-      if (synced > 0) addToast('success', `已補傳 ${synced} 筆離線資料至雲端`);
+      if (synced > 0) addToast('success', `未送信データ ${synced}件 をクラウドに同期しました`);
     } catch (e) {
       console.error('Sync error:', e);
     } finally {
@@ -208,7 +208,6 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
       setIsCloudConnected(cloudEnabled);
 
       if (cloudEnabled) {
-        // Pull cloud items
         try {
           const [cloudItems, cloudPendings] = await Promise.all([
             cloudSync.fetchAllCloudItems(),
@@ -219,9 +218,8 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
             await LocalDatabaseService.saveItemsBatch(cloudItems);
             setItems(cloudItems);
           } else if (storedItems.length > 0) {
-            // Push local to cloud if cloud is empty
             for (const item of storedItems) {
-              cloudSync.syncItemToCloud(item); // fire and forget
+              cloudSync.syncItemToCloud(item);
             }
           }
 
@@ -230,7 +228,7 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
             setPendingInbounds(cloudPendings);
           }
         } catch (e) {
-          console.warn('Cloud initial fetch failed, using local data:', e);
+          console.warn('Cloud initial fetch failed:', e);
         }
       }
 
@@ -244,17 +242,15 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
   useEffect(() => {
     refreshData().then(() => {
       if (cloudSync.isCloudEnabled()) {
-        // Use a flag to skip the initial snapshot blast (local-only first load)
         let initialLoad = true;
         setTimeout(() => { initialLoad = false; }, 3000);
 
         cloudSync.listenCloudChanges(
           (remoteItem) => {
-            if (initialLoad) return; // Skip initial dump, we already fetched
+            if (initialLoad) return;
             setItems((prev) => {
               const idx = prev.findIndex((i) => i.id === remoteItem.id);
               if (idx >= 0) {
-                // Only update if cloud version is newer
                 if (remoteItem.updatedAt > prev[idx].updatedAt) {
                   const next = [...prev];
                   next[idx] = remoteItem;
@@ -296,7 +292,7 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
       }
     });
     return () => cloudSync.stopListening();
-  }, []); // Only once on mount
+  }, []);
 
   const updateSettings = useCallback(async (newSettings: Partial<AppSettings>) => {
     setSettings((prev) => ({ ...prev, ...newSettings }));
@@ -309,17 +305,17 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
     const ok = cloudSync.saveConfig(config);
     setIsCloudConnected(ok);
     if (ok) {
-      addToast('success', 'Firebase 雲端資料庫已連線！');
+      addToast('success', 'Firebase クラウドデータベースに接続しました');
       refreshData();
     } else {
-      addToast('error', 'Firebase 設定無效，已回復本地單機模式');
+      addToast('error', 'Firebase 設定が無効です');
     }
   }, [addToast, refreshData]);
 
   const clearFirebaseConfig = useCallback(() => {
     cloudSync.clearConfig();
     setIsCloudConnected(false);
-    addToast('info', '已切換為純本地單機模式');
+    addToast('info', 'ローカル単機モードに切り替えました');
   }, [addToast]);
 
   // ─── Bottom Sheet ───
@@ -334,14 +330,12 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
     setIsBottomSheetOpen(false);
     setActiveScannedItem(null);
     setActiveScannedCode(null);
-    // Return to scan tab after action
     setActiveTab('SCAN');
   }, []);
 
   // ─── Item CRUD ───
   const saveItem = useCallback(async (item: ItemMaster) => {
     try {
-      // Optimistic UI update first
       setItems((prev) => {
         const idx = prev.findIndex((i) => i.id === item.id);
         if (idx >= 0) {
@@ -354,7 +348,6 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
 
       await LocalDatabaseService.saveItem(item);
 
-      // Cloud sync async (fire and forget)
       if (cloudSync.isCloudEnabled()) {
         cloudSync.syncItemToCloud(item).catch((e) => {
           console.warn('Cloud sync failed, queuing:', e);
@@ -367,10 +360,10 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
           });
         });
       }
-      addToast('success', `品目「${item.name}」已儲存`);
+      addToast('success', `品目「${item.name}」を保存しました`);
     } catch (err) {
       console.error('Failed to save item:', err);
-      addToast('error', '儲存品目失敗');
+      addToast('error', '品目の保存に失敗しました');
     }
   }, [addToast]);
 
@@ -385,10 +378,10 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
       if (cloudSync.isCloudEnabled()) {
         newItems.forEach((item) => cloudSync.syncItemToCloud(item));
       }
-      addToast('success', `成功匯入 ${newItems.length} 筆品目！`);
+      addToast('success', `${newItems.length}件の品目をインポートしました`);
     } catch (err) {
       console.error('Failed to import items:', err);
-      addToast('error', '匯入失敗');
+      addToast('error', 'インポートに失敗しました');
     }
   }, [addToast]);
 
@@ -396,10 +389,10 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
     try {
       setItems((prev) => prev.filter((i) => i.id !== id));
       await LocalDatabaseService.deleteItem(id);
-      addToast('info', '品目已刪除');
+      addToast('info', '品目を削除しました');
     } catch (err) {
       console.error('Failed to delete item:', err);
-      addToast('error', '刪除失敗');
+      addToast('error', '削除に失敗しました');
     }
   }, [addToast]);
 
@@ -439,10 +432,8 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
           note,
         };
 
-        // Optimistic update
         setPendingInbounds((prev) => [pendingObj, ...prev]);
 
-        // Async persist
         LocalDatabaseService.savePendingInbound(pendingObj);
         if (cloudSync.isCloudEnabled()) {
           cloudSync.syncPendingInboundToCloud(pendingObj).catch(() => {
@@ -456,12 +447,11 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
           });
         }
 
-        addToast('info', `✅ 已暫存待審核入庫：${item.name} (+${quantity} ${unit})`);
+        addToast('info', `📥 入荷承認待ちに登録しました: ${item.name} (+${quantity} ${unit})`);
         closeBottomSheet();
         return true;
       }
 
-      // Direct transaction
       let delta = 0;
       if (type === 'IN') delta = baseQty;
       else if (type === 'OUT') delta = -baseQty;
@@ -491,16 +481,14 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
         synced: cloudSync.isCloudEnabled(),
       };
 
-      // Optimistic UI update immediately (instant response)
       setItems((prev) => prev.map((i) => (i.id === item.id ? updatedItem : i)));
       setLogs((prev) => [log, ...prev]);
       closeBottomSheet();
       addToast(
         'success',
-        `${type === 'IN' ? '入庫' : '出庫'}成功: ${item.name} ${delta > 0 ? '+' : ''}${quantity} ${unit}`
+        `${type === 'IN' ? '入荷' : '出庫'}完了: ${item.name} (${delta > 0 ? '+' : ''}${quantity} ${unit})`
       );
 
-      // Async persist (non-blocking)
       Promise.all([
         LocalDatabaseService.saveItem(updatedItem),
         LocalDatabaseService.addLog(log),
@@ -530,7 +518,7 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
       return true;
     } catch (err) {
       console.error('Failed to record transaction:', err);
-      addToast('error', '操作失敗，請重試');
+      addToast('error', '操作に失敗しました');
       return false;
     }
   }, [settings, addToast, closeBottomSheet]);
@@ -546,13 +534,13 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
           code: pending.itemCode,
           name: pending.itemName,
           spec: pending.spec || '',
-          category: pending.category || '一般部品',
+          category: pending.category || '配線・電気資材',
           supplier: pending.supplier,
           imageUrl: pending.imageUrl,
           baseUnit: pending.unit,
           currentStock: 0,
           safetyStock: 10,
-          location: pending.location || '1號盒 (A-01)',
+          location: pending.location || '端子ボックス (A-01)',
           unitConversions: [{ unit: pending.unit, multiplier: 1 }],
           updatedAt: new Date().toISOString(),
         };
@@ -580,13 +568,12 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
         unit: pending.unit,
         multiplier: pending.multiplier,
         baseQuantity: pending.baseQuantity,
-        operator: `${pending.operator} (PC審核)`,
+        operator: `${pending.operator} (PC承認済)`,
         timestamp: new Date().toISOString(),
-        note: `PC 正式核准入庫 | ${pending.note || ''}`.trim(),
+        note: `PC正式承認入荷 | ${pending.note || ''}`.trim(),
         synced: cloudSync.isCloudEnabled(),
       };
 
-      // Optimistic UI
       setItems((prev) => {
         const idx = prev.findIndex((i) => i.id === updatedItem.id);
         if (idx >= 0) {
@@ -599,9 +586,8 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
       setLogs((prev) => [log, ...prev]);
       setPendingInbounds((prev) => prev.filter((p) => p.id !== pending.id));
 
-      addToast('success', `✅ 已正式入庫：${updatedItem.name} +${pending.quantity} ${pending.unit}`);
+      addToast('success', `正式入庫完了: ${updatedItem.name} +${pending.quantity} ${pending.unit}`);
 
-      // Async persist
       Promise.all([
         LocalDatabaseService.saveItem(updatedItem),
         LocalDatabaseService.addLog(log),
@@ -615,7 +601,7 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
       });
     } catch (err) {
       console.error('Failed to approve pending inbound:', err);
-      addToast('error', '審核入庫失敗');
+      addToast('error', '入荷承認に失敗しました');
     }
   }, [addToast]);
 
@@ -623,7 +609,7 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
     for (const p of pendings) {
       await approvePendingInbound(p);
     }
-    addToast('success', `已批次正式入庫 ${pendings.length} 筆！`);
+    addToast('success', `${pendings.length}件の入荷を一括承認しました`);
   }, [approvePendingInbound, addToast]);
 
   const rejectPendingInbound = useCallback(async (id: string) => {
@@ -631,9 +617,9 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
       setPendingInbounds((prev) => prev.filter((p) => p.id !== id));
       LocalDatabaseService.deletePendingInbound(id);
       if (cloudSync.isCloudEnabled()) cloudSync.deletePendingInboundFromCloud(id);
-      addToast('info', '已駁回該筆現場入庫申請');
+      addToast('info', '入荷申請を却下しました');
     } catch (err) {
-      addToast('error', '駁回失敗');
+      addToast('error', '却下に失敗しました');
     }
   }, [addToast]);
 
@@ -675,7 +661,7 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
   const commitBatch = useCallback(async () => {
     if (batchScanList.length === 0) return;
     for (const bi of batchScanList) {
-      await recordTransaction(bi.item, bi.actionType, bi.enteredQuantity, bi.selectedUnit, bi.multiplier, '批次連掃');
+      await recordTransaction(bi.item, bi.actionType, bi.enteredQuantity, bi.selectedUnit, bi.multiplier, '連続スキャン一括実行');
     }
     clearBatch();
   }, [batchScanList, recordTransaction, clearBatch]);

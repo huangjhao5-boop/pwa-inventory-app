@@ -49,15 +49,15 @@ export const CsvImportExportModal: React.FC<CsvImportExportModalProps> = ({
       const completeItems: ItemMaster[] = parsedItems.map((item) => ({
         id: item.id || `item-${item.code || Date.now()}`,
         code: item.code || `CODE-${Date.now()}`,
-        name: item.name || '未命名商品',
+        name: item.name || '名称未設定',
         spec: item.spec || '',
-        category: item.category || '一般部品',
+        category: item.category || '配線・電気資材',
         supplier: item.supplier || undefined,
         imageUrl: item.imageUrl || undefined,
         baseUnit: item.baseUnit || '個',
         currentStock: Number(item.currentStock) || 0,
         safetyStock: Number(item.safetyStock) || 0,
-        location: item.location || '1號盒 (A-01)',
+        location: item.location || '端子ボックス (A-01)',
         qrCode: item.qrCode || `INV:v1:${item.code}`,
         unitConversions: item.unitConversions || [{ unit: item.baseUnit || '個', multiplier: 1 }],
         updatedAt: new Date().toISOString(),
@@ -87,7 +87,7 @@ export const CsvImportExportModal: React.FC<CsvImportExportModalProps> = ({
         <div className="px-5 py-4 border-b border-slate-800 flex items-center justify-between">
           <h2 className="font-extrabold text-base sm:text-lg text-white flex items-center gap-2">
             <FileSpreadsheet className="w-5 h-5 text-emerald-400" />
-            <span>CSV 批次取込・インポート (UTF-8 BOM対応)</span>
+            <span>CSV 一括取込・インポート (UTF-8 BOM対応)</span>
           </h2>
           <button
             onClick={onClose}
@@ -101,7 +101,7 @@ export const CsvImportExportModal: React.FC<CsvImportExportModalProps> = ({
         <div className="p-5 overflow-y-auto space-y-4 flex-1">
           {/* Instructions & Template Download */}
           <div className="flex items-center justify-between bg-slate-950 p-3 rounded-2xl border border-slate-800 text-xs text-slate-300">
-            <span>Excel で編集した CSV ファイルを一括取り込みできます。</span>
+            <span>Excel 等で編集した CSV ファイルを一括取り込みできます。</span>
             <button
               onClick={handleDownloadSample}
               className="flex items-center gap-1 text-blue-400 hover:text-blue-300 font-bold"
@@ -127,7 +127,7 @@ export const CsvImportExportModal: React.FC<CsvImportExportModalProps> = ({
             <p className="font-bold text-sm text-slate-200">
               {fileName ? fileName : 'ここをクリックして CSV ファイルを選択'}
             </p>
-            <p className="text-xs text-slate-500 mt-1">.csv ファイル (UTF-8)</p>
+            <p className="text-xs text-slate-500 mt-1">.csv ファイル (UTF-8 / Shift_JIS)</p>
           </div>
 
           {/* Errors Notice */}
@@ -156,12 +156,12 @@ export const CsvImportExportModal: React.FC<CsvImportExportModalProps> = ({
                 <table className="w-full text-left text-xs text-slate-300">
                   <thead className="bg-slate-800/90 text-slate-400 sticky top-0">
                     <tr>
-                      <th className="p-2">品号</th>
+                      <th className="p-2">品目コード</th>
                       <th className="p-2">品名</th>
                       <th className="p-2">規格</th>
                       <th className="p-2">単位</th>
                       <th className="p-2">現在庫</th>
-                      <th className="p-2">棚番</th>
+                      <th className="p-2">ボックス名</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-800">

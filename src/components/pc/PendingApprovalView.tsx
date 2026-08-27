@@ -54,7 +54,7 @@ export const PendingApprovalView: React.FC = () => {
   };
 
   const handleRejectOne = async (id: string) => {
-    if (window.confirm('確定要駁回此筆現場入庫申請嗎？')) {
+    if (window.confirm('この入荷申請を却下しますか？')) {
       await rejectPendingInbound(id);
     }
   };
@@ -69,15 +69,15 @@ export const PendingApprovalView: React.FC = () => {
           </div>
           <div>
             <h2 className="font-black text-lg sm:text-xl text-white flex items-center gap-2">
-              <span>📥 PC 端正式入庫審核 (Pending Approval)</span>
+              <span>📥 入荷承認待ちリスト (Pending Inbound Approval)</span>
               {pendingList.length > 0 && (
                 <span className="px-2.5 py-0.5 rounded-full text-xs font-black bg-amber-500 text-slate-950">
-                  {pendingList.length} 筆待確認
+                  {pendingList.length} 件 承認待ち
                 </span>
               )}
             </h2>
             <p className="text-xs text-slate-400">
-              現場手機掃描後會暫存於此，經由 PC 管理員正式確認品名、數量與盒號後，點擊「正式入庫」才正式計入庫存！
+              現場スマホでスキャン登録された入荷データです。品名・数量・ボックス名を確認し「正式承認」すると在庫に反映されます。
             </p>
           </div>
         </div>
@@ -92,12 +92,12 @@ export const PendingApprovalView: React.FC = () => {
               {selectedIds.length === pendingList.length ? (
                 <>
                   <CheckSquare className="w-4 h-4 text-blue-400" />
-                  <span>取消全選</span>
+                  <span>全選択解除</span>
                 </>
               ) : (
                 <>
                   <Square className="w-4 h-4 text-slate-400" />
-                  <span>全選 ({pendingList.length})</span>
+                  <span>すべて選択 ({pendingList.length})</span>
                 </>
               )}
             </button>
@@ -108,7 +108,7 @@ export const PendingApprovalView: React.FC = () => {
               className="px-5 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 active:scale-95 text-white font-extrabold text-xs rounded-xl shadow-lg shadow-emerald-950 transition flex items-center gap-1.5"
             >
               <CheckCircle2 className="w-4 h-4 stroke-[2.5]" />
-              <span>批次核准入庫 ({selectedIds.length})</span>
+              <span>選択項目を一括承認 ({selectedIds.length})</span>
             </button>
           </div>
         )}
@@ -121,10 +121,10 @@ export const PendingApprovalView: React.FC = () => {
             <Sparkles className="w-7 h-7 text-emerald-400" />
           </div>
           <h3 className="font-bold text-base text-slate-200">
-            目前沒有待審核的入庫項目
+            現在、承認待ちの入荷データはありません
           </h3>
           <p className="text-xs text-slate-400 max-w-md mx-auto">
-            當現場作業員使用手機掃描並送出「暫存入庫」時，該筆記錄會即時顯示在此處供您複核確認。
+            現場端末で「一時保存・承認待ち」で入荷スキャンされると、ここに即座にリアルタイム表示されます。
           </p>
         </div>
       ) : (
@@ -175,7 +175,7 @@ export const PendingApprovalView: React.FC = () => {
                       </span>
                       <span className="text-xs font-bold text-blue-400 flex items-center gap-1">
                         <Box className="w-3 h-3" />
-                        <span>{item.location || '1號盒'}</span>
+                        <span>{item.location || '未設定'}</span>
                       </span>
                       {item.supplier && (
                         <span className="text-xs font-bold text-slate-300 flex items-center gap-1">
@@ -196,11 +196,11 @@ export const PendingApprovalView: React.FC = () => {
                     <div className="flex items-center gap-3 text-[11px] text-slate-500 pt-0.5">
                       <span className="flex items-center gap-1">
                         <User className="w-3 h-3 text-blue-400" />
-                        <span>作業員: {item.operator}</span>
+                        <span>担当: {item.operator}</span>
                       </span>
                       <span className="flex items-center gap-1">
                         <Clock className="w-3 h-3" />
-                        <span>{new Date(item.scannedAt).toLocaleTimeString('zh-TW')}</span>
+                        <span>{new Date(item.scannedAt).toLocaleTimeString('ja-JP')}</span>
                       </span>
                     </div>
                   </div>
@@ -209,7 +209,7 @@ export const PendingApprovalView: React.FC = () => {
                 {/* Right: Quantity + Action Buttons */}
                 <div className="flex items-center justify-between md:justify-end gap-4 w-full md:w-auto pt-3 md:pt-0 border-t md:border-t-0 border-slate-800">
                   <div className="text-right">
-                    <span className="text-[10px] text-slate-400 font-semibold block">申請入庫數量</span>
+                    <span className="text-[10px] text-slate-400 font-semibold block">申請入荷数量</span>
                     <div className="flex items-baseline gap-1">
                       <span className="text-2xl font-black text-emerald-400">
                         +{item.quantity}
@@ -217,7 +217,7 @@ export const PendingApprovalView: React.FC = () => {
                       <span className="text-xs text-slate-300 font-bold">{item.unit}</span>
                       {item.multiplier > 1 && (
                         <span className="text-[11px] text-slate-400 ml-1">
-                          (= {item.baseQuantity} 基準個數)
+                          (= {item.baseQuantity} 基準単位)
                         </span>
                       )}
                     </div>
@@ -229,7 +229,7 @@ export const PendingApprovalView: React.FC = () => {
                       type="button"
                       onClick={() => handleRejectOne(item.id)}
                       className="p-2.5 text-slate-400 hover:text-rose-400 hover:bg-rose-950/40 rounded-xl border border-slate-800 transition"
-                      title="駁回"
+                      title="申請を却下"
                     >
                       <XCircle className="w-5 h-5" />
                     </button>
@@ -241,7 +241,7 @@ export const PendingApprovalView: React.FC = () => {
                       className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white font-extrabold text-xs rounded-xl shadow-md transition flex items-center gap-1.5"
                     >
                       <CheckCircle2 className="w-4 h-4 stroke-[2.5]" />
-                      <span>正式入庫</span>
+                      <span>正式承認・入庫</span>
                     </button>
                   </div>
                 </div>

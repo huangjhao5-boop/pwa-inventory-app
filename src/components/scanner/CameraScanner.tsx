@@ -94,7 +94,7 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({ onScan }) => {
     } catch (err: any) {
       console.warn('Camera start warning:', err);
       setErrorMessage(
-        '相機啟動中或權限未開啟。請允許相機權限，或使用下方「手動輸入・測試條碼」！'
+        'カメラの起動中または権限が許可されていません。カメラを許可するか、下部の「手動入力・テストコード」をご利用ください。'
       );
       setIsScanning(false);
     }
@@ -172,7 +172,7 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({ onScan }) => {
                   ? 'bg-amber-500 text-slate-950 border-amber-300 shadow-lg shadow-amber-500/50'
                   : 'bg-slate-900/80 text-slate-200 border-slate-700 hover:bg-slate-800'
               }`}
-              title="手電筒"
+              title="ライト点灯"
             >
               {isTorchOn ? <Flashlight className="w-5 h-5" /> : <FlashlightOff className="w-5 h-5" />}
             </button>
@@ -184,7 +184,7 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({ onScan }) => {
                 stopScanner().then(() => startScanner());
               }}
               className="p-2.5 rounded-full bg-slate-900/80 text-slate-200 border border-slate-700 hover:bg-slate-800 backdrop-blur-md"
-              title="重啟鏡頭"
+              title="カメラ再起動"
             >
               <SwitchCamera className="w-5 h-5" />
             </button>
@@ -194,7 +194,7 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({ onScan }) => {
         {/* Bottom Hint on Camera */}
         <div className="absolute bottom-3 inset-x-4 flex items-center justify-center">
           <span className="px-3 py-1 rounded-full text-xs font-semibold bg-slate-950/80 text-slate-200 border border-slate-700/80 backdrop-blur">
-            將條碼或 QR 碼置於框內即可自動極速識別
+            バーコードまたはQRコードを枠内にかざしてください
           </span>
         </div>
       </div>
@@ -209,7 +209,7 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({ onScan }) => {
       {/* Hardware Gun Hint */}
       <div className="mt-3 flex items-center gap-1.5 text-xs text-slate-400 bg-slate-900/60 px-3 py-1.5 rounded-xl border border-slate-800">
         <Zap className="w-4 h-4 text-amber-400" />
-        <span>支援實體藍牙/USB條碼槍直讀輸入</span>
+        <span>Bluetooth・USBバーコードリーダーの直接入力に対応</span>
       </div>
 
       {/* Manual Input Toggle & Form */}
@@ -220,7 +220,7 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({ onScan }) => {
             className="flex items-center gap-1.5 text-xs font-medium text-blue-400 hover:text-blue-300 py-1"
           >
             <Keyboard className="w-4 h-4" />
-            <span>{showManualInput ? '收起手動輸入' : '手動輸入 / 常用測試條碼'}</span>
+            <span>{showManualInput ? '手動入力を閉じる' : '手動入力 / テストバーコード'}</span>
           </button>
         </div>
 
@@ -230,14 +230,14 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({ onScan }) => {
               type="text"
               value={manualCode}
               onChange={(e) => setManualCode(e.target.value)}
-              placeholder="品號 / JAN條碼 / QR碼內容..."
+              placeholder="品目コード / JANコード / QRコード内容..."
               className="flex-1 px-3.5 py-2.5 bg-slate-800 border border-slate-700 rounded-xl text-sm text-white placeholder-slate-500 focus:outline-none focus:border-blue-500 font-mono"
             />
             <button
               type="submit"
               className="px-4 py-2.5 bg-blue-600 hover:bg-blue-500 active:scale-95 text-white font-bold rounded-xl text-sm transition"
             >
-              送出
+              送信
             </button>
           </form>
         )}
@@ -245,27 +245,34 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({ onScan }) => {
         {/* Quick Sample Buttons */}
         {showManualInput && (
           <div className="mt-2 flex flex-wrap gap-1.5 justify-center">
-            <span className="text-[11px] text-slate-500 self-center">測試條碼:</span>
-            <button
-              type="button"
-              onClick={() => onCodeDetected('4901480000011')}
-              className="text-xs px-2 py-1 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-lg text-slate-300"
-            >
-              M6螺栓
-            </button>
+            <span className="text-[11px] text-slate-500 self-center">テスト用:</span>
             <button
               type="button"
               onClick={() => onCodeDetected('4901480000028')}
               className="text-xs px-2 py-1 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-lg text-slate-300"
             >
-              壓著端子
+              丸形圧着端子
             </button>
             <button
               type="button"
               onClick={() => onCodeDetected('4901480000035')}
               className="text-xs px-2 py-1 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-lg text-slate-300"
             >
-              束線帶
+              結束バンド
+            </button>
+            <button
+              type="button"
+              onClick={() => onCodeDetected('4901480000042')}
+              className="text-xs px-2 py-1 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-lg text-slate-300"
+            >
+              ヒューズ
+            </button>
+            <button
+              type="button"
+              onClick={() => onCodeDetected('4901480000011')}
+              className="text-xs px-2 py-1 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-lg text-slate-300"
+            >
+              ボルトM6
             </button>
           </div>
         )}

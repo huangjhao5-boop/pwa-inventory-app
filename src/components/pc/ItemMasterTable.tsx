@@ -64,20 +64,20 @@ export const ItemMasterTable: React.FC = () => {
   };
 
   const handleDelete = async (id: string, name: string) => {
-    if (window.confirm(`確定要從主檔中刪除品目「${name}」嗎？`)) {
+    if (window.confirm(`品目「${name}」をマスタから削除しますか？`)) {
       await deleteItem(id);
     }
   };
 
   const handleQuickAdjust = async (item: ItemMaster, deltaQty: number) => {
     const type = deltaQty > 0 ? 'IN' : 'OUT';
-    await recordTransaction(item, type, Math.abs(deltaQty), item.baseUnit, 1, '現場卡片快速微調');
+    await recordTransaction(item, type, Math.abs(deltaQty), item.baseUnit, 1, 'カード簡易調整');
   };
 
   const handleExportCsv = () => {
     const csvStr = CsvHelper.exportItemsToCsv(items);
     CsvHelper.downloadCsv(csvStr, `inventory_master_${new Date().toISOString().slice(0, 10)}.csv`);
-    addToast('success', '品目主檔已匯出為 UTF-8 BOM CSV！');
+    addToast('success', '品目マスタを UTF-8 BOM付き CSV でエクスポートしました');
   };
 
   return (
@@ -91,10 +91,10 @@ export const ItemMasterTable: React.FC = () => {
             </span>
             <div>
               <h2 className="font-extrabold text-lg sm:text-xl text-white">
-                {isFieldMode ? '🔍 現場快速庫存查詢 (Cards)' : '📦 品目主檔管理後台 (Data Grid)'}
+                {isFieldMode ? '🔍 現場在庫検索・確認 (Cards)' : '📦 品目マスタ管理 (Data Grid)'}
               </h2>
               <p className="text-xs text-slate-400">
-                共 {items.length} 筆商品 / 盒號、廠商、安全庫存水位監控
+                登録数: {items.length} 件 / ボックス名・メーカー・安全在庫アラート監視
               </p>
             </div>
           </div>
@@ -109,7 +109,7 @@ export const ItemMasterTable: React.FC = () => {
                 className="flex items-center gap-1.5 px-3.5 py-2 bg-slate-800 hover:bg-slate-700 active:scale-95 text-slate-200 border border-slate-700 rounded-xl text-xs font-bold transition"
               >
                 <Upload className="w-4 h-4 text-emerald-400" />
-                <span>CSV 匯入</span>
+                <span>CSV インポート</span>
               </button>
 
               <button
@@ -117,7 +117,7 @@ export const ItemMasterTable: React.FC = () => {
                 className="flex items-center gap-1.5 px-3.5 py-2 bg-slate-800 hover:bg-slate-700 active:scale-95 text-slate-200 border border-slate-700 rounded-xl text-xs font-bold transition"
               >
                 <Download className="w-4 h-4 text-blue-400" />
-                <span>CSV 匯出</span>
+                <span>CSV エクスポート</span>
               </button>
             </>
           )}
@@ -127,7 +127,7 @@ export const ItemMasterTable: React.FC = () => {
             className="flex items-center gap-1.5 px-4 py-2 bg-blue-600 hover:bg-blue-500 active:scale-95 text-white rounded-xl text-xs font-extrabold shadow-lg shadow-blue-900/40 transition"
           >
             <Plus className="w-4 h-4 stroke-[3]" />
-            <span>新增品目</span>
+            <span>新規品目登録</span>
           </button>
         </div>
       </div>
@@ -142,7 +142,7 @@ export const ItemMasterTable: React.FC = () => {
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="品號、品名、廠商、盒子名稱、型號快速搜尋..."
+              placeholder="品目コード、品名、メーカー、ボックス名、型番で検索..."
               className="w-full pl-10 pr-4 py-2.5 bg-slate-950 border border-slate-800 rounded-2xl text-sm text-white focus:outline-none focus:border-blue-500 placeholder-slate-500 font-medium"
             />
           </div>
@@ -157,7 +157,7 @@ export const ItemMasterTable: React.FC = () => {
             }`}
           >
             <AlertTriangle className={`w-4 h-4 ${onlyLowStock ? 'text-amber-400' : ''}`} />
-            <span>僅顯示缺貨/需叫貨</span>
+            <span>要発注・安全在庫割れのみ</span>
           </button>
         </div>
 
@@ -175,19 +175,19 @@ export const ItemMasterTable: React.FC = () => {
                     : 'bg-slate-950/60 border-slate-800 text-slate-400 hover:bg-slate-800 hover:text-slate-200'
                 }`}
               >
-                {cat === 'ALL' ? '全部類別' : cat}
+                {cat === 'ALL' ? '全カテゴリ' : cat}
               </button>
             );
           })}
         </div>
       </div>
 
-      {/* VIEW A: 現場模式專用大卡片流 (Mobile Field Touch Cards) */}
+      {/* VIEW A: 現場モード（タッチカード） */}
       {isFieldMode ? (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
           {filteredItems.length === 0 ? (
             <div className="col-span-full py-12 text-center text-slate-500 font-bold">
-              查無符合條件之品目
+              該当する品目はありません
             </div>
           ) : (
             filteredItems.map((item) => {
@@ -224,7 +224,7 @@ export const ItemMasterTable: React.FC = () => {
                   {/* Stock Level & Quick Adjust */}
                   <div className="pt-2 border-t border-slate-800 flex items-center justify-between">
                     <div>
-                      <span className="text-[10px] text-slate-500 block font-semibold">庫存量</span>
+                      <span className="text-[10px] text-slate-500 block font-semibold">現在庫</span>
                       <div className="flex items-baseline gap-1">
                         <span
                           className={`text-2xl font-black ${
@@ -249,14 +249,14 @@ export const ItemMasterTable: React.FC = () => {
                       <button
                         onClick={() => handleQuickAdjust(item, 1)}
                         className="p-2 text-emerald-400 hover:bg-emerald-950/60 rounded-xl border border-slate-800 active:scale-95"
-                        title="入庫 +1"
+                        title="入荷 +1"
                       >
                         <PlusCircle className="w-5 h-5" />
                       </button>
                       <button
                         onClick={() => openQRGenerator(item)}
                         className="p-2 text-slate-400 hover:text-white rounded-xl border border-slate-800 hover:bg-slate-800"
-                        title="查看QR碼"
+                        title="QRコード表示"
                       >
                         <QrCode className="w-4 h-4" />
                       </button>
@@ -268,19 +268,19 @@ export const ItemMasterTable: React.FC = () => {
           )}
         </div>
       ) : (
-        /* VIEW B: PC 管理模式專用表格 (Data Grid) */
+        /* VIEW B: PC管理モード（データグリッド） */
         <div className="bg-slate-900 border border-slate-800 rounded-3xl overflow-hidden shadow-xl">
           <div className="overflow-x-auto">
             <table className="w-full text-left text-xs sm:text-sm text-slate-300">
               <thead className="bg-slate-950/80 text-slate-400 font-semibold border-b border-slate-800">
                 <tr>
-                  <th className="py-3.5 px-4">品號 / 條碼</th>
-                  <th className="py-3.5 px-4">品名・規格</th>
-                  <th className="py-3.5 px-4">廠商 / 分類</th>
-                  <th className="py-3.5 px-4 text-right">目前庫存</th>
-                  <th className="py-3.5 px-4 text-right">安全庫存</th>
-                  <th className="py-3.5 px-4">盒子名稱 / 盒號</th>
-                  <th className="py-3.5 px-4">包裝換算倍率</th>
+                  <th className="py-3.5 px-4">品目コード / 照合</th>
+                  <th className="py-3.5 px-4">品名・規格型番</th>
+                  <th className="py-3.5 px-4">メーカー / 分類</th>
+                  <th className="py-3.5 px-4 text-right">現在庫数</th>
+                  <th className="py-3.5 px-4 text-right">安全在庫</th>
+                  <th className="py-3.5 px-4">保管ボックス名</th>
+                  <th className="py-3.5 px-4">包装換算単位</th>
                   <th className="py-3.5 px-4 text-center">操作</th>
                 </tr>
               </thead>
@@ -288,7 +288,7 @@ export const ItemMasterTable: React.FC = () => {
                 {filteredItems.length === 0 ? (
                   <tr>
                     <td colSpan={8} className="py-12 text-center text-slate-500 font-medium">
-                      查無符合條件之品目
+                      該当する品目はありません
                     </td>
                   </tr>
                 ) : (
@@ -296,9 +296,22 @@ export const ItemMasterTable: React.FC = () => {
                     const isLow = item.currentStock <= item.safetyStock;
                     return (
                       <tr key={item.id} className="hover:bg-slate-800/40 transition">
-                        {/* Code */}
+                        {/* Code + Thumbnail */}
                         <td className="py-3.5 px-4 font-mono font-bold text-white whitespace-nowrap">
-                          {item.code}
+                          <div className="flex items-center gap-2">
+                            {item.imageUrl ? (
+                              <img
+                                src={item.imageUrl}
+                                alt={item.name}
+                                className="w-8 h-8 rounded-lg object-cover border border-slate-700 shrink-0 bg-black"
+                              />
+                            ) : (
+                              <div className="w-8 h-8 rounded-lg bg-slate-800 border border-slate-700 flex items-center justify-center text-[10px] text-slate-500 shrink-0">
+                                写真無
+                              </div>
+                            )}
+                            <span>{item.code}</span>
+                          </div>
                         </td>
 
                         {/* Name & Spec */}
@@ -336,7 +349,7 @@ export const ItemMasterTable: React.FC = () => {
                           </div>
                           {isLow && (
                             <span className="text-[10px] font-bold text-amber-400 bg-amber-500/10 px-1.5 py-0.5 rounded">
-                              要叫貨
+                              要発注
                             </span>
                           )}
                         </td>
@@ -346,7 +359,7 @@ export const ItemMasterTable: React.FC = () => {
                           {item.safetyStock} {item.baseUnit}
                         </td>
 
-                        {/* Box Name (改自棚番) */}
+                        {/* Box Name */}
                         <td className="py-3.5 px-4 whitespace-nowrap">
                           <div className="flex items-center gap-1 font-bold text-blue-300">
                             <Box className="w-3.5 h-3.5 text-blue-400" />
@@ -374,21 +387,21 @@ export const ItemMasterTable: React.FC = () => {
                             <button
                               onClick={() => openQRGenerator(item)}
                               className="p-1.5 text-slate-400 hover:text-blue-400 rounded-lg hover:bg-slate-800 transition"
-                              title="QR 標籤"
+                              title="QRコード発行"
                             >
                               <QrCode className="w-4 h-4" />
                             </button>
                             <button
                               onClick={() => handleEdit(item)}
                               className="p-1.5 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition"
-                              title="編輯"
+                              title="編集"
                             >
                               <Edit2 className="w-4 h-4" />
                             </button>
                             <button
                               onClick={() => handleDelete(item.id, item.name)}
                               className="p-1.5 text-slate-400 hover:text-rose-400 rounded-lg hover:bg-slate-800 transition"
-                              title="刪除"
+                              title="削除"
                             >
                               <Trash2 className="w-4 h-4" />
                             </button>

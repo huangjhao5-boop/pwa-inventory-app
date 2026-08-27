@@ -34,10 +34,10 @@ const MainContent: React.FC = () => {
             <div className="text-center max-w-md mx-auto space-y-1">
               <h2 className="text-lg sm:text-xl font-extrabold text-white flex items-center justify-center gap-2">
                 <ScanLine className="w-5 h-5 text-blue-400" />
-                <span>現場相機掃描 (即時極速識別)</span>
+                <span>現場カメラ読取（超高速スキャン）</span>
               </h2>
               <p className="text-xs text-slate-400">
-                對準條碼或 QR 碼自動對焦彈出出入庫選單
+                バーコードやQRコードを枠内にかざすと自動で入出庫メニューが開きます
               </p>
             </div>
 
@@ -57,8 +57,8 @@ const MainContent: React.FC = () => {
                     </span>
                   )}
                 </div>
-                <strong className="text-xs font-bold text-slate-200">批次連掃核對</strong>
-                <span className="text-[10px] text-slate-500">連續掃描並清單核對送出</span>
+                <strong className="text-xs font-bold text-slate-200">連続検品モード</strong>
+                <span className="text-[10px] text-slate-500">複数商品を連続で読み取り一括送信</span>
               </button>
 
               {!isFieldMode ? (
@@ -70,12 +70,12 @@ const MainContent: React.FC = () => {
                     <Inbox className="w-5 h-5 text-indigo-400 group-hover:scale-110 transition" />
                     {pendingCount > 0 && (
                       <span className="px-1.5 py-0.5 rounded-full text-[10px] font-black bg-amber-500 text-slate-950">
-                        {pendingCount}件待審
+                        {pendingCount}件待機中
                       </span>
                     )}
                   </div>
-                  <strong className="text-xs font-bold text-slate-200">待審核正式入庫</strong>
-                  <span className="text-[10px] text-slate-500">審核現場送出的入庫單</span>
+                  <strong className="text-xs font-bold text-slate-200">入荷承認待ち</strong>
+                  <span className="text-[10px] text-slate-500">現場からの入荷申請をPCで確認</span>
                 </button>
               ) : (
                 <button
@@ -83,8 +83,8 @@ const MainContent: React.FC = () => {
                   className="p-3.5 bg-slate-900/80 hover:bg-slate-800/90 border border-slate-800 rounded-2xl flex flex-col items-start gap-1 transition text-left group shadow"
                 >
                   <Layers className="w-5 h-5 text-blue-400 group-hover:scale-110 transition" />
-                  <strong className="text-xs font-bold text-slate-200">查詢庫存主檔 ({items.length})</strong>
-                  <span className="text-[10px] text-slate-500">盒號與庫存狀態</span>
+                  <strong className="text-xs font-bold text-slate-200">品目在庫検索 ({items.length})</strong>
+                  <span className="text-[10px] text-slate-500">ボックス名と現在庫の確認</span>
                 </button>
               )}
             </div>

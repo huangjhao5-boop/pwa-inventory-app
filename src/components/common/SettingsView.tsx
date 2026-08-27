@@ -16,6 +16,8 @@ import {
   KeyRound,
   Stethoscope,
   Activity,
+  Sparkles,
+  ShieldCheck,
 } from 'lucide-react';
 
 export const SettingsView: React.FC = () => {
@@ -31,6 +33,7 @@ export const SettingsView: React.FC = () => {
 
   const [operatorInput, setOperatorInput] = useState(settings.activeOperator);
   const [debounceMs, setDebounceMs] = useState(settings.debounceMs || 1500);
+  const [geminiKeyInput, setGeminiKeyInput] = useState(settings.geminiApiKey || '');
 
   // Firebase Config Form
   const [firebaseJson, setFirebaseJson] = useState(() => {
@@ -48,7 +51,13 @@ export const SettingsView: React.FC = () => {
     e.preventDefault();
     if (!operatorInput.trim()) return;
     updateSettings({ activeOperator: operatorInput.trim() });
-    addToast('success', `作業員コードを「${operatorInput.trim()}」に更新しました`);
+    addToast('success', `作業者名を「${operatorInput.trim()}」に更新しました`);
+  };
+
+  const handleSaveGeminiKey = (e: React.FormEvent) => {
+    e.preventDefault();
+    updateSettings({ geminiApiKey: geminiKeyInput.trim() });
+    addToast('success', geminiKeyInput.trim() ? 'Gemini AI APIキーを保存しました' : 'Gemini AI APIキーを解除しました');
   };
 
   const handleDebounceChange = (val: number) => {
@@ -63,10 +72,10 @@ export const SettingsView: React.FC = () => {
     setDiagnosticResults(results);
     setIsRunningDiagnostics(false);
     if (success) {
-      addToast('success', 'Firebase 雲端連線與讀寫測試全部通過！');
+      addToast('success', 'Firebase クラウド接続・読み書きテストが完了しました');
       refreshData();
     } else {
-      addToast('error', '診斷發現問題，請查看下方提示！');
+      addToast('error', '診断で問題を検出しました。詳細をご確認ください');
     }
   };
 
@@ -93,17 +102,17 @@ export const SettingsView: React.FC = () => {
       if (testResult.success) {
         saveFirebaseConfig(parsed);
       } else {
-        addToast('error', '連線失敗，已列出診斷詳情');
+        addToast('error', '接続に失敗しました。診断結果をご確認ください');
         setDiagnosticResults(testResult.results);
       }
     } catch (err: any) {
       setIsTestingCloud(false);
-      addToast('error', `JSON 格式錯誤: ${err.message}`);
+      addToast('error', `JSON 形式エラー: ${err.message}`);
     }
   };
 
   const handleResetDemoData = async () => {
-    if (window.confirm('初期デモデータ（ボルト、圧着端子など）を再読み込みしますか？')) {
+    if (window.confirm('初期デモデータ（端子、結束バンド、ヒューズ等）を再読み込みしますか？')) {
       const db = await (await import('../../services/db')).getDB();
       const tx = db.transaction(['items', 'logs', 'offline_queue'], 'readwrite');
       await tx.objectStore('items').clear();
@@ -125,39 +134,95 @@ export const SettingsView: React.FC = () => {
         </div>
         <div>
           <h2 className="font-extrabold text-lg sm:text-xl text-white">
-            系統設定與雲端診斷 (Settings & Cloud Sync)
+            システム設定 & クラウド・AI診断
           </h2>
           <p className="text-xs text-slate-400">
-            Firebase 即時跨裝置資料庫連線、即時診斷與防呆參數
+            Firebase リアルタイム同期、Gemini AI 視覚認識、スキャン設定
           </p>
         </div>
       </div>
 
       <div className="space-y-4">
-        {/* Section 1: Firebase Cloud Connection & Diagnostics */}
+        {/* Section 0: Gemini AI Vision Setting */}
+        <div className="bg-slate-900 border border-indigo-500/30 rounded-3xl p-4 sm:p-5 shadow-lg space-y-3 bg-gradient-to-br from-slate-900 via-indigo-950/30 to-slate-900">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Sparkles className="w-5 h-5 text-amber-400" />
+              <h3 className="font-bold text-sm sm:text-base text-white">
+                ✨ Gemini AI マルチモーダル視覚認識
+              </h3>
+            </div>
+            <span className="text-xs text-indigo-300 bg-indigo-900/50 px-2.5 py-0.5 rounded-full border border-indigo-700">
+              {settings.geminiApiKey ? 'AI 認識有効' : '未設定 (OCRフォールバック)'}
+            </span>
+          </div>
+
+          <p className="text-xs text-slate-300 leading-relaxed">
+            Google Gemini API キーを設定すると、部品写真・銘板ラベル・端子パックを撮影した際に、AIが品名・メーカー・規格型番・数量を高精度に自動認識して入力します。
+          </p>
+
+          <form onSubmit={handleSaveGeminiKey} className="flex gap-2">
+            <input
+              type="password"
+              value={geminiKeyInput}
+              onChange={(e) => setGeminiKeyInput(e.target.value)}
+              placeholder="AIzaSy... (Gemini API Key)"
+              className="flex-1 px-3.5 py-2 bg-slate-950 border border-slate-700 rounded-xl text-xs font-mono text-white focus:outline-none focus:border-indigo-500"
+            />
+            <button
+              type="submit"
+              className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-xl text-xs transition"
+            >
+              保存
+            </button>
+          </form>
+        </div>
+
+        {/* Section 1: PC Approval Inbound Toggle */}
+        <div className="bg-slate-900 border border-slate-800 rounded-3xl p-4 sm:p-5 shadow-lg space-y-3">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <ShieldCheck className="w-5 h-5 text-emerald-400" />
+              <h3 className="font-bold text-sm text-white">
+                入荷２段階承認フロー（現場スキャン → PC正式承認）
+              </h3>
+            </div>
+            <input
+              type="checkbox"
+              checked={settings.requirePcApprovalForInbound}
+              onChange={(e) => updateSettings({ requirePcApprovalForInbound: e.target.checked })}
+              className="w-5 h-5 rounded text-blue-600 focus:ring-blue-500 bg-slate-800 border-slate-700"
+            />
+          </div>
+          <p className="text-xs text-slate-400">
+            有効時、現場でのスキャン入荷は「承認待ち」に一時保存され、PC側で正式承認した時点で在庫に反映されます。
+          </p>
+        </div>
+
+        {/* Section 2: Firebase Cloud Connection & Diagnostics */}
         <div className="bg-slate-900 border border-slate-800 rounded-3xl p-4 sm:p-5 shadow-lg space-y-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <Cloud className="w-5 h-5 text-blue-400" />
               <h3 className="font-bold text-sm sm:text-base text-slate-200">
-                ☁️ Firebase 雲端資料庫連線
+                ☁️ Firebase クラウドデータベース接続
               </h3>
             </div>
             {isCloudConnected ? (
               <span className="flex items-center gap-1 px-3 py-1 bg-emerald-950 text-emerald-400 border border-emerald-800 rounded-full text-xs font-bold shadow">
                 <CheckCircle2 className="w-3.5 h-3.5" />
-                <span>雲端同步已連線 (Connected)</span>
+                <span>クラウド同期中 (Connected)</span>
               </span>
             ) : (
               <span className="flex items-center gap-1 px-3 py-1 bg-amber-950 text-amber-300 border border-amber-800 rounded-full text-xs font-bold shadow">
                 <AlertCircle className="w-3.5 h-3.5" />
-                <span>本地單機模式 (IndexedDB)</span>
+                <span>ローカル単機モード (IndexedDB)</span>
               </span>
             )}
           </div>
 
           <p className="text-xs text-slate-400 leading-relaxed">
-            目前預設已綁定您的 Firebase 專案（`pwa-inventory-app-9c88d`）。若掃描後未同步，請點擊下方 **「🔍 一鍵診斷連線與權限」** 立即檢查原因！
+            Firebase プロジェクト（`pwa-inventory-app-9c88d`）が設定されています。接続状態を確認する場合は「🔍 接続・権限のヘルスチェック」を実行してください。
           </p>
 
           {/* Quick Diagnostics Action */}
@@ -166,7 +231,7 @@ export const SettingsView: React.FC = () => {
               <div className="flex items-center gap-2">
                 <Stethoscope className="w-4 h-4 text-emerald-400" />
                 <span className="font-bold text-xs sm:text-sm text-slate-200">
-                  即時連線健康檢查 (Diagnostics)
+                  リアルタイム接続診断 (Diagnostics)
                 </span>
               </div>
               <button
@@ -176,7 +241,7 @@ export const SettingsView: React.FC = () => {
                 className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 active:scale-95 disabled:opacity-50 text-white font-extrabold text-xs rounded-xl shadow transition flex items-center gap-1.5"
               >
                 <Activity className={`w-3.5 h-3.5 ${isRunningDiagnostics ? 'animate-spin' : ''}`} />
-                <span>{isRunningDiagnostics ? '診斷中...' : '🔍 一鍵診斷連線與權限'}</span>
+                <span>{isRunningDiagnostics ? '診断中...' : '🔍 接続・権限のヘルスチェック'}</span>
               </button>
             </div>
 
@@ -194,12 +259,12 @@ export const SettingsView: React.FC = () => {
                   >
                     <div className="flex items-center justify-between font-bold">
                       <span>{res.step}</span>
-                      <span>{res.status === 'SUCCESS' ? '✓ 通過' : '✕ 失敗'}</span>
+                      <span>{res.status === 'SUCCESS' ? '✓ 成功' : '✕ エラー'}</span>
                     </div>
                     <div>{res.message}</div>
                     {res.details && (
                       <div className="mt-1 p-2 bg-black/60 rounded-lg text-amber-300 font-semibold leading-relaxed border border-amber-500/30">
-                        👉 建議解決方式: {res.details}
+                        👉 推奨対応: {res.details}
                       </div>
                     )}
                   </div>
@@ -213,7 +278,7 @@ export const SettingsView: React.FC = () => {
               <div className="flex items-center justify-between mb-1.5">
                 <label className="text-xs font-bold text-slate-300 flex items-center gap-1">
                   <KeyRound className="w-3.5 h-3.5 text-blue-400" />
-                  <span>修改或覆蓋 Firebase Config JSON:</span>
+                  <span>Firebase Config JSON 設定:</span>
                 </label>
                 <button
                   type="button"
@@ -221,16 +286,15 @@ export const SettingsView: React.FC = () => {
                   className="text-xs text-blue-400 hover:text-blue-300 flex items-center gap-1"
                 >
                   <HelpCircle className="w-3.5 h-3.5" />
-                  <span>{showFirebaseHelp ? '收起說明' : '如何取得 Firebase 設定？'}</span>
+                  <span>{showFirebaseHelp ? '閉じる' : '設定方法ヘルプ'}</span>
                 </button>
               </div>
 
               {showFirebaseHelp && (
                 <div className="p-3.5 bg-slate-950 rounded-2xl border border-slate-800 text-xs text-slate-300 space-y-1.5 mb-2 leading-relaxed">
-                  <p className="font-bold text-amber-400">💡 30秒取得 Firebase 設定教學：</p>
-                  <p>1. 前往 <a href="https://console.firebase.google.com" target="_blank" rel="noreferrer" className="text-blue-400 underline">Firebase Console</a> 建立或開啟專案。</p>
-                  <p>2. 點擊「專案設定 (Project settings)」 → 點擊下方「新增 Web 應用程式 (網頁應用)」圖示。</p>
-                  <p>3. 複製 const firebaseConfig 裡的大括號內容貼在此處即可！</p>
+                  <p className="font-bold text-amber-400">💡 Firebase 設定取得手順：</p>
+                  <p>1. <a href="https://console.firebase.google.com" target="_blank" rel="noreferrer" className="text-blue-400 underline">Firebase Console</a> でプロジェクトを開きます。</p>
+                  <p>2. 「プロジェクト設定」→「ウェブアプリ」の構成コード（firebaseConfig）をコピーして貼り付けます。</p>
                 </div>
               )}
 
@@ -253,7 +317,7 @@ export const SettingsView: React.FC = () => {
                   }}
                   className="px-3.5 py-2 bg-rose-950/60 hover:bg-rose-900 text-rose-300 border border-rose-800 rounded-xl text-xs font-bold transition"
                 >
-                  切換為純單機模式
+                  単機モードに切り替え
                 </button>
               )}
 
@@ -263,20 +327,20 @@ export const SettingsView: React.FC = () => {
                 className="px-5 py-2 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white font-extrabold rounded-xl text-xs shadow-lg shadow-blue-950 transition flex items-center gap-1.5"
               >
                 <Cloud className="w-4 h-4" />
-                <span>{isTestingCloud ? '連線測試中...' : '儲存設定'}</span>
+                <span>{isTestingCloud ? '接続テスト中...' : '設定を保存'}</span>
               </button>
             </div>
           </form>
         </div>
 
-        {/* Section 2: Operator Setting */}
+        {/* Section 3: Operator Setting */}
         <div className="bg-slate-900 border border-slate-800 rounded-3xl p-4 sm:p-5 shadow-lg space-y-3">
           <h3 className="font-bold text-sm text-slate-200 flex items-center gap-2">
             <User className="w-4 h-4 text-blue-400" />
             <span>担当作業員（オペレーターID）設定</span>
           </h3>
           <p className="text-xs text-slate-400">
-            入出庫トランザクションに記録される作業員名・コードです（名札バーコードをスキャンしても瞬時切替可能）。
+            入出庫トランザクションに記録される作業者名です。
           </p>
           <form onSubmit={handleSaveOperator} className="flex gap-2 max-w-md">
             <input
@@ -284,7 +348,7 @@ export const SettingsView: React.FC = () => {
               value={operatorInput}
               onChange={(e) => setOperatorInput(e.target.value)}
               className="flex-1 px-3.5 py-2 bg-slate-800 border border-slate-700 rounded-xl text-sm text-white focus:outline-none focus:border-blue-500 font-medium"
-              placeholder="例: OP-現場01 / 山田"
+              placeholder="例: 現場担当-01 / 山田"
             />
             <button
               type="submit"
@@ -295,19 +359,19 @@ export const SettingsView: React.FC = () => {
           </form>
         </div>
 
-        {/* Section 3: Scan Poka-Yoke Debounce */}
+        {/* Section 4: Scan Debounce */}
         <div className="bg-slate-900 border border-slate-800 rounded-3xl p-4 sm:p-5 shadow-lg space-y-3">
           <div className="flex items-center justify-between">
             <h3 className="font-bold text-sm text-slate-200 flex items-center gap-2">
               <Timer className="w-4 h-4 text-amber-400" />
-              <span>重複スキャン防止 (Debounce 防重刷)</span>
+              <span>重複スキャン防止時間 (Debounce)</span>
             </h3>
             <span className="px-2.5 py-0.5 rounded-lg bg-slate-800 text-amber-300 font-bold text-xs">
               {(debounceMs / 1000).toFixed(1)} 秒
             </span>
           </div>
           <p className="text-xs text-slate-400">
-            同一バーコードが連続で誤認識されるのを防ぐためのロック時間です（推奨: 1.5秒）。
+            同一バーコードの連続誤認識を防ぐロック時間です（推奨: 1.5秒）。
           </p>
           <input
             type="range"
@@ -325,18 +389,18 @@ export const SettingsView: React.FC = () => {
           </div>
         </div>
 
-        {/* Section 4: Feedback Options */}
+        {/* Section 5: Feedback Options */}
         <div className="bg-slate-900 border border-slate-800 rounded-3xl p-4 sm:p-5 shadow-lg space-y-3">
           <h3 className="font-bold text-sm text-slate-200 flex items-center gap-2">
             <Volume2 className="w-4 h-4 text-emerald-400" />
-            <span>触覚・音響フィードバック</span>
+            <span>音声・振動フィードバック</span>
           </h3>
 
           <div className="space-y-2">
             <label className="flex items-center justify-between p-3 bg-slate-950/60 border border-slate-800 rounded-2xl cursor-pointer">
               <div>
-                <div className="font-bold text-xs sm:text-sm text-white">Web Audio ビープ音</div>
-                <div className="text-[11px] text-slate-400">成功時の高音チャイム / エラー時の低音アラート</div>
+                <div className="font-bold text-xs sm:text-sm text-white">ビープ音通知</div>
+                <div className="text-[11px] text-slate-400">読取成功・エラー時のチャイム音</div>
               </div>
               <input
                 type="checkbox"
@@ -348,8 +412,8 @@ export const SettingsView: React.FC = () => {
 
             <label className="flex items-center justify-between p-3 bg-slate-950/60 border border-slate-800 rounded-2xl cursor-pointer">
               <div>
-                <div className="font-bold text-xs sm:text-sm text-white">スマホ振動 (Haptic)</div>
-                <div className="text-[11px] text-slate-400">端末のバイブレーション機能との連動</div>
+                <div className="font-bold text-xs sm:text-sm text-white">バイブレーション</div>
+                <div className="text-[11px] text-slate-400">端末振動によるスキャン確認</div>
               </div>
               <input
                 type="checkbox"
@@ -361,21 +425,21 @@ export const SettingsView: React.FC = () => {
           </div>
         </div>
 
-        {/* Section 5: Database & Reset */}
+        {/* Section 6: Database Reset */}
         <div className="bg-slate-900 border border-slate-800 rounded-3xl p-4 sm:p-5 shadow-lg space-y-3">
           <h3 className="font-bold text-sm text-slate-200 flex items-center gap-2">
             <Database className="w-4 h-4 text-rose-400" />
             <span>データベース初期化</span>
           </h3>
           <p className="text-xs text-slate-400">
-            テスト用データをクリアし、JIS規格部品等の初期サンプルマスターを再構築します。
+            テストデータをクリアし、JIS規格電気パーツ等の初期サンプルマスターを再構築します。
           </p>
           <button
             onClick={handleResetDemoData}
             className="flex items-center gap-2 px-4 py-2 bg-rose-950/60 hover:bg-rose-900/80 text-rose-300 border border-rose-800/80 rounded-xl text-xs font-bold transition"
           >
             <RotateCcw className="w-4 h-4" />
-            <span>初期サンプルデータに戻す</span>
+            <span>初期サンプルデータにリセット</span>
           </button>
         </div>
       </div>

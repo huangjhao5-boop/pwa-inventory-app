@@ -8,47 +8,41 @@ export const PRESET_UNITS = [
   '枚',
   '箱',
   '袋',
-  '卷',
+  '巻',
   '式',
-  '瓶',
-  '組',
-  '支',
-  '包',
-  '套',
-  '盒',
-  '台',
-  '張',
-  '條',
+  '本/組',
+  'パック',
+  'セット',
   'kg',
   'm',
   'L'
 ] as const;
 
 export interface UnitConversion {
-  unit: string;        // 包裝單位 (例: 箱, 袋, パック, 本)
-  multiplier: number;  // 換算基準數量 (例: 1箱 = 50個 -> multiplier: 50)
+  unit: string;        // 包装単位 (例: 箱, 袋, パック, 巻)
+  multiplier: number;  // 換算基準数量 (例: 1箱 = 50個 -> multiplier: 50)
 }
 
 export interface ItemMaster {
   id: string;
-  code: string;               // 品號 / JAN/EAN / 自訂條碼
-  name: string;               // 品名
-  spec: string;               // 規格・型號 (例: M6×20mm, SUS304)
-  category: string;           // 分類 (例: 螺栓螺帽, 配線資材, 消耗品)
-  supplier?: string;          // 廠商・供應商 (例: MISUMI, SMC, 日富端子)
-  imageUrl?: string;          // 拍照照片 (Base64/URL)
-  baseUnit: string;           // 基準單位 (例: 個, 本, 枚)
-  currentStock: number;       // 現在庫數 (基準單位換算)
-  safetyStock: number;        // 安全在庫數 (警告閥值)
-  location: string;           // 盒子名稱 / 盒號 (例: 1號盒 (A-01))
-  qrCode?: string;            // 自建 QR 碼字串 (例: INV:v1:4901480000011)
-  unitConversions: UnitConversion[]; // 包裝換算設定
-  updatedAt: string;          // 最終更新時間 ISO
-  note?: string;              // 備註
+  code: string;               // 品目コード / JAN・EAN / QRコード
+  name: string;               // 品名 (例: 絶縁被覆付圧着端子 R2-4)
+  spec: string;               // 規格・型番 (例: R2-4 / 0.5~2.0sq)
+  category: string;           // カテゴリ (例: 配線・電気資材, 制御盤パーツ)
+  supplier?: string;          // メーカー・仕入先 (例: ニチフ, パンドウイット, オムロン)
+  imageUrl?: string;          // 基準画像・商品写真 (Base64/URL)
+  baseUnit: string;           // 基準単位 (例: 個, 本, 枚)
+  currentStock: number;       // 現在庫数 (基準単位換算)
+  safetyStock: number;        // 安全在庫数 (アラート閾値)
+  location: string;           // 保管ボックス名 / 棚番 (例: 1号ボックス (A-01))
+  qrCode?: string;            // 自社QRコード文字列 (例: INV:v1:4901480000011)
+  unitConversions: UnitConversion[]; // 包装単位換算設定
+  updatedAt: string;          // 最終更新日時 ISO
+  note?: string;              // 備考・メモ
 }
 
 /**
- * 待審核入庫單 (現場掃描暫存 -> PC 電腦端審核正式入庫)
+ * 入荷承認待ちデータ (現場スキャン一時保存 -> PC管理者で正式承認)
  */
 export interface PendingInbound {
   id: string;
@@ -58,15 +52,15 @@ export interface PendingInbound {
   category?: string;
   supplier?: string;
   imageUrl?: string;
-  quantity: number;           // 現場輸入數量
-  unit: string;               // 現場輸入單位
+  quantity: number;           // 現場入力数量
+  unit: string;               // 現場入力単位
   multiplier: number;         // 換算倍率
-  baseQuantity: number;       // 換算後基準入庫數
-  location: string;           // 儲存盒子名稱
-  operator: string;           // 現場作業員
-  scannedAt: string;          // 掃描時間 ISO
+  baseQuantity: number;       // 換算後基準数量
+  location: string;           // ボックス名 / 保管場所
+  operator: string;           // 現場作業担当者
+  scannedAt: string;          // スキャン日時 ISO
   status: 'PENDING' | 'APPROVED' | 'REJECTED';
-  note?: string;              // 現場備註
+  note?: string;              // 現場メモ
 }
 
 export interface InventoryLog {
@@ -75,15 +69,15 @@ export interface InventoryLog {
   itemCode: string;
   itemName: string;
   type: ActionType;
-  delta: number;              // 庫存變動量 (+50, -10)
-  quantity: number;           // 輸入數量 (3)
-  unit: string;               // 輸入單位 (箱)
-  multiplier: number;         // 換算倍率 (50)
-  baseQuantity: number;       // 換算後基準數量 (150)
-  operator: string;           // 操作作業員代碼
-  timestamp: string;          // 記錄時間 ISO
-  note?: string;              // 備註
-  synced: boolean;            // 雲端同步狀態
+  delta: number;              // 在庫変動量 (+50, -10)
+  quantity: number;           // 入力数量
+  unit: string;               // 入力単位
+  multiplier: number;         // 換算倍率
+  baseQuantity: number;       // 換算後基準数量
+  operator: string;           // 作業担当者
+  timestamp: string;          // 記録日時 ISO
+  note?: string;              // 備考
+  synced: boolean;            // クラウド同期状態
 }
 
 export interface BatchScanItem {
@@ -105,7 +99,8 @@ export interface AppSettings {
   offlineMode: boolean;
   viewMode: SystemViewMode;
   autoTorch: boolean;
-  requirePcApprovalForInbound: boolean; // 是否啟用「PC正式審核後才入庫」流程
+  requirePcApprovalForInbound: boolean; // PC正式承認フローの有効化
+  geminiApiKey?: string;                 // Gemini AI 画像認識用 APIキー
   firebaseConfig?: {
     apiKey: string;
     authDomain: string;

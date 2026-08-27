@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { ItemMaster, UnitConversion, PRESET_UNITS } from '../../types/inventory';
 import { useInventory } from '../../context/InventoryContext';
-import { OcrHelper } from '../../utils/ocrHelper';
-import { X, Plus, Trash2, Layers, Building2, Camera, Box, Loader2 } from 'lucide-react';
+import { AiVisionService } from '../../utils/geminiAiVision';
+import { X, Plus, Trash2, Layers, Building2, Box, Loader2, Sparkles, Image as ImageIcon } from 'lucide-react';
 
 interface ItemFormModalProps {
   isOpen: boolean;
@@ -15,18 +15,18 @@ export const ItemFormModal: React.FC<ItemFormModalProps> = ({
   onClose,
   initialItem,
 }) => {
-  const { saveItem, addToast } = useInventory();
+  const { saveItem, addToast, settings, items } = useInventory();
 
   const [code, setCode] = useState('');
   const [name, setName] = useState('');
   const [spec, setSpec] = useState('');
-  const [category, setCategory] = useState('一般部品');
+  const [category, setCategory] = useState('配線・電気資材');
   const [supplier, setSupplier] = useState('');
   const [imageUrl, setImageUrl] = useState<string | undefined>(undefined);
   const [baseUnit, setBaseUnit] = useState('個');
   const [currentStock, setCurrentStock] = useState(0);
   const [safetyStock, setSafetyStock] = useState(10);
-  const [location, setLocation] = useState('1號盒');
+  const [location, setLocation] = useState('端子ボックス (A-01)');
   const [qrCode, setQrCode] = useState('');
   const [note, setNote] = useState('');
 
@@ -36,8 +36,8 @@ export const ItemFormModal: React.FC<ItemFormModalProps> = ({
     { unit: '袋', multiplier: 10 },
   ]);
 
-  // OCR state
-  const [isOcrProcessing, setIsOcrProcessing] = useState(false);
+  // AI & OCR state
+  const [isAiProcessing, setIsAiProcessing] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -46,13 +46,13 @@ export const ItemFormModal: React.FC<ItemFormModalProps> = ({
       setCode(initialItem.code);
       setName(initialItem.name);
       setSpec(initialItem.spec || '');
-      setCategory(initialItem.category || '一般部品');
+      setCategory(initialItem.category || '配線・電気資材');
       setSupplier(initialItem.supplier || '');
       setImageUrl(initialItem.imageUrl);
       setBaseUnit(initialItem.baseUnit || '個');
       setCurrentStock(initialItem.currentStock || 0);
       setSafetyStock(initialItem.safetyStock || 0);
-      setLocation(initialItem.location || '1號盒');
+      setLocation(initialItem.location || '端子ボックス (A-01)');
       setQrCode(initialItem.qrCode || `INV:v1:${initialItem.code}`);
       setNote(initialItem.note || '');
       setConversions(
@@ -62,13 +62,13 @@ export const ItemFormModal: React.FC<ItemFormModalProps> = ({
       setCode('');
       setName('');
       setSpec('');
-      setCategory('一般部品');
+      setCategory('配線・電気資材');
       setSupplier('');
       setImageUrl(undefined);
       setBaseUnit('個');
       setCurrentStock(0);
       setSafetyStock(10);
-      setLocation('1號盒');
+      setLocation('端子ボックス (A-01)');
       setQrCode('');
       setNote('');
       setConversions([
@@ -110,18 +110,25 @@ export const ItemFormModal: React.FC<ItemFormModalProps> = ({
       const base64 = event.target?.result as string;
       setImageUrl(base64);
 
-      // Run OCR
-      setIsOcrProcessing(true);
+      // Run AI Vision & OCR
+      setIsAiProcessing(true);
       try {
-        const result = await OcrHelper.recognizeImage(base64);
-        setIsOcrProcessing(false);
+        const result = await AiVisionService.smartRecognize(
+          base64,
+          items,
+          settings.geminiApiKey
+        );
+        setIsAiProcessing(false);
         if (result.suggestedName && !name) setName(result.suggestedName);
         if (result.suggestedSpec && !spec) setSpec(result.suggestedSpec);
         if (result.suggestedSupplier && !supplier) setSupplier(result.suggestedSupplier);
-        if (result.suggestedBoxName && location === '1號盒') setLocation(result.suggestedBoxName);
-        addToast('success', '已自動從照片辨識並填入品名/廠商資訊！');
+        if (result.suggestedCategory) setCategory(result.suggestedCategory);
+        if (result.suggestedBoxName && location === '端子ボックス (A-01)') setLocation(result.suggestedBoxName);
+        if (result.suggestedBaseUnit) setBaseUnit(result.suggestedBaseUnit);
+
+        addToast('success', '写真から品名・型番・メーカー情報を自動認識しました！');
       } catch {
-        setIsOcrProcessing(false);
+        setIsAiProcessing(false);
       }
     };
     reader.readAsDataURL(file);
@@ -131,7 +138,6 @@ export const ItemFormModal: React.FC<ItemFormModalProps> = ({
     e.preventDefault();
     if (!code.trim() || !name.trim()) return;
 
-    // Combine base unit and packaging conversions
     const allConversions: UnitConversion[] = [
       ...conversions.filter((c) => c.unit.trim() && c.unit !== baseUnit),
       { unit: baseUnit, multiplier: 1 },
@@ -148,7 +154,7 @@ export const ItemFormModal: React.FC<ItemFormModalProps> = ({
       baseUnit: baseUnit.trim() || '個',
       currentStock: Number(currentStock) || 0,
       safetyStock: Number(safetyStock) || 0,
-      location: location.trim() || '1號盒',
+      location: location.trim() || '端子ボックス (A-01)',
       qrCode: qrCode.trim() || `INV:v1:${code.trim()}`,
       unitConversions: allConversions,
       updatedAt: new Date().toISOString(),
@@ -166,10 +172,10 @@ export const ItemFormModal: React.FC<ItemFormModalProps> = ({
         <div className="px-5 py-4 border-b border-slate-800 flex items-center justify-between bg-slate-900/90">
           <div>
             <h3 className="font-extrabold text-base sm:text-lg text-white">
-              {initialItem ? '編輯品目主檔' : '新增品目主檔'}
+              {initialItem ? '品目マスタ編集' : '新規品目マスタ登録'}
             </h3>
             <p className="text-xs text-slate-400">
-              品目資訊、廠商、盒子名稱、基準單位與包裝換算倍率設定
+              品目情報、メーカー、保管ボックス名、基準画像、包装換算倍率の設定
             </p>
           </div>
           <button
@@ -186,14 +192,14 @@ export const ItemFormModal: React.FC<ItemFormModalProps> = ({
             {/* Code */}
             <div>
               <label className="block font-bold text-slate-300 mb-1">
-                品號 / 條碼代碼 (必填)
+                品目コード / JANバーコード (必須)
               </label>
               <input
                 type="text"
                 required
                 value={code}
                 onChange={(e) => setCode(e.target.value)}
-                placeholder="例: 4901480000011 / BOLT-M6"
+                placeholder="例: 4901480000028 / R2-4"
                 className="w-full px-3.5 py-2.5 bg-slate-800 border border-slate-700 rounded-xl text-white font-mono focus:outline-none focus:border-blue-500"
               />
             </div>
@@ -201,75 +207,75 @@ export const ItemFormModal: React.FC<ItemFormModalProps> = ({
             {/* Name */}
             <div>
               <label className="block font-bold text-slate-300 mb-1">
-                品名 (必填)
+                品名 (必須)
               </label>
               <input
                 type="text"
                 required
                 value={name}
                 onChange={(e) => setName(e.target.value)}
-                placeholder="例: 六角孔螺栓 (SUS304)"
+                placeholder="例: 丸形圧着端子 (JIS規格)"
                 className="w-full px-3.5 py-2.5 bg-slate-800 border border-slate-700 rounded-xl text-white focus:outline-none focus:border-blue-500"
               />
             </div>
 
-            {/* Supplier / 廠商 */}
+            {/* Supplier */}
             <div>
               <label className="block font-bold text-slate-300 mb-1 flex items-center gap-1">
                 <Building2 className="w-3.5 h-3.5 text-blue-400" />
-                <span>廠商 / 供應商</span>
+                <span>メーカー / 仕入先</span>
               </label>
               <input
                 type="text"
                 value={supplier}
                 onChange={(e) => setSupplier(e.target.value)}
-                placeholder="例: MISUMI, SMC, 日東電工..."
+                placeholder="例: ニチフ (NICHIFU), パンドウイット..."
                 className="w-full px-3.5 py-2.5 bg-slate-800 border border-slate-700 rounded-xl text-white focus:outline-none focus:border-blue-500"
               />
             </div>
 
             {/* Spec */}
             <div>
-              <label className="block font-bold text-slate-300 mb-1">規格 / 型號</label>
+              <label className="block font-bold text-slate-300 mb-1">規格 / 型番</label>
               <input
                 type="text"
                 value={spec}
                 onChange={(e) => setSpec(e.target.value)}
-                placeholder="例: M6 × 20mm 不鏽鋼"
+                placeholder="例: R2-4 (0.5~2.0sq用)"
                 className="w-full px-3.5 py-2.5 bg-slate-800 border border-slate-700 rounded-xl text-white focus:outline-none focus:border-blue-500"
               />
             </div>
 
             {/* Category */}
             <div>
-              <label className="block font-bold text-slate-300 mb-1">商品分類</label>
+              <label className="block font-bold text-slate-300 mb-1">商品カテゴリ</label>
               <input
                 type="text"
                 value={category}
                 onChange={(e) => setCategory(e.target.value)}
-                placeholder="例: 螺栓螺帽 / 配線資材 / 消耗品"
+                placeholder="例: 配線・電気資材 / 制御盤パーツ / 締結部品"
                 className="w-full px-3.5 py-2.5 bg-slate-800 border border-slate-700 rounded-xl text-white focus:outline-none focus:border-blue-500"
               />
             </div>
 
-            {/* Box Name / 盒子名稱 */}
+            {/* Box Name */}
             <div>
               <label className="block font-bold text-slate-300 mb-1 flex items-center gap-1">
                 <Box className="w-3.5 h-3.5 text-blue-400" />
-                <span>盒子名稱 / 盒號 (Box Name)</span>
+                <span>保管ボックス名 / 棚番</span>
               </label>
               <input
                 type="text"
                 value={location}
                 onChange={(e) => setLocation(e.target.value)}
-                placeholder="例: 1號盒 / 零件盒A-01"
+                placeholder="例: 端子ボックス (A-01)"
                 className="w-full px-3.5 py-2.5 bg-slate-800 border border-slate-700 rounded-xl text-white font-bold focus:outline-none focus:border-blue-500"
               />
             </div>
 
-            {/* Base Unit Selector */}
+            {/* Base Unit */}
             <div>
-              <label className="block font-bold text-slate-300 mb-1">基準單位 (最小管理單位)</label>
+              <label className="block font-bold text-slate-300 mb-1">基準単位 (最小管理単位)</label>
               <select
                 value={baseUnit}
                 onChange={(e) => setBaseUnit(e.target.value)}
@@ -285,7 +291,7 @@ export const ItemFormModal: React.FC<ItemFormModalProps> = ({
 
             {/* Current Stock */}
             <div>
-              <label className="block font-bold text-slate-300 mb-1">目前庫存 ({baseUnit})</label>
+              <label className="block font-bold text-slate-300 mb-1">現在庫数 ({baseUnit})</label>
               <input
                 type="number"
                 min="0"
@@ -297,7 +303,7 @@ export const ItemFormModal: React.FC<ItemFormModalProps> = ({
 
             {/* Safety Stock */}
             <div>
-              <label className="block font-bold text-slate-300 mb-1">安全庫存警報閥值 ({baseUnit})</label>
+              <label className="block font-bold text-slate-300 mb-1">安全在庫数 ({baseUnit})</label>
               <input
                 type="number"
                 min="0"
@@ -307,9 +313,9 @@ export const ItemFormModal: React.FC<ItemFormModalProps> = ({
               />
             </div>
 
-            {/* Photo Attachment & OCR */}
+            {/* Photo Attachment & AI/OCR */}
             <div>
-              <label className="block font-bold text-slate-300 mb-1">商品照片 & 自動文字辨識</label>
+              <label className="block font-bold text-slate-300 mb-1">基準画像・商品写真 (AI照合対象)</label>
               <input
                 type="file"
                 ref={fileInputRef}
@@ -320,16 +326,16 @@ export const ItemFormModal: React.FC<ItemFormModalProps> = ({
               <div className="flex items-center gap-2">
                 <button
                   type="button"
-                  disabled={isOcrProcessing}
+                  disabled={isAiProcessing}
                   onClick={() => fileInputRef.current?.click()}
-                  className="px-3.5 py-2 bg-slate-800 hover:bg-slate-700 active:scale-95 text-slate-200 border border-slate-700 rounded-xl flex items-center gap-1.5 transition text-xs font-bold"
+                  className="px-3.5 py-2 bg-indigo-950/80 hover:bg-indigo-900 active:scale-95 text-indigo-200 border border-indigo-700/80 rounded-xl flex items-center gap-1.5 transition text-xs font-bold shadow"
                 >
-                  {isOcrProcessing ? (
+                  {isAiProcessing ? (
                     <Loader2 className="w-4 h-4 text-amber-400 animate-spin" />
                   ) : (
-                    <Camera className="w-4 h-4 text-emerald-400" />
+                    <Sparkles className="w-4 h-4 text-amber-400" />
                   )}
-                  <span>{isOcrProcessing ? 'OCR 辨識中...' : imageUrl ? '更換照片 (附OCR)' : '📸 上傳照片自動辨識'}</span>
+                  <span>{isAiProcessing ? 'AI解析中...' : imageUrl ? '写真更新・AI再解析' : '📸 写真添付・AI自動解析'}</span>
                 </button>
                 {imageUrl && (
                   <button
@@ -337,10 +343,19 @@ export const ItemFormModal: React.FC<ItemFormModalProps> = ({
                     onClick={() => setImageUrl(undefined)}
                     className="text-xs text-rose-400 hover:underline font-semibold"
                   >
-                    刪除照片
+                    削除
                   </button>
                 )}
               </div>
+              {imageUrl && (
+                <div className="mt-2 flex items-center gap-2">
+                  <img src={imageUrl} alt="基準写真" className="w-12 h-12 object-cover rounded-lg border border-slate-700 bg-black" />
+                  <span className="text-[11px] text-emerald-400 flex items-center gap-1">
+                    <ImageIcon className="w-3 h-3" />
+                    <span>基準写真登録済（撮影時自動照合）</span>
+                  </span>
+                </div>
+              )}
             </div>
           </div>
 
@@ -350,7 +365,7 @@ export const ItemFormModal: React.FC<ItemFormModalProps> = ({
               <div className="flex items-center gap-2">
                 <Layers className="w-4 h-4 text-blue-400" />
                 <span className="font-bold text-slate-200 text-xs sm:text-sm">
-                  包裝換算倍率設定 (可動態編輯)
+                  包装単位・換算倍率設定
                 </span>
               </div>
               <button
@@ -359,11 +374,11 @@ export const ItemFormModal: React.FC<ItemFormModalProps> = ({
                 className="flex items-center gap-1 px-2.5 py-1 bg-blue-600/20 hover:bg-blue-600/30 text-blue-300 border border-blue-500/40 rounded-lg text-xs font-semibold transition"
               >
                 <Plus className="w-3.5 h-3.5" />
-                <span>新增換算單位</span>
+                <span>換算単位を追加</span>
               </button>
             </div>
             <p className="text-[11px] text-slate-400">
-              現場掃描「1箱」或「1袋」時，系統會自動乘以此倍率換算為基準單位（{baseUnit}）。
+              現場で「1箱」または「1袋」でスキャンした際、この倍率を掛けて基準単位（{baseUnit}）に自動換算します。
             </p>
 
             <div className="space-y-2">
@@ -374,7 +389,7 @@ export const ItemFormModal: React.FC<ItemFormModalProps> = ({
                     type="text"
                     value={conv.unit}
                     onChange={(e) => handleUpdateConversion(idx, 'unit', e.target.value)}
-                    placeholder="單位 (例: 箱)"
+                    placeholder="単位 (例: 箱)"
                     className="w-24 px-2.5 py-1.5 bg-slate-800 border border-slate-700 rounded-lg text-white text-xs font-bold"
                   />
                   <span className="text-xs text-slate-400">=</span>
@@ -406,13 +421,13 @@ export const ItemFormModal: React.FC<ItemFormModalProps> = ({
               onClick={onClose}
               className="px-4 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold rounded-xl transition"
             >
-              取消
+              キャンセル
             </button>
             <button
               type="submit"
               className="px-6 py-2.5 bg-blue-600 hover:bg-blue-500 text-white font-extrabold rounded-xl shadow-lg shadow-blue-900/40 transition"
             >
-              儲存主檔
+              マスタを保存
             </button>
           </div>
         </form>

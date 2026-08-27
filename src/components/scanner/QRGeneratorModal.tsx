@@ -16,7 +16,6 @@ export const QRGeneratorModal: React.FC = () => {
 
   const qrContainerRef = useRef<HTMLDivElement>(null);
 
-  // Update fields if target changes
   React.useEffect(() => {
     if (qrGeneratorTarget) {
       setCode(qrGeneratorTarget.code);
@@ -27,7 +26,6 @@ export const QRGeneratorModal: React.FC = () => {
 
   if (!isQRGeneratorOpen) return null;
 
-  // Compute final QR content string
   let qrValue = '';
   if (formatType === 'INV_STANDARD') {
     qrValue = DualModeCodeParser.formatItemQR(code, lot);
@@ -70,7 +68,7 @@ export const QRGeneratorModal: React.FC = () => {
         {/* Header */}
         <div className="px-5 py-4 border-b border-slate-800 flex items-center justify-between">
           <h2 className="font-bold text-base text-slate-100 flex items-center gap-2">
-            <span>🏷️ 自作 QR コード生成器</span>
+            <span>🏷️ 自社QRコード発行・ラベル出力</span>
           </h2>
           <button
             onClick={closeQRGenerator}
@@ -86,14 +84,14 @@ export const QRGeneratorModal: React.FC = () => {
           <div className="grid grid-cols-2 gap-3">
             <div className="col-span-2">
               <label className="block text-xs font-semibold text-slate-300 mb-1">
-                品号 / バーコード (必須)
+                品目コード / JANバーコード (必須)
               </label>
               <input
                 type="text"
                 value={code}
                 onChange={(e) => setCode(e.target.value)}
                 className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-sm text-white focus:outline-none focus:border-blue-500"
-                placeholder="例: 4901480000011 または PART-A"
+                placeholder="例: 4901480000028"
               />
             </div>
 
@@ -104,7 +102,7 @@ export const QRGeneratorModal: React.FC = () => {
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-sm text-white focus:outline-none focus:border-blue-500"
-                placeholder="例: 六角ボルト"
+                placeholder="例: 丸形圧着端子"
               />
             </div>
 
@@ -115,27 +113,27 @@ export const QRGeneratorModal: React.FC = () => {
                 value={spec}
                 onChange={(e) => setSpec(e.target.value)}
                 className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-sm text-white focus:outline-none focus:border-blue-500"
-                placeholder="例: M6×20mm"
+                placeholder="例: R2-4"
               />
             </div>
 
             <div className="col-span-2">
               <label className="block text-xs font-semibold text-slate-300 mb-1">
-                ロット番号 / シリアル (任意)
+                ロット番号 / 保管場所 (任意)
               </label>
               <input
                 type="text"
                 value={lot}
                 onChange={(e) => setLot(e.target.value)}
                 className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-sm text-white focus:outline-none focus:border-blue-500"
-                placeholder="例: LOT-2026-08"
+                placeholder="例: LOT-2026A"
               />
             </div>
           </div>
 
           {/* Format selection */}
           <div>
-            <label className="block text-xs font-semibold text-slate-300 mb-1.5">QR形式</label>
+            <label className="block text-xs font-semibold text-slate-300 mb-1.5">QR形式設定</label>
             <div className="grid grid-cols-3 gap-2">
               <button
                 type="button"
@@ -168,7 +166,7 @@ export const QRGeneratorModal: React.FC = () => {
                     : 'bg-slate-800 border-slate-700 text-slate-400 hover:bg-slate-700'
                 }`}
               >
-                生コード
+                直接コード
               </button>
             </div>
           </div>
@@ -221,7 +219,7 @@ export const QRGeneratorModal: React.FC = () => {
             className="flex-1 flex items-center justify-center gap-1.5 py-2.5 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-xl text-sm transition shadow-lg shadow-blue-900/40"
           >
             <Printer className="w-4 h-4" />
-            <span>単票印刷</span>
+            <span>印刷プレビュー</span>
           </button>
         </div>
       </div>

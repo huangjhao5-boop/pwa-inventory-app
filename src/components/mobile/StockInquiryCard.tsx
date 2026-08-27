@@ -35,7 +35,7 @@ export const StockInquiryCard: React.FC<StockInquiryCardProps> = ({ item }) => {
           {item.supplier && (
             <p className="text-xs text-blue-300 mt-0.5 font-bold flex items-center gap-1">
               <Building2 className="w-3.5 h-3.5 text-blue-400" />
-              <span>廠商: {item.supplier}</span>
+              <span>メーカー: {item.supplier}</span>
             </p>
           )}
           {item.spec && (
@@ -47,7 +47,7 @@ export const StockInquiryCard: React.FC<StockInquiryCardProps> = ({ item }) => {
         <div className="flex flex-col items-end shrink-0 gap-1.5">
           <div className="flex items-center gap-1 px-3 py-1.5 bg-blue-950/80 border border-blue-800/80 text-blue-300 rounded-xl text-xs font-black shadow">
             <Box className="w-3.5 h-3.5 text-blue-400" />
-            <span>{item.location || '未指定盒號'}</span>
+            <span>{item.location || '未指定'}</span>
           </div>
           {item.imageUrl && (
             <img
@@ -68,7 +68,7 @@ export const StockInquiryCard: React.FC<StockInquiryCardProps> = ({ item }) => {
         }`}
       >
         <div>
-          <span className="text-xs font-semibold text-slate-400 block">目前庫存量</span>
+          <span className="text-xs font-semibold text-slate-400 block">現在庫数</span>
           <div className="flex items-baseline gap-1.5 mt-0.5">
             <span
               className={`text-3xl sm:text-4xl font-black tracking-tight ${
@@ -83,12 +83,12 @@ export const StockInquiryCard: React.FC<StockInquiryCardProps> = ({ item }) => {
 
         <div className="text-right">
           <div className="text-xs text-slate-400">
-            安全庫存: <strong className="text-slate-200">{item.safetyStock}</strong> {item.baseUnit}
+            安全在庫数: <strong className="text-slate-200">{item.safetyStock}</strong> {item.baseUnit}
           </div>
           {isLowStock && (
             <div className="mt-1 flex items-center gap-1 text-xs font-bold text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded-lg">
               <AlertTriangle className="w-3.5 h-3.5" />
-              <span>建議叫貨 (不足: {Math.max(0, item.safetyStock - item.currentStock)} {item.baseUnit})</span>
+              <span>要発注 (不足: {Math.max(0, item.safetyStock - item.currentStock)} {item.baseUnit})</span>
             </div>
           )}
         </div>
@@ -99,7 +99,7 @@ export const StockInquiryCard: React.FC<StockInquiryCardProps> = ({ item }) => {
         <div className="bg-slate-950/50 rounded-2xl p-3 border border-slate-800/80">
           <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-400 mb-2">
             <Layers className="w-3.5 h-3.5 text-blue-400" />
-            <span>包裝單位換算</span>
+            <span>包装単位・換算倍率</span>
           </div>
           <div className="flex flex-wrap gap-2">
             {item.unitConversions.map((conv) => (
@@ -118,14 +118,14 @@ export const StockInquiryCard: React.FC<StockInquiryCardProps> = ({ item }) => {
       <div className="flex items-center justify-between pt-1 border-t border-slate-800">
         <span className="text-xs text-slate-500 flex items-center gap-1">
           <Clock className="w-3.5 h-3.5" />
-          更新: {new Date(item.updatedAt).toLocaleDateString('zh-TW')}
+          更新: {new Date(item.updatedAt).toLocaleDateString('ja-JP')}
         </span>
         <button
           onClick={() => openQRGenerator(item)}
           className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded-xl text-xs font-semibold transition"
         >
           <QrCode className="w-3.5 h-3.5 text-blue-400" />
-          <span>列印 QR 標籤</span>
+          <span>QRコードを表示</span>
         </button>
       </div>
     </div>

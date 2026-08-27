@@ -18,23 +18,23 @@ export const NavigationTabs: React.FC = () => {
 
   const pendingCount = pendingInbounds.filter((p) => p.status === 'PENDING').length;
 
-  // 現場模式精簡選單
+  // 現場作業モード
   const fieldTabs: { key: TabKey; label: string; icon: React.FC<{ className?: string }>; badge?: number }[] = [
-    { key: 'SCAN', label: '📷 即時掃描', icon: ScanLine },
-    { key: 'BATCH', label: '📋 批次核對', icon: ListChecks, badge: batchScanList.length },
-    { key: 'ITEMS', label: '🔍 快速查庫存', icon: Search },
-    { key: 'SETTINGS', label: '⚙️ 系統設定', icon: Settings },
+    { key: 'SCAN', label: '📷 スキャン', icon: ScanLine },
+    { key: 'BATCH', label: '📋 連続検品', icon: ListChecks, badge: batchScanList.length },
+    { key: 'ITEMS', label: '🔍 在庫検索', icon: Search },
+    { key: 'SETTINGS', label: '⚙️ 設定', icon: Settings },
   ];
 
-  // PC 管理模式完整選單 (包含待審核入庫)
+  // PC 管理モード (入荷承認待ちを含む)
   const adminTabs: { key: TabKey; label: string; icon: React.FC<{ className?: string }>; badge?: number }[] = [
-    { key: 'APPROVAL', label: '📥 待審核入庫', icon: Inbox, badge: pendingCount },
-    { key: 'ITEMS', label: '📦 品目主檔管理', icon: Layers },
-    { key: 'PRINT', label: '🖨️ A4 標籤列印', icon: Printer },
-    { key: 'LOGS', label: '📜 出入庫歷史記錄', icon: History },
-    { key: 'SCAN', label: '📷 掃描驗收', icon: ScanLine },
-    { key: 'BATCH', label: '📋 批次檢品', icon: ListChecks, badge: batchScanList.length },
-    { key: 'SETTINGS', label: '☁️ 雲端與參數設定', icon: Settings },
+    { key: 'APPROVAL', label: '📥 入荷承認待ち', icon: Inbox, badge: pendingCount },
+    { key: 'ITEMS', label: '📦 品目マスタ管理', icon: Layers },
+    { key: 'PRINT', label: '🖨️ ラベル一括印刷', icon: Printer },
+    { key: 'LOGS', label: '📜 入出庫履歴ログ', icon: History },
+    { key: 'SCAN', label: '📷 スキャン検品', icon: ScanLine },
+    { key: 'BATCH', label: '📋 連続スキャン', icon: ListChecks, badge: batchScanList.length },
+    { key: 'SETTINGS', label: '☁️ クラウド・AI設定', icon: Settings },
   ];
 
   const currentTabs = isFieldMode ? fieldTabs : adminTabs;
@@ -73,7 +73,7 @@ export const NavigationTabs: React.FC = () => {
           </div>
 
           <div className="text-xs text-slate-500 font-semibold">
-            {isFieldMode ? '🎯 現場極速模式啟用中' : '🖥️ PC 管理總覽啟用中'}
+            {isFieldMode ? '🎯 現場作業モード' : '🖥️ PC 管理ダッシュボード'}
           </div>
         </div>
       </nav>

@@ -56,7 +56,7 @@ export const BatchScanView: React.FC = () => {
             </span>
             <div>
               <h2 className="font-extrabold text-lg sm:text-xl text-white">
-                批次連続検品・確認リスト
+                連続検品・一括確認リスト
               </h2>
               <p className="text-xs text-slate-400">
                 連続スキャンで仮登録し、リスト上で数量・単位を修正して一括送信
@@ -141,7 +141,7 @@ export const BatchScanView: React.FC = () => {
             <ListChecks className="w-12 h-12 text-slate-600 mx-auto" />
             <p className="text-slate-400 font-semibold text-sm">検品リストは空です</p>
             <p className="text-xs text-slate-500 max-w-sm mx-auto">
-              カメラまたはバーコードスキャナーで商品を連続スキャンすると、ここに自動でリストアップされます。
+              カメラまたはバーコードリーダーで商品を連続スキャンすると、ここに自動でリストアップされます。
             </p>
           </div>
         ) : (
@@ -171,7 +171,7 @@ export const BatchScanView: React.FC = () => {
                       </span>
                       <span className="text-xs text-slate-400 font-mono truncate">{item.code}</span>
                       <span className="text-[11px] text-blue-400 font-medium ml-auto sm:ml-0">
-                        棚: {item.location}
+                        ボックス: {item.location}
                       </span>
                     </div>
 
@@ -284,7 +284,7 @@ export const BatchScanView: React.FC = () => {
             className="flex-1 max-w-xs h-12 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 active:scale-95 text-white font-extrabold text-sm sm:text-base rounded-2xl shadow-xl shadow-emerald-950/60 transition flex items-center justify-center gap-2"
           >
             <Send className="w-5 h-5" />
-            <span>整批核對送出 (一括実行)</span>
+            <span>一括送信・確定</span>
           </button>
         </div>
       )}
