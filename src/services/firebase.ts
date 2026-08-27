@@ -11,7 +11,7 @@ import {
   Firestore,
   Unsubscribe,
 } from 'firebase/firestore';
-import { ItemMaster, InventoryLog } from '../types/inventory';
+import { ItemMaster, InventoryLog, PendingInbound } from '../types/inventory';
 
 export interface FirebaseConfigOptions {
   apiKey: string;
@@ -24,10 +24,6 @@ export interface FirebaseConfigOptions {
 
 const STORAGE_KEY = 'smart_inventory_firebase_config';
 
-/**
- * Firestore は undefined の値を含むオブジェクトを保存できないため、
- * undefined を除去するサニタイズ関数
- */
 function sanitizeForFirestore<T extends Record<string, any>>(obj: T): Record<string, any> {
   const result: Record<string, any> = {};
   for (const key of Object.keys(obj)) {
@@ -59,20 +55,17 @@ class CloudSyncService {
   private db: Firestore | null = null;
   private unsubscribeItems: Unsubscribe | null = null;
   private unsubscribeLogs: Unsubscribe | null = null;
+  private unsubscribePending: Unsubscribe | null = null;
   private isConnected = false;
 
   constructor() {
     this.init();
   }
 
-  /**
-   * Firebase 設定の初期化（localStorage または 環境変数）
-   */
   init(customConfig?: FirebaseConfigOptions) {
     try {
       const config = customConfig || this.getConfig();
       if (!config || !config.apiKey || !config.projectId) {
-        console.log('Firebase: Running in Local-First IndexedDB Mode (No valid config).');
         this.isConnected = false;
         this.app = null;
         this.db = null;
@@ -85,7 +78,6 @@ class CloudSyncService {
         this.app = getApp();
       }
 
-      // ignoreUndefinedProperties: true で undefined エラーを回避
       try {
         this.db = initializeFirestore(this.app, {
           ignoreUndefinedProperties: true,
@@ -95,7 +87,6 @@ class CloudSyncService {
       }
 
       this.isConnected = true;
-      console.log('Firebase: Firestore initialized successfully with project:', config.projectId);
       return true;
     } catch (err) {
       console.error('Firebase initialization error:', err);
@@ -158,9 +149,6 @@ class CloudSyncService {
     return this.isConnected && this.db !== null;
   }
 
-  /**
-   * 完整診斷工具：檢測資料庫建立狀態、讀取與寫入權限
-   */
   async runFullDiagnostics(): Promise<{ success: boolean; results: DiagnosticResult[] }> {
     const results: DiagnosticResult[] = [];
     const config = this.getConfig();
@@ -184,11 +172,9 @@ class CloudSyncService {
       if (!this.db) {
         this.init(config);
       }
-      if (!this.db) {
-        throw new Error('Firestore 初始化失敗');
-      }
+      if (!this.db) throw new Error('Firestore 初始化失敗');
 
-      // Step 2: Test Write
+      // Test Write
       const testDocRef = doc(this.db, 'inventory_items', '_test_connection');
       await setDoc(testDocRef, {
         test: true,
@@ -200,7 +186,7 @@ class CloudSyncService {
         message: '成功寫入測試資料至 Firestore',
       });
 
-      // Step 3: Test Read
+      // Test Read
       const snapshot = await getDocs(collection(this.db, 'inventory_items'));
       results.push({
         step: '3. 雲端讀取測試 (Read Test)',
@@ -208,7 +194,7 @@ class CloudSyncService {
         message: `成功連線並讀取到 ${snapshot.size} 筆品目資料`,
       });
 
-      // Cleanup test doc
+      // Cleanup
       await deleteDoc(testDocRef);
       results.push({
         step: '4. 測試資料清理 (Cleanup)',
@@ -238,9 +224,6 @@ class CloudSyncService {
     }
   }
 
-  /**
-   * クラウドから全品目を取得
-   */
   async fetchAllCloudItems(): Promise<ItemMaster[]> {
     if (!this.isCloudEnabled() || !this.db) return [];
     try {
@@ -260,9 +243,25 @@ class CloudSyncService {
     }
   }
 
-  /**
-   * 品目マスターをクラウドへ保存
-   */
+  async fetchAllPendingInbounds(): Promise<PendingInbound[]> {
+    if (!this.isCloudEnabled() || !this.db) return [];
+    try {
+      const pendingCol = collection(this.db, 'pending_inbounds');
+      const snapshot = await getDocs(pendingCol);
+      const list: PendingInbound[] = [];
+      snapshot.forEach((doc) => {
+        const data = doc.data() as PendingInbound;
+        if (data.id && data.itemCode) {
+          list.push(data);
+        }
+      });
+      return list;
+    } catch (e) {
+      console.error('Failed to fetch pending inbounds from Firestore:', e);
+      return [];
+    }
+  }
+
   async syncItemToCloud(item: ItemMaster): Promise<boolean> {
     if (!this.isCloudEnabled() || !this.db) return true;
     try {
@@ -276,9 +275,6 @@ class CloudSyncService {
     }
   }
 
-  /**
-   * 入出庫ログをクラウドへ保存
-   */
   async syncLogToCloud(log: InventoryLog): Promise<boolean> {
     if (!this.isCloudEnabled() || !this.db) return true;
     try {
@@ -292,17 +288,41 @@ class CloudSyncService {
     }
   }
 
-  /**
-   * クラウドのリアルタイム変更を購読 (Realtime onSnapshot)
-   */
+  async syncPendingInboundToCloud(pending: PendingInbound): Promise<boolean> {
+    if (!this.isCloudEnabled() || !this.db) return true;
+    try {
+      const cleanData = sanitizeForFirestore(pending);
+      const ref = doc(this.db, 'pending_inbounds', pending.id);
+      await setDoc(ref, cleanData, { merge: true });
+      return true;
+    } catch (e) {
+      console.error('Failed to sync pending inbound to Firestore:', e);
+      return false;
+    }
+  }
+
+  async deletePendingInboundFromCloud(id: string): Promise<boolean> {
+    if (!this.isCloudEnabled() || !this.db) return true;
+    try {
+      const ref = doc(this.db, 'pending_inbounds', id);
+      await deleteDoc(ref);
+      return true;
+    } catch (e) {
+      console.error('Failed to delete pending inbound from Firestore:', e);
+      return false;
+    }
+  }
+
   listenCloudChanges(
     onRemoteItemUpdate: (item: ItemMaster) => void,
-    onRemoteLogUpdate: (log: InventoryLog) => void
+    onRemoteLogUpdate: (log: InventoryLog) => void,
+    onRemotePendingUpdate?: (pending: PendingInbound, isDeleted?: boolean) => void
   ) {
     if (!this.isCloudEnabled() || !this.db) return;
 
     if (this.unsubscribeItems) this.unsubscribeItems();
     if (this.unsubscribeLogs) this.unsubscribeLogs();
+    if (this.unsubscribePending) this.unsubscribePending();
 
     try {
       // 1. Items Listener
@@ -319,9 +339,7 @@ class CloudSyncService {
             }
           });
         },
-        (err) => {
-          console.warn('Firestore items listener error:', err);
-        }
+        (err) => console.warn('Firestore items listener error:', err)
       );
 
       // 2. Logs Listener
@@ -338,10 +356,29 @@ class CloudSyncService {
             }
           });
         },
-        (err) => {
-          console.warn('Firestore logs listener error:', err);
-        }
+        (err) => console.warn('Firestore logs listener error:', err)
       );
+
+      // 3. Pending Inbounds Listener
+      if (onRemotePendingUpdate) {
+        const pendingCol = collection(this.db, 'pending_inbounds');
+        this.unsubscribePending = onSnapshot(
+          pendingCol,
+          (snapshot) => {
+            snapshot.docChanges().forEach((change) => {
+              if (change.type === 'removed') {
+                onRemotePendingUpdate({ id: change.doc.id } as PendingInbound, true);
+              } else if (change.type === 'added' || change.type === 'modified') {
+                const data = change.doc.data() as PendingInbound;
+                if (data.id && data.itemCode) {
+                  onRemotePendingUpdate(data, false);
+                }
+              }
+            });
+          },
+          (err) => console.warn('Firestore pending listener error:', err)
+        );
+      }
     } catch (err) {
       console.error('Error attaching Firestore listeners:', err);
     }
@@ -350,8 +387,10 @@ class CloudSyncService {
   stopListening() {
     if (this.unsubscribeItems) this.unsubscribeItems();
     if (this.unsubscribeLogs) this.unsubscribeLogs();
+    if (this.unsubscribePending) this.unsubscribePending();
     this.unsubscribeItems = null;
     this.unsubscribeLogs = null;
+    this.unsubscribePending = null;
   }
 }
 

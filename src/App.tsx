@@ -9,13 +9,16 @@ import { BatchScanView } from './components/mobile/BatchScanView';
 import { ActionBottomSheet } from './components/mobile/ActionBottomSheet';
 import { QRGeneratorModal } from './components/scanner/QRGeneratorModal';
 import { ItemMasterTable } from './components/pc/ItemMasterTable';
+import { PendingApprovalView } from './components/pc/PendingApprovalView';
 import { LabelPrinter } from './components/pc/LabelPrinter';
 import { TransactionHistory } from './components/pc/TransactionHistory';
 import { SettingsView } from './components/common/SettingsView';
-import { ScanLine, Layers, ListChecks } from 'lucide-react';
+import { ScanLine, Layers, ListChecks, Inbox } from 'lucide-react';
 
 const MainContent: React.FC = () => {
-  const { activeTab, setActiveTab, items, batchScanList } = useInventory();
+  const { activeTab, setActiveTab, items, batchScanList, pendingInbounds, settings } = useInventory();
+  const isFieldMode = settings.viewMode === 'FIELD';
+  const pendingCount = pendingInbounds.filter((p) => p.status === 'PENDING').length;
 
   return (
     <div className="min-h-screen flex flex-col bg-slate-950 text-slate-100">
@@ -31,10 +34,10 @@ const MainContent: React.FC = () => {
             <div className="text-center max-w-md mx-auto space-y-1">
               <h2 className="text-lg sm:text-xl font-extrabold text-white flex items-center justify-center gap-2">
                 <ScanLine className="w-5 h-5 text-blue-400" />
-                <span>現場カメラリーダー (即時スキャン)</span>
+                <span>現場相機掃描 (即時極速識別)</span>
               </h2>
               <p className="text-xs text-slate-400">
-                バーコードをかざすと、片手操作の入荷・払出メニューが下部からポップアップします
+                對準條碼或 QR 碼自動對焦彈出出入庫選單
               </p>
             </div>
 
@@ -44,7 +47,7 @@ const MainContent: React.FC = () => {
             <div className="max-w-lg mx-auto grid grid-cols-2 gap-3 pt-2">
               <button
                 onClick={() => setActiveTab('BATCH')}
-                className="p-3.5 bg-slate-900/80 hover:bg-slate-800/90 border border-slate-800 rounded-2xl flex flex-col items-start gap-1 transition text-left group"
+                className="p-3.5 bg-slate-900/80 hover:bg-slate-800/90 border border-slate-800 rounded-2xl flex flex-col items-start gap-1 transition text-left group shadow"
               >
                 <div className="flex items-center justify-between w-full">
                   <ListChecks className="w-5 h-5 text-amber-400 group-hover:scale-110 transition" />
@@ -54,24 +57,45 @@ const MainContent: React.FC = () => {
                     </span>
                   )}
                 </div>
-                <strong className="text-xs font-bold text-slate-200">批次連続検品</strong>
-                <span className="text-[10px] text-slate-500">連続スキャンしてリストで核対</span>
+                <strong className="text-xs font-bold text-slate-200">批次連掃核對</strong>
+                <span className="text-[10px] text-slate-500">連續掃描並清單核對送出</span>
               </button>
 
-              <button
-                onClick={() => setActiveTab('ITEMS')}
-                className="p-3.5 bg-slate-900/80 hover:bg-slate-800/90 border border-slate-800 rounded-2xl flex flex-col items-start gap-1 transition text-left group"
-              >
-                <Layers className="w-5 h-5 text-blue-400 group-hover:scale-110 transition" />
-                <strong className="text-xs font-bold text-slate-200">品目マスター ({items.length})</strong>
-                <span className="text-[10px] text-slate-500">現在庫と安全在庫一覧</span>
-              </button>
+              {!isFieldMode ? (
+                <button
+                  onClick={() => setActiveTab('APPROVAL')}
+                  className="p-3.5 bg-slate-900/80 hover:bg-slate-800/90 border border-slate-800 rounded-2xl flex flex-col items-start gap-1 transition text-left group shadow"
+                >
+                  <div className="flex items-center justify-between w-full">
+                    <Inbox className="w-5 h-5 text-indigo-400 group-hover:scale-110 transition" />
+                    {pendingCount > 0 && (
+                      <span className="px-1.5 py-0.5 rounded-full text-[10px] font-black bg-amber-500 text-slate-950">
+                        {pendingCount}件待審
+                      </span>
+                    )}
+                  </div>
+                  <strong className="text-xs font-bold text-slate-200">待審核正式入庫</strong>
+                  <span className="text-[10px] text-slate-500">審核現場送出的入庫單</span>
+                </button>
+              ) : (
+                <button
+                  onClick={() => setActiveTab('ITEMS')}
+                  className="p-3.5 bg-slate-900/80 hover:bg-slate-800/90 border border-slate-800 rounded-2xl flex flex-col items-start gap-1 transition text-left group shadow"
+                >
+                  <Layers className="w-5 h-5 text-blue-400 group-hover:scale-110 transition" />
+                  <strong className="text-xs font-bold text-slate-200">查詢庫存主檔 ({items.length})</strong>
+                  <span className="text-[10px] text-slate-500">盒號與庫存狀態</span>
+                </button>
+              )}
             </div>
           </div>
         )}
 
         {/* Tab 2: Batch Verification List */}
         {activeTab === 'BATCH' && <BatchScanView />}
+
+        {/* Tab: Pending Inbound Approval (PC 端正式入庫審核) */}
+        {activeTab === 'APPROVAL' && <PendingApprovalView />}
 
         {/* Tab 3: Item Master Management */}
         {activeTab === 'ITEMS' && <ItemMasterTable />}

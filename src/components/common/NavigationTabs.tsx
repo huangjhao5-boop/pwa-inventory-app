@@ -9,11 +9,14 @@ import {
   Printer,
   Settings,
   Search,
+  Inbox,
 } from 'lucide-react';
 
 export const NavigationTabs: React.FC = () => {
-  const { activeTab, setActiveTab, batchScanList, settings } = useInventory();
+  const { activeTab, setActiveTab, batchScanList, pendingInbounds, settings } = useInventory();
   const isFieldMode = settings.viewMode === 'FIELD';
+
+  const pendingCount = pendingInbounds.filter((p) => p.status === 'PENDING').length;
 
   // 現場模式精簡選單
   const fieldTabs: { key: TabKey; label: string; icon: React.FC<{ className?: string }>; badge?: number }[] = [
@@ -23,8 +26,9 @@ export const NavigationTabs: React.FC = () => {
     { key: 'SETTINGS', label: '⚙️ 系統設定', icon: Settings },
   ];
 
-  // PC 管理模式完整選單
+  // PC 管理模式完整選單 (包含待審核入庫)
   const adminTabs: { key: TabKey; label: string; icon: React.FC<{ className?: string }>; badge?: number }[] = [
+    { key: 'APPROVAL', label: '📥 待審核入庫', icon: Inbox, badge: pendingCount },
     { key: 'ITEMS', label: '📦 品目主檔管理', icon: Layers },
     { key: 'PRINT', label: '🖨️ A4 標籤列印', icon: Printer },
     { key: 'LOGS', label: '📜 出入庫歷史記錄', icon: History },
@@ -59,7 +63,7 @@ export const NavigationTabs: React.FC = () => {
                   <Icon className="w-4 h-4" />
                   <span>{tab.label}</span>
                   {tab.badge !== undefined && tab.badge > 0 && (
-                    <span className="px-1.5 py-0.5 rounded-full text-[10px] font-black bg-amber-400 text-slate-950">
+                    <span className="px-2 py-0.5 rounded-full text-[11px] font-black bg-amber-400 text-slate-950 animate-pulse">
                       {tab.badge}
                     </span>
                   )}

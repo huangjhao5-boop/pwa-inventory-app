@@ -2,80 +2,83 @@ import React, { createContext, useContext, useState, useEffect, useCallback, Rea
 import {
   ItemMaster,
   InventoryLog,
-  BatchScanItem,
-  AppSettings,
   ActionType,
+  AppSettings,
+  BatchScanItem,
   TabKey,
+  PendingInbound,
 } from '../types/inventory';
 import { LocalDatabaseService } from '../services/db';
-import { cloudSync, FirebaseConfigOptions } from '../services/firebase';
-import { PokaYokeDebouncer } from '../utils/pokaYoke';
-import { DualModeCodeParser } from '../utils/qrParser';
-import { audioHaptics } from '../utils/audioHaptics';
 import { useNetworkSync } from '../hooks/useNetworkSync';
-import { useHardwareScanner } from '../hooks/useHardwareScanner';
+import { cloudSync, FirebaseConfigOptions } from '../services/firebase';
 
-export interface ToastMessage {
+interface ToastMessage {
   id: string;
-  type: 'success' | 'error' | 'warning' | 'info';
-  message: string;
+  type: 'success' | 'error' | 'info';
+  text: string;
 }
 
 interface InventoryContextType {
+  // State
   items: ItemMaster[];
   logs: InventoryLog[];
-  batchScanList: BatchScanItem[];
-  settings: AppSettings;
+  pendingInbounds: PendingInbound[];
   activeTab: TabKey;
-  activeScannedItem: ItemMaster | null;
-  activeScannedCode: string | null;
-  isBottomSheetOpen: boolean;
-  isQRGeneratorOpen: boolean;
-  qrGeneratorTarget: ItemMaster | null;
+  setActiveTab: (tab: TabKey) => void;
+  settings: AppSettings;
+  updateSettings: (newSettings: Partial<AppSettings>) => void;
   toasts: ToastMessage[];
+  addToast: (type: 'success' | 'error' | 'info', text: string) => void;
+
+  // Network & Sync
   isOnline: boolean;
   isCloudConnected: boolean;
   pendingSyncCount: number;
   isSyncing: boolean;
-
-  // Setters & Nav
-  setActiveTab: (tab: TabKey) => void;
-  updateSettings: (newSettings: Partial<AppSettings>) => void;
-  saveFirebaseConfig: (config: FirebaseConfigOptions) => boolean;
+  triggerManualSync: () => Promise<void>;
+  saveFirebaseConfig: (config: FirebaseConfigOptions) => void;
   clearFirebaseConfig: () => void;
-  closeBottomSheet: () => void;
-  openQRGenerator: (item?: ItemMaster) => void;
-  closeQRGenerator: () => void;
-  addToast: (type: ToastMessage['type'], message: string) => void;
-  removeToast: (id: string) => void;
 
-  // Scanning & Actions
-  handleCodeScanned: (rawCode: string) => Promise<boolean>;
+  // Mobile BottomSheet Actions
+  isBottomSheetOpen: boolean;
+  activeScannedItem: ItemMaster | null;
+  activeScannedCode: string | null;
+  openBottomSheet: (code: string) => Promise<void>;
+  closeBottomSheet: () => void;
+
+  // Batch Scan Mode
+  batchScanList: BatchScanItem[];
+  addToBatch: (item: ItemMaster, actionType: 'IN' | 'OUT', unit: string, multiplier: number, quantity: number) => void;
+  updateBatchItemQty: (id: string, newQty: number) => void;
+  removeFromBatch: (id: string) => void;
+  clearBatch: () => void;
+  commitBatch: () => Promise<void>;
+
+  // Transactions & Master CRUD
   recordTransaction: (
     item: ItemMaster,
     type: ActionType,
     quantity: number,
     unit: string,
     multiplier: number,
-    note?: string
+    note?: string,
+    isPendingApproval?: boolean
   ) => Promise<boolean>;
-
-  // Batch Scan List Actions
-  addToBatchList: (item: ItemMaster, actionType: 'IN' | 'OUT', quantity?: number, unit?: string) => void;
-  updateBatchItem: (id: string, updates: Partial<BatchScanItem>) => void;
-  removeBatchItem: (id: string) => void;
-  clearBatchList: () => void;
-  commitBatchList: () => Promise<boolean>;
-
-  // Master Items CRUD
   saveItem: (item: ItemMaster) => Promise<void>;
   deleteItem: (id: string) => Promise<void>;
-  importItems: (newItems: Partial<ItemMaster>[]) => Promise<number>;
   refreshData: () => Promise<void>;
-  triggerManualSync: () => Promise<void>;
-}
 
-const InventoryContext = createContext<InventoryContextType | null>(null);
+  // Pending Inbound Approvals (PC 端正式入庫)
+  approvePendingInbound: (pending: PendingInbound) => Promise<void>;
+  batchApprovePendingInbounds: (pendings: PendingInbound[]) => Promise<void>;
+  rejectPendingInbound: (id: string) => Promise<void>;
+
+  // QR Modal
+  isQRModalOpen: boolean;
+  qrModalItem: ItemMaster | null;
+  openQRGenerator: (item: ItemMaster) => void;
+  closeQRGenerator: () => void;
+}
 
 const DEFAULT_SETTINGS: AppSettings = {
   soundEnabled: true,
@@ -85,85 +88,87 @@ const DEFAULT_SETTINGS: AppSettings = {
   offlineMode: false,
   viewMode: 'FIELD',
   autoTorch: false,
+  requirePcApprovalForInbound: true, // 預設開啟 PC 端審核入庫流程
 };
+
+const InventoryContext = createContext<InventoryContextType | null>(null);
 
 export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [items, setItems] = useState<ItemMaster[]>([]);
   const [logs, setLogs] = useState<InventoryLog[]>([]);
-  const [batchScanList, setBatchScanList] = useState<BatchScanItem[]>([]);
-  const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS);
+  const [pendingInbounds, setPendingInbounds] = useState<PendingInbound[]>([]);
   const [activeTab, setActiveTab] = useState<TabKey>('SCAN');
-  const [isCloudConnected, setIsCloudConnected] = useState<boolean>(cloudSync.isCloudEnabled());
-
-  // Modal / Sheet States
-  const [activeScannedItem, setActiveScannedItem] = useState<ItemMaster | null>(null);
-  const [activeScannedCode, setActiveScannedCode] = useState<string | null>(null);
-  const [isBottomSheetOpen, setIsBottomSheetOpen] = useState(false);
-  const [isQRGeneratorOpen, setIsQRGeneratorOpen] = useState(false);
-  const [qrGeneratorTarget, setQRGeneratorTarget] = useState<ItemMaster | null>(null);
+  const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS);
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
 
-  // Poka-Yoke Debouncer
-  const debouncerRef = React.useRef(new PokaYokeDebouncer(1500));
+  // Mobile BottomSheet State
+  const [isBottomSheetOpen, setIsBottomSheetOpen] = useState(false);
+  const [activeScannedItem, setActiveScannedItem] = useState<ItemMaster | null>(null);
+  const [activeScannedCode, setActiveScannedCode] = useState<string | null>(null);
 
-  // Toast Helpers
-  const addToast = useCallback((type: ToastMessage['type'], message: string) => {
-    const id = `toast-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
-    setToasts((prev) => [...prev, { id, type, message }]);
+  // QR Modal State
+  const [isQRModalOpen, setIsQRModalOpen] = useState(false);
+  const [qrModalItem, setQrModalItem] = useState<ItemMaster | null>(null);
+
+  // Batch Mode List
+  const [batchScanList, setBatchScanList] = useState<BatchScanItem[]>([]);
+
+  // Toast Helper
+  const addToast = useCallback((type: 'success' | 'error' | 'info', text: string) => {
+    const id = `toast-${Date.now()}-${Math.random()}`;
+    setToasts((prev) => [...prev, { id, type, text }]);
     setTimeout(() => {
-      removeToast(id);
-    }, 4000);
-  }, []);
-
-  const removeToast = useCallback((id: string) => {
-    setToasts((prev) => prev.filter((t) => t.id !== id));
-  }, []);
-
-  // Settings update
-  const updateSettings = useCallback((newSettings: Partial<AppSettings>) => {
-    setSettings((prev) => {
-      const updated = { ...prev, ...newSettings };
-      LocalDatabaseService.saveSettings(updated);
-      if (newSettings.debounceMs) {
-        debouncerRef.current.setCooldown(newSettings.debounceMs);
-      }
-      return updated;
-    });
+      setToasts((prev) => prev.filter((t) => t.id !== id));
+    }, 3500);
   }, []);
 
   // Network Sync Hook
-  const { isOnline, pendingCount: pendingSyncCount, isSyncing, refreshPendingCount, triggerSync } =
-    useNetworkSync((syncedCount) => {
-      addToast('success', `${syncedCount} 件のオフラインデータをクラウドへ同期しました`);
-      refreshData();
-    });
+  const {
+    isOnline,
+    pendingSyncCount,
+    isSyncing,
+    refreshPendingCount,
+    triggerManualSync,
+    isCloudConnected,
+    setIsCloudConnected,
+  } = useNetworkSync(addToast);
 
   // Load Data
   const refreshData = useCallback(async () => {
     try {
       await LocalDatabaseService.initSeedData();
-      let [storedItems, storedLogs, savedSettings] = await Promise.all([
+      let [storedItems, storedLogs, storedPendings, savedSettings] = await Promise.all([
         LocalDatabaseService.getAllItems(),
         LocalDatabaseService.getAllLogs(),
+        LocalDatabaseService.getAllPendingInbounds(),
         LocalDatabaseService.getSettings(),
       ]);
 
-      // クラウド同期が有効な場合、Firestore から最新品目を取得
+      // クラウド同期が有効な場合、Firestore から最新品目＆待審核リストを取得
       if (cloudSync.isCloudEnabled()) {
-        const cloudItems = await cloudSync.fetchAllCloudItems();
+        const [cloudItems, cloudPendings] = await Promise.all([
+          cloudSync.fetchAllCloudItems(),
+          cloudSync.fetchAllPendingInbounds(),
+        ]);
+
         if (cloudItems.length > 0) {
           await LocalDatabaseService.saveItemsBatch(cloudItems);
           storedItems = await LocalDatabaseService.getAllItems();
         } else if (storedItems.length > 0) {
-          // クラウドが空の場合は初期ローカルデータをクラウドに投入
           for (const item of storedItems) {
             await cloudSync.syncItemToCloud(item);
           }
+        }
+
+        if (cloudPendings.length > 0) {
+          await LocalDatabaseService.savePendingInboundsBatch(cloudPendings);
+          storedPendings = await LocalDatabaseService.getAllPendingInbounds();
         }
       }
 
       setItems(storedItems);
       setLogs(storedLogs);
+      setPendingInbounds(storedPendings);
       if (savedSettings && Object.keys(savedSettings).length > 0) {
         setSettings((prev) => ({ ...prev, ...savedSettings }));
       }
@@ -172,32 +177,49 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
     } catch (e) {
       console.error('Failed to load inventory data:', e);
     }
-  }, [refreshPendingCount]);
+  }, [refreshPendingCount, setIsCloudConnected]);
 
-  // Realtime Cloud Listener Setup
+  // Realtime Cloud Listener
   useEffect(() => {
     refreshData();
 
     if (cloudSync.isCloudEnabled()) {
       cloudSync.listenCloudChanges(
         (remoteItem) => {
-          LocalDatabaseService.saveItem(remoteItem);
           setItems((prev) => {
-            const index = prev.findIndex((i) => i.id === remoteItem.id);
-            if (index >= 0) {
+            const idx = prev.findIndex((i) => i.id === remoteItem.id);
+            if (idx >= 0) {
               const next = [...prev];
-              next[index] = remoteItem;
+              next[idx] = remoteItem;
               return next;
             }
             return [remoteItem, ...prev];
           });
+          LocalDatabaseService.saveItem(remoteItem);
         },
         (remoteLog) => {
-          LocalDatabaseService.addLog(remoteLog);
           setLogs((prev) => {
             if (prev.some((l) => l.id === remoteLog.id)) return prev;
             return [remoteLog, ...prev];
           });
+          LocalDatabaseService.addLog(remoteLog);
+        },
+        (remotePending, isDeleted) => {
+          if (isDeleted) {
+            setPendingInbounds((prev) => prev.filter((p) => p.id !== remotePending.id));
+            LocalDatabaseService.deletePendingInbound(remotePending.id);
+          } else {
+            setPendingInbounds((prev) => {
+              const idx = prev.findIndex((p) => p.id === remotePending.id);
+              if (idx >= 0) {
+                const next = [...prev];
+                next[idx] = remotePending;
+                return next;
+              }
+              return [remotePending, ...prev];
+            });
+            LocalDatabaseService.savePendingInbound(remotePending);
+          }
         }
       );
     }
@@ -207,83 +229,99 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
     };
   }, [refreshData]);
 
-  const saveFirebaseConfig = useCallback((config: FirebaseConfigOptions): boolean => {
-    const success = cloudSync.saveConfig(config);
-    setIsCloudConnected(success);
-    if (success) {
-      addToast('success', 'クラウド(Firebase)接続が有効になりました！');
-      refreshData();
-    } else {
-      addToast('error', 'Firebase 接続の初期化に失敗しました');
-    }
-    return success;
-  }, [addToast, refreshData]);
+  // Update Settings
+  const updateSettings = useCallback(
+    async (newSettings: Partial<AppSettings>) => {
+      setSettings((prev) => {
+        const next = { ...prev, ...newSettings };
+        Object.entries(newSettings).forEach(([key, val]) => {
+          LocalDatabaseService.saveSetting(key, val);
+        });
+        return next;
+      });
+    },
+    []
+  );
+
+  const saveFirebaseConfig = useCallback(
+    (config: FirebaseConfigOptions) => {
+      const ok = cloudSync.saveConfig(config);
+      setIsCloudConnected(ok);
+      if (ok) {
+        addToast('success', 'Firebase 雲端資料庫已連線！');
+        refreshData();
+      } else {
+        addToast('error', 'Firebase 設定無效，已回復本地單機模式');
+      }
+    },
+    [addToast, refreshData, setIsCloudConnected]
+  );
 
   const clearFirebaseConfig = useCallback(() => {
     cloudSync.clearConfig();
     setIsCloudConnected(false);
-    addToast('info', 'クラウド接続を解除し、ローカル(IndexedDB)モードに切り替えました');
-  }, [addToast]);
+    addToast('info', '已切換為純本地單機模式');
+  }, [addToast, setIsCloudConnected]);
 
-  // Handle Scanning
-  const handleCodeScanned = useCallback(
-    async (rawCode: string): Promise<boolean> => {
-      if (!rawCode || !rawCode.trim()) return false;
-
-      const debounceCheck = debouncerRef.current.shouldAllowScan(rawCode);
-      if (!debounceCheck.allowed) {
-        audioHaptics.playAlert(settings.soundEnabled, settings.vibrationEnabled);
-        addToast('warning', debounceCheck.reason || '連続スキャン制限中');
-        return false;
-      }
-
-      const parsed = DualModeCodeParser.parse(rawCode);
-
-      if (parsed.type === 'OPERATOR' && parsed.operatorCode) {
-        updateSettings({ activeOperator: parsed.operatorCode });
-        audioHaptics.playSuccess(settings.soundEnabled, settings.vibrationEnabled);
-        addToast('info', `作業員を「${parsed.operatorCode}」に切り替えました`);
-        return true;
-      }
-
-      const itemCodeToLookup = parsed.itemCode || parsed.rawText;
-      const matched = await LocalDatabaseService.getItemByCode(itemCodeToLookup);
-
-      if (matched) {
-        audioHaptics.playSuccess(settings.soundEnabled, settings.vibrationEnabled);
-
-        if (activeTab === 'BATCH') {
-          addToBatchList(matched, 'IN', 1, matched.baseUnit);
-          addToast('success', `【追加】${matched.name} (+1 ${matched.baseUnit})`);
-          return true;
-        }
-
-        setActiveScannedItem(matched);
-        setActiveScannedCode(rawCode);
-        setIsBottomSheetOpen(true);
-        return true;
-      } else {
-        // 未登録品目: 自動で新規ポップアップ
-        audioHaptics.playAlert(settings.soundEnabled, settings.vibrationEnabled);
-        setActiveScannedItem(null);
-        setActiveScannedCode(itemCodeToLookup);
-        setIsBottomSheetOpen(true);
-        addToast('warning', `未登録コードです。写真撮影または1クリックで登録できます。`);
-        return false;
-      }
+  // Open BottomSheet
+  const openBottomSheet = useCallback(
+    async (code: string) => {
+      const found = items.find((i) => i.code === code || i.qrCode === code);
+      setActiveScannedCode(code);
+      setActiveScannedItem(found || null);
+      setIsBottomSheetOpen(true);
     },
-    [settings, activeTab, updateSettings, addToast]
+    [items]
   );
 
-  // Hardware Scanner Hook
-  useHardwareScanner({
-    onScan: (code) => {
-      handleCodeScanned(code);
-    },
-    enabled: true,
-  });
+  const closeBottomSheet = useCallback(() => {
+    setIsBottomSheetOpen(false);
+    setActiveScannedItem(null);
+    setActiveScannedCode(null);
+  }, []);
 
-  // Single Item Transaction
+  // Save Item
+  const saveItem = useCallback(
+    async (item: ItemMaster) => {
+      try {
+        await LocalDatabaseService.saveItem(item);
+        setItems((prev) => {
+          const idx = prev.findIndex((i) => i.id === item.id);
+          if (idx >= 0) {
+            const next = [...prev];
+            next[idx] = item;
+            return next;
+          }
+          return [item, ...prev];
+        });
+        if (cloudSync.isCloudEnabled()) {
+          await cloudSync.syncItemToCloud(item);
+        }
+        addToast('success', `品目「${item.name}」已儲存`);
+      } catch (err) {
+        console.error('Failed to save item:', err);
+        addToast('error', '儲存品目失敗');
+      }
+    },
+    [addToast]
+  );
+
+  // Delete Item
+  const deleteItem = useCallback(
+    async (id: string) => {
+      try {
+        await LocalDatabaseService.deleteItem(id);
+        setItems((prev) => prev.filter((i) => i.id !== id));
+        addToast('info', '品目已刪除');
+      } catch (err) {
+        console.error('Failed to delete item:', err);
+        addToast('error', '刪除失敗');
+      }
+    },
+    [addToast]
+  );
+
+  // Record Transaction
   const recordTransaction = useCallback(
     async (
       item: ItemMaster,
@@ -291,23 +329,67 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
       quantity: number,
       unit: string,
       multiplier: number,
-      note?: string
+      note?: string,
+      isPendingApproval?: boolean
     ): Promise<boolean> => {
       try {
-        const baseQuantity = quantity * multiplier;
-        let delta = 0;
-        if (type === 'IN') {
-          delta = baseQuantity;
-        } else if (type === 'OUT') {
-          delta = -baseQuantity;
-        } else if (type === 'AUDIT') {
-          delta = baseQuantity - item.currentStock;
-        } else if (type === 'ORDER') {
-          delta = 0;
+        const baseQty = quantity * multiplier;
+
+        // 若為入庫 (IN) 且開啟了「PC 端審核後才正式入庫」模式
+        const shouldBePending =
+          type === 'IN' && (isPendingApproval !== undefined ? isPendingApproval : settings.requirePcApprovalForInbound);
+
+        if (shouldBePending) {
+          const pendingId = `pending-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+          const pendingObj: PendingInbound = {
+            id: pendingId,
+            itemCode: item.code,
+            itemName: item.name,
+            spec: item.spec,
+            category: item.category,
+            supplier: item.supplier,
+            imageUrl: item.imageUrl,
+            quantity,
+            unit,
+            multiplier,
+            baseQuantity: baseQty,
+            location: item.location,
+            operator: settings.activeOperator,
+            scannedAt: new Date().toISOString(),
+            status: 'PENDING',
+            note,
+          };
+
+          await LocalDatabaseService.savePendingInbound(pendingObj);
+          setPendingInbounds((prev) => [pendingObj, ...prev]);
+
+          if (cloudSync.isCloudEnabled()) {
+            await cloudSync.syncPendingInboundToCloud(pendingObj);
+          }
+
+          addToast(
+            'info',
+            `已加入待審核入庫（+${quantity} ${unit}），請於 PC 端進行正式確認！`
+          );
+          closeBottomSheet();
+          return true;
         }
 
+        // 直接正式出入庫 (OUT 或非審核模式)
+        let delta = 0;
+        if (type === 'IN') delta = baseQty;
+        else if (type === 'OUT') delta = -baseQty;
+
+        const newStock = Math.max(0, item.currentStock + delta);
+        const updatedItem: ItemMaster = {
+          ...item,
+          currentStock: newStock,
+          updatedAt: new Date().toISOString(),
+        };
+
+        const logId = `log-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
         const log: InventoryLog = {
-          id: `log-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+          id: logId,
           itemId: item.id,
           itemCode: item.code,
           itemName: item.name,
@@ -316,127 +398,209 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
           quantity,
           unit,
           multiplier,
-          baseQuantity,
+          baseQuantity: baseQty,
           operator: settings.activeOperator,
           timestamp: new Date().toISOString(),
           note,
-          synced: isOnline && isCloudConnected,
+          synced: cloudSync.isCloudEnabled(),
         };
 
-        await LocalDatabaseService.addLog(log);
+        await Promise.all([
+          LocalDatabaseService.saveItem(updatedItem),
+          LocalDatabaseService.addLog(log),
+        ]);
 
-        // クラウドへ即座に送信
-        if (isCloudConnected && isOnline) {
-          const updatedItem = {
-            ...item,
-            currentStock: Math.max(0, item.currentStock + delta),
-            updatedAt: log.timestamp,
-          };
+        setItems((prev) => prev.map((i) => (i.id === item.id ? updatedItem : i)));
+        setLogs((prev) => [log, ...prev]);
+
+        if (cloudSync.isCloudEnabled()) {
           await Promise.all([
             cloudSync.syncLogToCloud(log),
             cloudSync.syncItemToCloud(updatedItem),
           ]);
         }
 
-        audioHaptics.playSuccess(settings.soundEnabled, settings.vibrationEnabled);
-
-        const actionName =
-          type === 'IN'
-            ? '入荷完了'
-            : type === 'OUT'
-            ? '払出完了'
-            : type === 'AUDIT'
-            ? '棚卸完了'
-            : '発注依頼登録';
-
-        addToast('success', `${item.name}：${actionName} (${quantity} ${unit} / 基準: ${baseQuantity} ${item.baseUnit})`);
-        
-        await refreshData();
-        setIsBottomSheetOpen(false);
-        setActiveScannedItem(null);
-        setActiveScannedCode(null);
-        debouncerRef.current.reset();
+        addToast(
+          'success',
+          `${type === 'IN' ? '入庫' : '出庫'}成功: ${item.name} (${delta > 0 ? '+' : ''}${quantity} ${unit})`
+        );
+        closeBottomSheet();
         return true;
-      } catch (e) {
-        console.error('Failed to record transaction:', e);
-        audioHaptics.playAlert(settings.soundEnabled, settings.vibrationEnabled);
-        addToast('error', 'トランザクションの記録に失敗しました');
+      } catch (err) {
+        console.error('Failed to record transaction:', err);
+        addToast('error', '操作失敗');
         return false;
       }
     },
-    [settings, isOnline, isCloudConnected, addToast, refreshData]
+    [settings, addToast, closeBottomSheet]
   );
 
-  // Batch List Methods
-  const addToBatchList = useCallback(
-    (item: ItemMaster, actionType: 'IN' | 'OUT', quantity = 1, unit?: string) => {
-      const selectedUnit = unit || item.baseUnit;
-      const conv = item.unitConversions?.find((c) => c.unit === selectedUnit);
-      const multiplier = conv ? conv.multiplier : 1;
-
-      setBatchScanList((prev) => {
-        const existingIndex = prev.findIndex(
-          (p) => p.item.id === item.id && p.actionType === actionType && p.selectedUnit === selectedUnit
-        );
-        if (existingIndex >= 0) {
-          const updated = [...prev];
-          const current = updated[existingIndex];
-          const newQty = current.enteredQuantity + quantity;
-          updated[existingIndex] = {
-            ...current,
-            enteredQuantity: newQty,
-            calculatedBaseQuantity: newQty * multiplier,
-            scannedAt: Date.now(),
+  // PC 端審核通過正式入庫
+  const approvePendingInbound = useCallback(
+    async (pending: PendingInbound) => {
+      try {
+        let item = items.find((i) => i.code === pending.itemCode);
+        if (!item) {
+          item = {
+            id: `item-${pending.itemCode}`,
+            code: pending.itemCode,
+            name: pending.itemName,
+            spec: pending.spec || '',
+            category: pending.category || '一般部品',
+            supplier: pending.supplier,
+            imageUrl: pending.imageUrl,
+            baseUnit: pending.unit,
+            currentStock: 0,
+            safetyStock: 10,
+            location: pending.location || '1號盒',
+            unitConversions: [{ unit: pending.unit, multiplier: 1 }],
+            updatedAt: new Date().toISOString(),
           };
-          return updated;
         }
 
-        const newItem: BatchScanItem = {
-          id: `batch-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-          item,
-          actionType,
-          selectedUnit,
-          multiplier,
-          enteredQuantity: quantity,
-          calculatedBaseQuantity: quantity * multiplier,
-          scannedAt: Date.now(),
+        const newStock = item.currentStock + pending.baseQuantity;
+        const updatedItem: ItemMaster = {
+          ...item,
+          name: pending.itemName || item.name,
+          spec: pending.spec || item.spec,
+          supplier: pending.supplier || item.supplier,
+          location: pending.location || item.location,
+          currentStock: newStock,
+          updatedAt: new Date().toISOString(),
         };
-        return [newItem, ...prev];
-      });
+
+        const logId = `log-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+        const log: InventoryLog = {
+          id: logId,
+          itemId: updatedItem.id,
+          itemCode: updatedItem.code,
+          itemName: updatedItem.name,
+          type: 'IN',
+          delta: pending.baseQuantity,
+          quantity: pending.quantity,
+          unit: pending.unit,
+          multiplier: pending.multiplier,
+          baseQuantity: pending.baseQuantity,
+          operator: `${pending.operator} (PC已審核)`,
+          timestamp: new Date().toISOString(),
+          note: pending.note || 'PC 端正式核准入庫',
+          synced: cloudSync.isCloudEnabled(),
+        };
+
+        await Promise.all([
+          LocalDatabaseService.saveItem(updatedItem),
+          LocalDatabaseService.addLog(log),
+          LocalDatabaseService.deletePendingInbound(pending.id),
+        ]);
+
+        setItems((prev) => {
+          const idx = prev.findIndex((i) => i.id === updatedItem.id);
+          if (idx >= 0) {
+            const next = [...prev];
+            next[idx] = updatedItem;
+            return next;
+          }
+          return [updatedItem, ...prev];
+        });
+
+        setLogs((prev) => [log, ...prev]);
+        setPendingInbounds((prev) => prev.filter((p) => p.id !== pending.id));
+
+        if (cloudSync.isCloudEnabled()) {
+          await Promise.all([
+            cloudSync.syncItemToCloud(updatedItem),
+            cloudSync.syncLogToCloud(log),
+            cloudSync.deletePendingInboundFromCloud(pending.id),
+          ]);
+        }
+
+        addToast('success', `品目「${updatedItem.name}」已正式入庫 (+${pending.quantity} ${pending.unit})！`);
+      } catch (err) {
+        console.error('Failed to approve pending inbound:', err);
+        addToast('error', '審核入庫失敗');
+      }
     },
-    []
+    [items, addToast]
   );
 
-  const updateBatchItem = useCallback((id: string, updates: Partial<BatchScanItem>) => {
+  // 批次核准
+  const batchApprovePendingInbounds = useCallback(
+    async (pendings: PendingInbound[]) => {
+      try {
+        for (const p of pendings) {
+          await approvePendingInbound(p);
+        }
+        addToast('success', `已批次正式入庫 ${pendings.length} 筆項目！`);
+      } catch (err) {
+        console.error('Batch approve error:', err);
+        addToast('error', '批次審核失敗');
+      }
+    },
+    [approvePendingInbound, addToast]
+  );
+
+  // 駁回入庫
+  const rejectPendingInbound = useCallback(
+    async (id: string) => {
+      try {
+        await LocalDatabaseService.deletePendingInbound(id);
+        setPendingInbounds((prev) => prev.filter((p) => p.id !== id));
+        if (cloudSync.isCloudEnabled()) {
+          await cloudSync.deletePendingInboundFromCloud(id);
+        }
+        addToast('info', '已駁回該筆現場入庫申請');
+      } catch (err) {
+        console.error('Failed to reject pending inbound:', err);
+        addToast('error', '駁回失敗');
+      }
+    },
+    [addToast]
+  );
+
+  // Batch Mode Operations
+  const addToBatch = useCallback(
+    (item: ItemMaster, actionType: 'IN' | 'OUT', unit: string, multiplier: number, quantity: number) => {
+      const baseQty = quantity * multiplier;
+      const newItem: BatchScanItem = {
+        id: `batch-${Date.now()}-${Math.random()}`,
+        item,
+        actionType,
+        selectedUnit: unit,
+        multiplier,
+        enteredQuantity: quantity,
+        calculatedBaseQuantity: baseQty,
+        scannedAt: Date.now(),
+      };
+      setBatchScanList((prev) => [newItem, ...prev]);
+      addToast('info', `已加入批次清單: ${item.name} (${actionType === 'IN' ? '+' : '-'}${quantity} ${unit})`);
+    },
+    [addToast]
+  );
+
+  const updateBatchItemQty = useCallback((id: string, newQty: number) => {
     setBatchScanList((prev) =>
       prev.map((item) => {
         if (item.id !== id) return item;
-        const updated = { ...item, ...updates };
-        if (updates.enteredQuantity !== undefined || updates.selectedUnit !== undefined) {
-          const conv = updated.item.unitConversions?.find((c) => c.unit === updated.selectedUnit);
-          const mult = conv ? conv.multiplier : 1;
-          updated.multiplier = mult;
-          updated.calculatedBaseQuantity = updated.enteredQuantity * mult;
-        }
-        return updated;
+        const validQty = Math.max(1, newQty);
+        return {
+          ...item,
+          enteredQuantity: validQty,
+          calculatedBaseQuantity: validQty * item.multiplier,
+        };
       })
     );
   }, []);
 
-  const removeBatchItem = useCallback((id: string) => {
+  const removeFromBatch = useCallback((id: string) => {
     setBatchScanList((prev) => prev.filter((i) => i.id !== id));
   }, []);
 
-  const clearBatchList = useCallback(() => {
+  const clearBatch = useCallback(() => {
     setBatchScanList([]);
   }, []);
 
-  const commitBatchList = useCallback(async (): Promise<boolean> => {
-    if (batchScanList.length === 0) {
-      addToast('warning', '検品清単が空です');
-      return false;
-    }
-
+  const commitBatch = useCallback(async () => {
+    if (batchScanList.length === 0) return;
     try {
       for (const batchItem of batchScanList) {
         await recordTransaction(
@@ -445,89 +609,25 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
           batchItem.enteredQuantity,
           batchItem.selectedUnit,
           batchItem.multiplier,
-          `【一括検品・バッチ処理】${batchItem.enteredQuantity}${batchItem.selectedUnit}`
+          '批次檢品一括送信'
         );
       }
-      setBatchScanList([]);
-      addToast('success', `全 ${batchScanList.length} 件の一括処理が完了しました！`);
-      return true;
-    } catch (e) {
-      console.error('Batch commit failed:', e);
-      addToast('error', '一括処理中にエラーが発生しました');
-      return false;
+      clearBatch();
+      addToast('success', '批次作業已全部完成！');
+    } catch (err) {
+      console.error('Batch commit failed:', err);
+      addToast('error', '批次送出失敗');
     }
-  }, [batchScanList, recordTransaction, addToast]);
+  }, [batchScanList, recordTransaction, clearBatch, addToast]);
 
-  // Master Items CRUD
-  const saveItem = useCallback(
-    async (item: ItemMaster) => {
-      await LocalDatabaseService.saveItem(item);
-      if (cloudSync.isCloudEnabled()) {
-        await cloudSync.syncItemToCloud(item);
-      }
-      addToast('success', `品目「${item.name}」を保存しました`);
-      await refreshData();
-    },
-    [addToast, refreshData]
-  );
-
-  const deleteItem = useCallback(
-    async (id: string) => {
-      await LocalDatabaseService.deleteItem(id);
-      addToast('info', '品目を削除しました');
-      await refreshData();
-    },
-    [addToast, refreshData]
-  );
-
-  const importItems = useCallback(
-    async (newItems: Partial<ItemMaster>[]): Promise<number> => {
-      const itemsToSave: ItemMaster[] = newItems.map((p, idx) => ({
-        id: p.id || `item-${Date.now()}-${idx}`,
-        code: p.code || `CODE-${idx}`,
-        name: p.name || '名称未設定',
-        spec: p.spec || '',
-        category: p.category || '一般',
-        supplier: p.supplier || '',
-        imageUrl: p.imageUrl || undefined,
-        baseUnit: p.baseUnit || '個',
-        currentStock: p.currentStock || 0,
-        safetyStock: p.safetyStock || 0,
-        location: p.location || 'A-01',
-        qrCode: p.qrCode || `INV:v1:${p.code}`,
-        unitConversions: p.unitConversions || [{ unit: p.baseUnit || '個', multiplier: 1 }],
-        updatedAt: new Date().toISOString(),
-        note: p.note || '',
-      }));
-
-      await LocalDatabaseService.saveItemsBatch(itemsToSave);
-      if (cloudSync.isCloudEnabled()) {
-        for (const item of itemsToSave) {
-          await cloudSync.syncItemToCloud(item);
-        }
-      }
-      await refreshData();
-      addToast('success', `${itemsToSave.length} 件の品目をインポートしました`);
-      return itemsToSave.length;
-    },
-    [addToast, refreshData]
-  );
-
-  const openQRGenerator = useCallback((item?: ItemMaster) => {
-    setQRGeneratorTarget(item || null);
-    setIsQRGeneratorOpen(true);
+  const openQRGenerator = useCallback((item: ItemMaster) => {
+    setQrModalItem(item);
+    setIsQRModalOpen(true);
   }, []);
 
   const closeQRGenerator = useCallback(() => {
-    setIsQRGeneratorOpen(false);
-    setQRGeneratorTarget(null);
-  }, []);
-
-  const closeBottomSheet = useCallback(() => {
-    setIsBottomSheetOpen(false);
-    setActiveScannedItem(null);
-    setActiveScannedCode(null);
-    debouncerRef.current.reset();
+    setIsQRModalOpen(false);
+    setQrModalItem(null);
   }, []);
 
   return (
@@ -535,40 +635,42 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
       value={{
         items,
         logs,
-        batchScanList,
-        settings,
+        pendingInbounds,
         activeTab,
-        activeScannedItem,
-        activeScannedCode,
-        isBottomSheetOpen,
-        isQRGeneratorOpen,
-        qrGeneratorTarget,
+        setActiveTab,
+        settings,
+        updateSettings,
         toasts,
+        addToast,
         isOnline,
         isCloudConnected,
         pendingSyncCount,
         isSyncing,
-        setActiveTab,
-        updateSettings,
+        triggerManualSync,
         saveFirebaseConfig,
         clearFirebaseConfig,
+        isBottomSheetOpen,
+        activeScannedItem,
+        activeScannedCode,
+        openBottomSheet,
         closeBottomSheet,
-        openQRGenerator,
-        closeQRGenerator,
-        addToast,
-        removeToast,
-        handleCodeScanned,
+        batchScanList,
+        addToBatch,
+        updateBatchItemQty,
+        removeFromBatch,
+        clearBatch,
+        commitBatch,
         recordTransaction,
-        addToBatchList,
-        updateBatchItem,
-        removeBatchItem,
-        clearBatchList,
-        commitBatchList,
         saveItem,
         deleteItem,
-        importItems,
         refreshData,
-        triggerManualSync: triggerSync,
+        approvePendingInbound,
+        batchApprovePendingInbounds,
+        rejectPendingInbound,
+        isQRModalOpen,
+        qrModalItem,
+        openQRGenerator,
+        closeQRGenerator,
       }}
     >
       {children}
