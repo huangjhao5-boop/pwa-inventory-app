@@ -5,10 +5,10 @@ import {
   BatchScanItem,
   AppSettings,
   ActionType,
-  TabKey
+  TabKey,
 } from '../types/inventory';
 import { LocalDatabaseService } from '../services/db';
-import { CloudSyncService } from '../services/firebase';
+import { cloudSync, FirebaseConfigOptions } from '../services/firebase';
 import { PokaYokeDebouncer } from '../utils/pokaYoke';
 import { DualModeCodeParser } from '../utils/qrParser';
 import { audioHaptics } from '../utils/audioHaptics';
@@ -34,12 +34,15 @@ interface InventoryContextType {
   qrGeneratorTarget: ItemMaster | null;
   toasts: ToastMessage[];
   isOnline: boolean;
+  isCloudConnected: boolean;
   pendingSyncCount: number;
   isSyncing: boolean;
 
   // Setters & Nav
   setActiveTab: (tab: TabKey) => void;
   updateSettings: (newSettings: Partial<AppSettings>) => void;
+  saveFirebaseConfig: (config: FirebaseConfigOptions) => boolean;
+  clearFirebaseConfig: () => void;
   closeBottomSheet: () => void;
   openQRGenerator: (item?: ItemMaster) => void;
   closeQRGenerator: () => void;
@@ -90,6 +93,7 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
   const [batchScanList, setBatchScanList] = useState<BatchScanItem[]>([]);
   const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS);
   const [activeTab, setActiveTab] = useState<TabKey>('SCAN');
+  const [isCloudConnected, setIsCloudConnected] = useState<boolean>(cloudSync.isCloudEnabled());
 
   // Modal / Sheet States
   const [activeScannedItem, setActiveScannedItem] = useState<ItemMaster | null>(null);
@@ -101,13 +105,6 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
 
   // Poka-Yoke Debouncer
   const debouncerRef = React.useRef(new PokaYokeDebouncer(1500));
-
-  // Network Sync Hook
-  const { isOnline, pendingCount: pendingSyncCount, isSyncing, refreshPendingCount, triggerSync } =
-    useNetworkSync((syncedCount) => {
-      addToast('success', `${syncedCount} 件のオフラインデータを同期しました`);
-      refreshData();
-    });
 
   // Toast Helpers
   const addToast = useCallback((type: ToastMessage['type'], message: string) => {
@@ -134,11 +131,17 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
     });
   }, []);
 
+  // Network Sync Hook
+  const { isOnline, pendingCount: pendingSyncCount, isSyncing, refreshPendingCount, triggerSync } =
+    useNetworkSync((syncedCount) => {
+      addToast('success', `${syncedCount} 件のオフラインデータをクラウドへ同期しました`);
+      refreshData();
+    });
+
   // Load Data
   const refreshData = useCallback(async () => {
     try {
       await LocalDatabaseService.initSeedData();
-      CloudSyncService.init();
       const [storedItems, storedLogs, savedSettings] = await Promise.all([
         LocalDatabaseService.getAllItems(),
         LocalDatabaseService.getAllLogs(),
@@ -149,22 +152,69 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
       if (savedSettings && Object.keys(savedSettings).length > 0) {
         setSettings((prev) => ({ ...prev, ...savedSettings }));
       }
+      setIsCloudConnected(cloudSync.isCloudEnabled());
       await refreshPendingCount();
     } catch (e) {
       console.error('Failed to load inventory data:', e);
     }
   }, [refreshPendingCount]);
 
+  // Realtime Cloud Listener Setup
   useEffect(() => {
     refreshData();
+
+    if (cloudSync.isCloudEnabled()) {
+      cloudSync.listenCloudChanges(
+        (remoteItem) => {
+          LocalDatabaseService.saveItem(remoteItem);
+          setItems((prev) => {
+            const index = prev.findIndex((i) => i.id === remoteItem.id);
+            if (index >= 0) {
+              const next = [...prev];
+              next[index] = remoteItem;
+              return next;
+            }
+            return [remoteItem, ...prev];
+          });
+        },
+        (remoteLog) => {
+          LocalDatabaseService.addLog(remoteLog);
+          setLogs((prev) => {
+            if (prev.some((l) => l.id === remoteLog.id)) return prev;
+            return [remoteLog, ...prev];
+          });
+        }
+      );
+    }
+
+    return () => {
+      cloudSync.stopListening();
+    };
   }, [refreshData]);
 
-  // Handle Scanning (Camera or Laser Barcode Gun)
+  const saveFirebaseConfig = useCallback((config: FirebaseConfigOptions): boolean => {
+    const success = cloudSync.saveConfig(config);
+    setIsCloudConnected(success);
+    if (success) {
+      addToast('success', 'クラウド(Firebase)接続が有効になりました！');
+      refreshData();
+    } else {
+      addToast('error', 'Firebase 接続の初期化に失敗しました');
+    }
+    return success;
+  }, [addToast, refreshData]);
+
+  const clearFirebaseConfig = useCallback(() => {
+    cloudSync.clearConfig();
+    setIsCloudConnected(false);
+    addToast('info', 'クラウド接続を解除し、ローカル(IndexedDB)モードに切り替えました');
+  }, [addToast]);
+
+  // Handle Scanning
   const handleCodeScanned = useCallback(
     async (rawCode: string): Promise<boolean> => {
       if (!rawCode || !rawCode.trim()) return false;
 
-      // 1. Debounce 防重刷檢查
       const debounceCheck = debouncerRef.current.shouldAllowScan(rawCode);
       if (!debounceCheck.allowed) {
         audioHaptics.playAlert(settings.soundEnabled, settings.vibrationEnabled);
@@ -172,11 +222,8 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
         return false;
       }
 
-      // 2. 雙軌解析
       const parsed = DualModeCodeParser.parse(rawCode);
-      console.log('Scanned & Parsed:', parsed);
 
-      // ロケーションまたは作業員バーコードの場合
       if (parsed.type === 'OPERATOR' && parsed.operatorCode) {
         updateSettings({ activeOperator: parsed.operatorCode });
         audioHaptics.playSuccess(settings.soundEnabled, settings.vibrationEnabled);
@@ -190,32 +237,30 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
       if (matched) {
         audioHaptics.playSuccess(settings.soundEnabled, settings.vibrationEnabled);
 
-        // 批次檢品模式中，若在 BATCH Tab 則直接追加至批次清單
         if (activeTab === 'BATCH') {
           addToBatchList(matched, 'IN', 1, matched.baseUnit);
           addToast('success', `【追加】${matched.name} (+1 ${matched.baseUnit})`);
           return true;
         }
 
-        // 單筆模式：彈出 Bottom Sheet
         setActiveScannedItem(matched);
         setActiveScannedCode(rawCode);
         setIsBottomSheetOpen(true);
         return true;
       } else {
-        // 未登録品目
+        // 未登録品目: 自動で新規ポップアップ
         audioHaptics.playAlert(settings.soundEnabled, settings.vibrationEnabled);
         setActiveScannedItem(null);
         setActiveScannedCode(itemCodeToLookup);
-        setIsBottomSheetOpen(true); // 讓使用者可點【新規追加】
-        addToast('warning', `未登録の品目コードです: ${itemCodeToLookup}`);
+        setIsBottomSheetOpen(true);
+        addToast('warning', `未登録コードです。写真撮影または1クリックで登録できます。`);
         return false;
       }
     },
     [settings, activeTab, updateSettings, addToast]
   );
 
-  // Hardware Scanner Hook (Laser gun / PDA)
+  // Hardware Scanner Hook
   useHardwareScanner({
     onScan: (code) => {
       handleCodeScanned(code);
@@ -241,9 +286,9 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
         } else if (type === 'OUT') {
           delta = -baseQuantity;
         } else if (type === 'AUDIT') {
-          delta = baseQuantity - item.currentStock; // 調整差額
+          delta = baseQuantity - item.currentStock;
         } else if (type === 'ORDER') {
-          delta = 0; // 発注依頼は在庫自体は変動させない
+          delta = 0;
         }
 
         const log: InventoryLog = {
@@ -260,10 +305,24 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
           operator: settings.activeOperator,
           timestamp: new Date().toISOString(),
           note,
-          synced: isOnline,
+          synced: isOnline && isCloudConnected,
         };
 
         await LocalDatabaseService.addLog(log);
+
+        // クラウドへ即座に送信
+        if (isCloudConnected && isOnline) {
+          const updatedItem = {
+            ...item,
+            currentStock: Math.max(0, item.currentStock + delta),
+            updatedAt: log.timestamp,
+          };
+          await Promise.all([
+            cloudSync.syncLogToCloud(log),
+            cloudSync.syncItemToCloud(updatedItem),
+          ]);
+        }
+
         audioHaptics.playSuccess(settings.soundEnabled, settings.vibrationEnabled);
 
         const actionName =
@@ -290,7 +349,7 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
         return false;
       }
     },
-    [settings, isOnline, addToast, refreshData]
+    [settings, isOnline, isCloudConnected, addToast, refreshData]
   );
 
   // Batch List Methods
@@ -301,7 +360,6 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
       const multiplier = conv ? conv.multiplier : 1;
 
       setBatchScanList((prev) => {
-        // 同一品目・同一動作であれば数量を加算
         const existingIndex = prev.findIndex(
           (p) => p.item.id === item.id && p.actionType === actionType && p.selectedUnit === selectedUnit
         );
@@ -389,6 +447,9 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
   const saveItem = useCallback(
     async (item: ItemMaster) => {
       await LocalDatabaseService.saveItem(item);
+      if (cloudSync.isCloudEnabled()) {
+        await cloudSync.syncItemToCloud(item);
+      }
       addToast('success', `品目「${item.name}」を保存しました`);
       await refreshData();
     },
@@ -412,6 +473,8 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
         name: p.name || '名称未設定',
         spec: p.spec || '',
         category: p.category || '一般',
+        supplier: p.supplier || '',
+        imageUrl: p.imageUrl || undefined,
         baseUnit: p.baseUnit || '個',
         currentStock: p.currentStock || 0,
         safetyStock: p.safetyStock || 0,
@@ -423,6 +486,11 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
       }));
 
       await LocalDatabaseService.saveItemsBatch(itemsToSave);
+      if (cloudSync.isCloudEnabled()) {
+        for (const item of itemsToSave) {
+          await cloudSync.syncItemToCloud(item);
+        }
+      }
       await refreshData();
       addToast('success', `${itemsToSave.length} 件の品目をインポートしました`);
       return itemsToSave.length;
@@ -430,7 +498,6 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
     [addToast, refreshData]
   );
 
-  // QR Modal
   const openQRGenerator = useCallback((item?: ItemMaster) => {
     setQRGeneratorTarget(item || null);
     setIsQRGeneratorOpen(true);
@@ -463,10 +530,13 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
         qrGeneratorTarget,
         toasts,
         isOnline,
+        isCloudConnected,
         pendingSyncCount,
         isSyncing,
         setActiveTab,
         updateSettings,
+        saveFirebaseConfig,
+        clearFirebaseConfig,
         closeBottomSheet,
         openQRGenerator,
         closeQRGenerator,

@@ -31,18 +31,29 @@ export const StockInquiryCard: React.FC<StockInquiryCardProps> = ({ item }) => {
           <h3 className="text-lg sm:text-xl font-black text-white leading-tight">
             {item.name}
           </h3>
+          {item.supplier && (
+            <p className="text-xs text-blue-300 mt-0.5 font-bold">
+              廠商: {item.supplier}
+            </p>
+          )}
           {item.spec && (
             <p className="text-xs text-slate-300 mt-0.5 font-medium">{item.spec}</p>
           )}
         </div>
 
-        {/* Location Tag */}
-        <div className="flex flex-col items-end shrink-0">
+        {/* Location Tag & Image */}
+        <div className="flex flex-col items-end shrink-0 gap-1.5">
           <div className="flex items-center gap-1 px-3 py-1.5 bg-blue-950/80 border border-blue-800/80 text-blue-300 rounded-xl text-xs font-bold shadow">
             <MapPin className="w-3.5 h-3.5 text-blue-400" />
             <span>{item.location || '未割当'}</span>
           </div>
-          <span className="text-[10px] text-slate-500 mt-1">棚番</span>
+          {item.imageUrl && (
+            <img
+              src={item.imageUrl}
+              alt={item.name}
+              className="w-12 h-12 object-cover rounded-xl border border-slate-700 shadow"
+            />
+          )}
         </div>
       </div>
 

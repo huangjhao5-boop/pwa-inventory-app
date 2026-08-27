@@ -78,9 +78,10 @@ export const LabelSheetPreview: React.FC<LabelSheetPreviewProps> = ({ items, lay
                     {item.name}
                   </h5>
 
-                  {item.spec && (
-                    <p className="text-[9px] text-slate-600 truncate mt-0.5">{item.spec}</p>
-                  )}
+                  <div className="flex items-center justify-between text-[9px] text-slate-600 truncate mt-0.5">
+                    {item.supplier ? <span className="font-bold text-blue-700">{item.supplier}</span> : <span></span>}
+                    {item.spec && <span>{item.spec}</span>}
+                  </div>
 
                   <div className="text-[8px] text-slate-400 font-mono mt-0.5 truncate">
                     {qrText}

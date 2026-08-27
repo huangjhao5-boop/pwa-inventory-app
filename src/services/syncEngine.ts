@@ -1,11 +1,11 @@
 import { LocalDatabaseService } from './db';
-import { CloudSyncService } from './firebase';
+import { cloudSync } from './firebase';
 
 export class SyncEngine {
   private static isSyncing = false;
 
   /**
-   * オフラインキューの全ログを同期
+   * オフラインキューの全ログをクラウドへ同期
    */
   static async syncAllPendingLogs(onProgress?: (synced: number, total: number) => void): Promise<{ successCount: number; failCount: number }> {
     if (this.isSyncing) return { successCount: 0, failCount: 0 };
@@ -22,8 +22,10 @@ export class SyncEngine {
 
       for (let i = 0; i < queue.length; i++) {
         const log = queue[i];
-        const ok = await CloudSyncService.syncLogToCloud(log);
+        const ok = await cloudSync.syncLogToCloud(log);
         if (ok) {
+          log.synced = true;
+          await LocalDatabaseService.addLog(log);
           await LocalDatabaseService.removeOfflineQueueItem(log.id);
           successCount++;
         } else {

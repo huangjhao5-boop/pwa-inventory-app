@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useInventory } from '../../context/InventoryContext';
 import { ActionType, ItemMaster } from '../../types/inventory';
 import { NumericKeypad } from './NumericKeypad';
@@ -8,10 +8,10 @@ import {
   ArrowUpCircle,
   Search,
   ShoppingCart,
-  PlusCircle,
   X,
   ChevronLeft,
-  AlertTriangle,
+  Camera,
+  Zap,
 } from 'lucide-react';
 
 export const ActionBottomSheet: React.FC = () => {
@@ -35,10 +35,14 @@ export const ActionBottomSheet: React.FC = () => {
   // New Item Registration form state
   const [newItemName, setNewItemName] = useState('');
   const [newItemSpec, setNewItemSpec] = useState('');
+  const [newItemSupplier, setNewItemSupplier] = useState('');
   const [newItemCategory, setNewItemCategory] = useState('一般部品');
   const [newItemBaseUnit, setNewItemBaseUnit] = useState('個');
   const [newItemSafetyStock, setNewItemSafetyStock] = useState(10);
   const [newItemLocation, setNewItemLocation] = useState('A-01');
+  const [itemImage, setItemImage] = useState<string | null>(null);
+
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (isBottomSheetOpen) {
@@ -48,13 +52,17 @@ export const ActionBottomSheet: React.FC = () => {
         setQuantity(1);
         setNote('');
       } else {
-        // 未登録品目
+        // 未登録品目: 智能預設填入，消除現場繁瑣輸入
         setCurrentStep('NEW_ITEM');
-        setNewItemName('');
+        const cleanCode = activeScannedCode || '';
+        const shortCode = cleanCode.length > 8 ? cleanCode.slice(-6) : cleanCode;
+        setNewItemName(`新部品-${shortCode}`);
         setNewItemSpec('');
+        setNewItemSupplier('');
+        setItemImage(null);
       }
     }
-  }, [isBottomSheetOpen, activeScannedItem]);
+  }, [isBottomSheetOpen, activeScannedItem, activeScannedCode]);
 
   if (!isBottomSheetOpen) return null;
 
@@ -63,7 +71,6 @@ export const ActionBottomSheet: React.FC = () => {
     if (action === 'AUDIT') {
       setCurrentStep('INQUIRY');
     } else if (action === 'ORDER') {
-      // 発注推奨数量（安全在庫 - 現在庫）
       if (activeScannedItem) {
         const diff = Math.max(1, activeScannedItem.safetyStock - activeScannedItem.currentStock);
         setQuantity(diff);
@@ -92,16 +99,32 @@ export const ActionBottomSheet: React.FC = () => {
     );
   };
 
-  const handleCreateNewItem = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newItemName.trim() || !activeScannedCode) return;
+  // 拍照 / 圖片上傳處理
+  const handlePhotoCapture = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
 
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const base64 = event.target?.result as string;
+      setItemImage(base64);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  // 一鍵極速登錄 (1-Click Fast Register)
+  const handleFastRegister = async (customName?: string) => {
+    if (!activeScannedCode) return;
+
+    const nameToUse = customName || newItemName || `新部品-${activeScannedCode.slice(-6)}`;
     const newItem: ItemMaster = {
-      id: `item-${Date.now()}`,
+      id: `item-${activeScannedCode}`,
       code: activeScannedCode,
-      name: newItemName.trim(),
+      name: nameToUse,
       spec: newItemSpec.trim(),
       category: newItemCategory,
+      supplier: newItemSupplier.trim() || undefined,
+      imageUrl: itemImage || undefined,
       baseUnit: newItemBaseUnit,
       currentStock: 0,
       safetyStock: Number(newItemSafetyStock) || 0,
@@ -116,7 +139,6 @@ export const ActionBottomSheet: React.FC = () => {
     };
 
     await saveItem(newItem);
-    // 自動的に入荷モードへ遷移
     setSelectedAction('IN');
     setSelectedUnit(newItemBaseUnit);
     setQuantity(1);
@@ -139,7 +161,7 @@ export const ActionBottomSheet: React.FC = () => {
             )}
             <div>
               <h2 className="font-extrabold text-sm sm:text-base text-white truncate max-w-[260px]">
-                {activeScannedItem ? activeScannedItem.name : '未登録品目の新規追加'}
+                {activeScannedItem ? activeScannedItem.name : '未登録品目の快速登録'}
               </h2>
               <p className="text-[11px] text-slate-400 font-mono">
                 {activeScannedItem ? activeScannedItem.code : activeScannedCode}
@@ -169,14 +191,21 @@ export const ActionBottomSheet: React.FC = () => {
                   </div>
                 </div>
                 <div className="text-right">
-                  <span className="text-[11px] text-slate-400">棚番</span>
-                  <div className="text-sm font-bold text-blue-400">{activeScannedItem.location}</div>
+                  <span className="text-[11px] text-slate-400">棚番 / 廠商</span>
+                  <div className="text-sm font-bold text-blue-400">
+                    {activeScannedItem.location}{' '}
+                    {activeScannedItem.supplier && (
+                      <span className="text-xs text-slate-400 font-normal">
+                        ({activeScannedItem.supplier})
+                      </span>
+                    )}
+                  </div>
                 </div>
               </div>
 
-              {/* Action Buttons (Large Touch targets) */}
+              {/* Action Buttons */}
               <div className="grid grid-cols-2 gap-3">
-                {/* 1. 入荷 (Stock In) */}
+                {/* 1. 入荷 */}
                 <button
                   type="button"
                   onClick={() => handleSelectAction('IN')}
@@ -187,7 +216,7 @@ export const ActionBottomSheet: React.FC = () => {
                   <span className="text-[11px] opacity-80">在庫を増やす</span>
                 </button>
 
-                {/* 2. 払出 (Stock Out) */}
+                {/* 2. 払出 */}
                 <button
                   type="button"
                   onClick={() => handleSelectAction('OUT')}
@@ -201,7 +230,6 @@ export const ActionBottomSheet: React.FC = () => {
 
               {/* Secondary Actions */}
               <div className="grid grid-cols-2 gap-2 pt-1">
-                {/* 3. 在庫確認 */}
                 <button
                   type="button"
                   onClick={() => setCurrentStep('INQUIRY')}
@@ -211,7 +239,6 @@ export const ActionBottomSheet: React.FC = () => {
                   <span className="font-bold text-sm">【在庫確認】</span>
                 </button>
 
-                {/* 4. 発注依頼 */}
                 <button
                   type="button"
                   onClick={() => handleSelectAction('ORDER')}
@@ -227,7 +254,6 @@ export const ActionBottomSheet: React.FC = () => {
           {/* STEP 2: Keypad Input */}
           {currentStep === 'KEYPAD' && activeScannedItem && (
             <div className="space-y-3">
-              {/* Action Banner */}
               <div
                 className={`py-2 px-3 rounded-xl font-bold text-xs flex items-center justify-between ${
                   selectedAction === 'IN'
@@ -244,7 +270,6 @@ export const ActionBottomSheet: React.FC = () => {
                 <span className="opacity-80">現在庫: {activeScannedItem.currentStock} {activeScannedItem.baseUnit}</span>
               </div>
 
-              {/* Glove-friendly Numeric Keypad */}
               <NumericKeypad
                 value={quantity}
                 onChange={setQuantity}
@@ -283,98 +308,174 @@ export const ActionBottomSheet: React.FC = () => {
             </div>
           )}
 
-          {/* STEP 4: New Item Registration */}
+          {/* STEP 4: Smart Fast Registration (極速初次登錄) */}
           {currentStep === 'NEW_ITEM' && (
-            <form onSubmit={handleCreateNewItem} className="space-y-3.5">
-              <div className="bg-amber-950/40 p-3 rounded-2xl border border-amber-500/40 text-xs text-amber-200 flex items-start gap-2">
-                <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
-                <span>
-                  スキャンされたコード <strong>{activeScannedCode}</strong> は主檔に未登録です。品名を入力して即時登録できます。
-                </span>
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-slate-300 mb-1">
-                  品名 (必須)
-                </label>
-                <input
-                  type="text"
-                  value={newItemName}
-                  onChange={(e) => setNewItemName(e.target.value)}
-                  placeholder="例: 高圧エアーバルブ"
-                  required
-                  className="w-full px-3.5 py-2.5 bg-slate-800 border border-slate-700 rounded-xl text-white text-sm focus:outline-none focus:border-blue-500"
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1">規格・型番</label>
-                  <input
-                    type="text"
-                    value={newItemSpec}
-                    onChange={(e) => setNewItemSpec(e.target.value)}
-                    placeholder="例: HV-02-G1/4"
-                    className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-white text-sm focus:outline-none focus:border-blue-500"
-                  />
+            <div className="space-y-4">
+              {/* Fast 1-Click Action Bar */}
+              <div className="bg-gradient-to-r from-blue-950 to-indigo-950 p-4 rounded-3xl border border-blue-500/40 shadow-xl space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Zap className="w-5 h-5 text-amber-400 animate-bounce" />
+                    <span className="font-extrabold text-sm text-white">現場極速初次登錄</span>
+                  </div>
+                  <span className="text-[11px] font-mono text-blue-300 bg-blue-900/60 px-2 py-0.5 rounded-lg">
+                    {activeScannedCode}
+                  </span>
                 </div>
 
-                <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1">分類</label>
-                  <select
-                    value={newItemCategory}
-                    onChange={(e) => setNewItemCategory(e.target.value)}
-                    className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-white text-sm focus:outline-none focus:border-blue-500"
+                <p className="text-xs text-slate-300 leading-relaxed">
+                  面倒な手入力をスキップ！写真を撮るか、このまま「1秒登録」ですぐに入荷作業を行えます。
+                </p>
+
+                {/* Photo Snap & Fast Add Buttons */}
+                <div className="grid grid-cols-2 gap-2 pt-1">
+                  <input
+                    type="file"
+                    ref={fileInputRef}
+                    accept="image/*"
+                    capture="environment"
+                    onChange={handlePhotoCapture}
+                    className="hidden"
+                  />
+
+                  {/* Photo Button */}
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    className="py-3 px-3 bg-slate-800 hover:bg-slate-700 active:scale-95 text-slate-100 rounded-2xl border border-slate-700 flex items-center justify-center gap-2 transition"
                   >
-                    <option value="ボルト・締結部品">ボルト・締結部品</option>
-                    <option value="配線・電気資材">配線・電気資材</option>
-                    <option value="電子パーツ">電子パーツ</option>
-                    <option value="空圧・配管部品">空圧・配管部品</option>
-                    <option value="シール・パッキン">シール・パッキン</option>
-                    <option value="工具・消耗品">工具・消耗品</option>
-                    <option value="一般部品">一般部品</option>
-                  </select>
+                    <Camera className="w-4 h-4 text-emerald-400" />
+                    <span className="font-bold text-xs sm:text-sm">
+                      {itemImage ? '写真撮影済 ✓' : '📸 拍照附圖'}
+                    </span>
+                  </button>
+
+                  {/* 1-Click Fast Register */}
+                  <button
+                    type="button"
+                    onClick={() => handleFastRegister()}
+                    className="py-3 px-3 bg-blue-600 hover:bg-blue-500 active:scale-95 text-white font-extrabold rounded-2xl text-xs sm:text-sm shadow-lg shadow-blue-950 transition flex items-center justify-center gap-1.5"
+                  >
+                    <Zap className="w-4 h-4" />
+                    <span>⚡ 1秒極速登錄</span>
+                  </button>
                 </div>
+
+                {/* Image Preview Thumbnail */}
+                {itemImage && (
+                  <div className="relative w-full h-28 rounded-2xl overflow-hidden border border-slate-700 mt-2 bg-black">
+                    <img src={itemImage} alt="Captured preview" className="w-full h-full object-cover" />
+                    <button
+                      onClick={() => setItemImage(null)}
+                      className="absolute top-1 right-1 p-1 bg-black/70 rounded-full text-white"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+                )}
               </div>
 
-              <div className="grid grid-cols-3 gap-2">
-                <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1">基準単位</label>
-                  <input
-                    type="text"
-                    value={newItemBaseUnit}
-                    onChange={(e) => setNewItemBaseUnit(e.target.value)}
-                    className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-white text-sm focus:outline-none focus:border-blue-500"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1">安全在庫</label>
-                  <input
-                    type="number"
-                    value={newItemSafetyStock}
-                    onChange={(e) => setNewItemSafetyStock(Number(e.target.value))}
-                    className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-white text-sm focus:outline-none focus:border-blue-500"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1">保管棚番</label>
-                  <input
-                    type="text"
-                    value={newItemLocation}
-                    onChange={(e) => setNewItemLocation(e.target.value)}
-                    className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-white text-sm focus:outline-none focus:border-blue-500"
-                  />
-                </div>
-              </div>
+              {/* Optional Quick Form Fields (修正・補足用) */}
+              <div className="bg-slate-950/60 p-4 rounded-3xl border border-slate-800 space-y-3">
+                <span className="text-xs font-bold text-slate-400 block">
+                  📝 手動修正・補足（任意・後からPCでも編集可能）:
+                </span>
 
-              <button
-                type="submit"
-                className="w-full py-3.5 bg-blue-600 hover:bg-blue-500 text-white font-bold text-base rounded-2xl shadow-lg transition flex items-center justify-center gap-2"
-              >
-                <PlusCircle className="w-5 h-5" />
-                <span>品目を登録して入荷作業へ</span>
-              </button>
-            </form>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-300 mb-1">品名</label>
+                  <input
+                    type="text"
+                    value={newItemName}
+                    onChange={(e) => setNewItemName(e.target.value)}
+                    placeholder="例: 高圧エアーバルブ"
+                    className="w-full px-3.5 py-2 bg-slate-800 border border-slate-700 rounded-xl text-white text-sm focus:outline-none focus:border-blue-500"
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-300 mb-1">
+                      廠商・サプライヤー
+                    </label>
+                    <input
+                      type="text"
+                      value={newItemSupplier}
+                      onChange={(e) => setNewItemSupplier(e.target.value)}
+                      placeholder="例: ミスミ, SMC..."
+                      className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-white text-xs focus:outline-none focus:border-blue-500"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-300 mb-1">規格・型番</label>
+                    <input
+                      type="text"
+                      value={newItemSpec}
+                      onChange={(e) => setNewItemSpec(e.target.value)}
+                      placeholder="例: M6×20mm"
+                      className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-white text-xs focus:outline-none focus:border-blue-500"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-4 gap-2">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-300 mb-1">分類</label>
+                    <select
+                      value={newItemCategory}
+                      onChange={(e) => setNewItemCategory(e.target.value)}
+                      className="w-full px-2 py-2 bg-slate-800 border border-slate-700 rounded-xl text-white text-xs"
+                    >
+                      <option value="一般部品">一般部品</option>
+                      <option value="ボルト・締結部品">ボルト・締結</option>
+                      <option value="配線・電気資材">配線・電気</option>
+                      <option value="電子パーツ">電子パーツ</option>
+                      <option value="空圧・配管部品">空圧・配管</option>
+                      <option value="消耗品">消耗品</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-300 mb-1">基準単位</label>
+                    <input
+                      type="text"
+                      value={newItemBaseUnit}
+                      onChange={(e) => setNewItemBaseUnit(e.target.value)}
+                      className="w-full px-2 py-2 bg-slate-800 border border-slate-700 rounded-xl text-white text-xs"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-300 mb-1">安全在庫</label>
+                    <input
+                      type="number"
+                      min="0"
+                      value={newItemSafetyStock}
+                      onChange={(e) => setNewItemSafetyStock(Number(e.target.value) || 0)}
+                      className="w-full px-2 py-2 bg-slate-800 border border-slate-700 rounded-xl text-white text-xs"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-300 mb-1">棚番</label>
+                    <input
+                      type="text"
+                      value={newItemLocation}
+                      onChange={(e) => setNewItemLocation(e.target.value)}
+                      className="w-full px-2 py-2 bg-slate-800 border border-slate-700 rounded-xl text-white text-xs"
+                    />
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => handleFastRegister()}
+                  className="w-full py-3 bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs rounded-xl border border-slate-700 transition"
+                >
+                  上記の内容で保存して入荷へ
+                </button>
+              </div>
+            </div>
           )}
         </div>
       </div>

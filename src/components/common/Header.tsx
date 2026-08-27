@@ -4,6 +4,8 @@ import {
   Boxes,
   Wifi,
   WifiOff,
+  Cloud,
+  CloudOff,
   RefreshCw,
   Volume2,
   VolumeX,
@@ -17,9 +19,11 @@ export const Header: React.FC = () => {
     settings,
     updateSettings,
     isOnline,
+    isCloudConnected,
     pendingSyncCount,
     isSyncing,
     triggerManualSync,
+    setActiveTab,
   } = useInventory();
 
   return (
@@ -45,6 +49,29 @@ export const Header: React.FC = () => {
 
         {/* Right: Controls & Status Badges */}
         <div className="flex items-center gap-2 sm:gap-3">
+          {/* Cloud Connection Badge */}
+          <button
+            onClick={() => setActiveTab('SETTINGS')}
+            className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold border transition ${
+              isCloudConnected
+                ? 'bg-blue-950/80 text-blue-300 border-blue-800/60 hover:bg-blue-900/60'
+                : 'bg-slate-950/80 text-slate-400 border-slate-800 hover:bg-slate-800'
+            }`}
+            title={isCloudConnected ? 'Firebase クラウド同期中' : 'ローカル IndexedDB モード (クリックしてFirebase設定)'}
+          >
+            {isCloudConnected ? (
+              <>
+                <Cloud className="w-3.5 h-3.5 text-blue-400 animate-pulse" />
+                <span className="hidden sm:inline">クラウド連動中</span>
+              </>
+            ) : (
+              <>
+                <CloudOff className="w-3.5 h-3.5 text-slate-500" />
+                <span className="hidden sm:inline">ローカルモード</span>
+              </>
+            )}
+          </button>
+
           {/* Online / Offline Sync Badge */}
           <div className="flex items-center gap-1.5">
             {isOnline ? (

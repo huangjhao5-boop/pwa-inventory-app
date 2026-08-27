@@ -15,6 +15,7 @@ import {
   Upload,
   AlertTriangle,
   MapPin,
+  Building2,
 } from 'lucide-react';
 
 export const ItemMasterTable: React.FC = () => {
@@ -39,6 +40,7 @@ export const ItemMasterTable: React.FC = () => {
       !q ||
       item.code.toLowerCase().includes(q) ||
       item.name.toLowerCase().includes(q) ||
+      (item.supplier && item.supplier.toLowerCase().includes(q)) ||
       (item.spec && item.spec.toLowerCase().includes(q)) ||
       (item.location && item.location.toLowerCase().includes(q));
 
@@ -84,7 +86,7 @@ export const ItemMasterTable: React.FC = () => {
                 品目マスター管理 (Item Master)
               </h2>
               <p className="text-xs text-slate-400">
-                全 {items.length} 品目登録中 / 在庫水位・包裝単位換算の一括管理
+                全 {items.length} 品目登録中 / 在庫水位・廠商・包裝単位換算の一括管理
               </p>
             </div>
           </div>
@@ -128,7 +130,7 @@ export const ItemMasterTable: React.FC = () => {
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="品号・品名・型式・棚番で瞬時検索..."
+              placeholder="品号・品名・廠商・型式・棚番で瞬時検索..."
               className="w-full pl-10 pr-4 py-2.5 bg-slate-950 border border-slate-800 rounded-2xl text-sm text-white focus:outline-none focus:border-blue-500 placeholder-slate-500"
             />
           </div>
@@ -176,7 +178,7 @@ export const ItemMasterTable: React.FC = () => {
               <tr>
                 <th className="py-3.5 px-4">品号 / コード</th>
                 <th className="py-3.5 px-4">品名・規格</th>
-                <th className="py-3.5 px-4">分類</th>
+                <th className="py-3.5 px-4">廠商 / 分類</th>
                 <th className="py-3.5 px-4 text-right">現在庫数</th>
                 <th className="py-3.5 px-4 text-right">安全在庫</th>
                 <th className="py-3.5 px-4">棚番</th>
@@ -209,9 +211,15 @@ export const ItemMasterTable: React.FC = () => {
                         )}
                       </td>
 
-                      {/* Category */}
+                      {/* Supplier & Category */}
                       <td className="py-3.5 px-4 whitespace-nowrap">
-                        <span className="px-2 py-1 rounded-md text-[11px] font-semibold bg-slate-800 text-slate-300 border border-slate-700">
+                        {item.supplier && (
+                          <div className="flex items-center gap-1 text-xs font-bold text-blue-300 mb-0.5">
+                            <Building2 className="w-3 h-3 text-blue-400" />
+                            <span>{item.supplier}</span>
+                          </div>
+                        )}
+                        <span className="px-2 py-0.5 rounded-md text-[10px] font-semibold bg-slate-800 text-slate-300 border border-slate-700">
                           {item.category}
                         </span>
                       </td>

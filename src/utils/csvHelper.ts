@@ -14,6 +14,7 @@ export class CsvHelper {
       '品名(Name)',
       '規格(Spec)',
       '分類(Category)',
+      '廠商(Supplier)',
       '基準単位(BaseUnit)',
       '現在在庫(CurrentStock)',
       '安全在庫(SafetyStock)',
@@ -34,6 +35,7 @@ export class CsvHelper {
         this.escapeCsv(item.name),
         this.escapeCsv(item.spec),
         this.escapeCsv(item.category),
+        this.escapeCsv(item.supplier || ''),
         this.escapeCsv(item.baseUnit),
         item.currentStock,
         item.safetyStock,
@@ -98,13 +100,33 @@ export class CsvHelper {
 
       const spec = cols[2]?.trim() || '';
       const category = cols[3]?.trim() || '未分類';
-      const baseUnit = cols[4]?.trim() || '個';
-      const currentStock = Number(cols[5]) || 0;
-      const safetyStock = Number(cols[6]) || 0;
-      const location = cols[7]?.trim() || 'A-01';
-      const qrCode = cols[8]?.trim() || `INV:v1:${code}`;
-      const convStr = cols[9]?.trim() || '';
-      const note = cols[10]?.trim() || '';
+      let supplier = '';
+      let baseUnit = '個';
+      let currentStock = 0;
+      let safetyStock = 0;
+      let location = 'A-01';
+      let qrCode = `INV:v1:${code}`;
+      let convStr = '';
+      let note = '';
+
+      if (cols.length >= 13) {
+        supplier = cols[4]?.trim() || '';
+        baseUnit = cols[5]?.trim() || '個';
+        currentStock = Number(cols[6]) || 0;
+        safetyStock = Number(cols[7]) || 0;
+        location = cols[8]?.trim() || 'A-01';
+        qrCode = cols[9]?.trim() || `INV:v1:${code}`;
+        convStr = cols[10]?.trim() || '';
+        note = cols[11]?.trim() || '';
+      } else {
+        baseUnit = cols[4]?.trim() || '個';
+        currentStock = Number(cols[5]) || 0;
+        safetyStock = Number(cols[6]) || 0;
+        location = cols[7]?.trim() || 'A-01';
+        qrCode = cols[8]?.trim() || `INV:v1:${code}`;
+        convStr = cols[9]?.trim() || '';
+        note = cols[10]?.trim() || '';
+      }
 
       // 換算設定パース "箱:50;袋:10"
       const unitConversions: { unit: string; multiplier: number }[] = [];
@@ -123,6 +145,7 @@ export class CsvHelper {
         name,
         spec,
         category,
+        supplier,
         baseUnit,
         currentStock,
         safetyStock,

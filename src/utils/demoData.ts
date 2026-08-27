@@ -7,6 +7,7 @@ export const INITIAL_DEMO_ITEMS: ItemMaster[] = [
     name: '六角穴付ボルト (SUS304)',
     spec: 'M6 × 20mm ステンレス',
     category: 'ボルト・締結部品',
+    supplier: 'ミスミ (MISUMI)',
     baseUnit: '個',
     currentStock: 450,
     safetyStock: 100,
@@ -26,6 +27,7 @@ export const INITIAL_DEMO_ITEMS: ItemMaster[] = [
     name: '丸形圧着端子 (JIS規格)',
     spec: 'R2-4 (0.5~2.0sq用)',
     category: '配線・電気資材',
+    supplier: 'ニチフ端子工業 (NICHIFU)',
     baseUnit: '個',
     currentStock: 80,
     safetyStock: 200, // 在庫割れアラート対象
@@ -45,6 +47,7 @@ export const INITIAL_DEMO_ITEMS: ItemMaster[] = [
     name: '耐候性結束バンド (黒)',
     spec: '長さ150mm 幅3.6mm ナイロン66',
     category: '配線・電気資材',
+    supplier: 'パンドウイット (Panduit)',
     baseUnit: '本',
     currentStock: 620,
     safetyStock: 150,
@@ -64,6 +67,7 @@ export const INITIAL_DEMO_ITEMS: ItemMaster[] = [
     name: 'ガラス管ヒューズ (速断型)',
     spec: '250V 5A 5.2×20mm',
     category: '電子パーツ',
+    supplier: '大東通信機 (DAITO)',
     baseUnit: '個',
     currentStock: 35,
     safetyStock: 50, // 在庫割れ警告
@@ -83,6 +87,7 @@ export const INITIAL_DEMO_ITEMS: ItemMaster[] = [
     name: 'ワンタッチ管継手 (ハーフユニオン)',
     spec: 'チューブ外径φ6 / 接続ねじR1/8',
     category: '空圧・配管部品',
+    supplier: 'SMC株式会社',
     baseUnit: '個',
     currentStock: 120,
     safetyStock: 30,
@@ -101,6 +106,7 @@ export const INITIAL_DEMO_ITEMS: ItemMaster[] = [
     name: 'Oリング (ニトリルゴム NBR-70)',
     spec: 'P-10 (内径9.8mm × 太さ1.9mm)',
     category: 'シール・パッキン',
+    supplier: 'NOK株式会社',
     baseUnit: '個',
     currentStock: 15,
     safetyStock: 40, // 在庫割れ警告

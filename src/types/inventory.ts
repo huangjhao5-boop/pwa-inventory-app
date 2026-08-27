@@ -8,7 +8,9 @@ export interface ItemMaster {
   code: string;               // 品号・JAN/EAN・型番
   name: string;               // 品名
   spec: string;               // 規格・型式 (例: M6×20mm, SUS304)
-  category: string;           // 分類 (例: ボルト・ナット, 電設資材, 消耗品)
+  category: string;           // 分類 (例: ボルト・締結部品, 電設資材, 消耗品)
+  supplier?: string;          // 廠商・サプライヤー (例: ミスミ, SMC, 日東電工)
+  imageUrl?: string;          // 写真 (Base64/URL)
   baseUnit: string;           // 基準単位 (例: 個, 本, 枚)
   currentStock: number;       // 現在庫数 (基準単位換算)
   safetyStock: number;        // 安全在庫数 (警告しきい値)
@@ -60,6 +62,14 @@ export interface AppSettings {
   offlineMode: boolean;
   viewMode: SystemViewMode;
   autoTorch: boolean;
+  firebaseConfig?: {
+    apiKey: string;
+    authDomain: string;
+    projectId: string;
+    storageBucket?: string;
+    messagingSenderId?: string;
+    appId?: string;
+  };
 }
 
 export type LabelLayout = 'A-ONE-24' | 'A-ONE-44' | 'SINGLE-THERMAL';
