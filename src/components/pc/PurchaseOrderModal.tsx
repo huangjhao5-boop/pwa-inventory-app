@@ -133,10 +133,10 @@ export const PurchaseOrderModal: React.FC<PurchaseOrderModalProps> = ({
   };
 
   // Export 1: 中西電機工業 注文書 Excel (.xlsx) 出力
-  const handleExportNakanishiExcel = () => {
+  const handleExportNakanishiExcel = async () => {
     if (orderItems.length === 0) return;
     try {
-      const fileName = NakanishiOrderExcelExporter.exportNakanishiOrder(orderItems, {
+      const fileName = await NakanishiOrderExcelExporter.exportNakanishiOrder(orderItems, {
         operatorName: settings.activeOperator || '黄',
         recipientCompany: '中西電機工業㈱',
         recipientPerson,
