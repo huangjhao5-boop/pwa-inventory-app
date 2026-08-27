@@ -18,6 +18,7 @@ import {
   Calendar,
   MapPin,
   Briefcase,
+  Edit3,
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 
@@ -40,12 +41,13 @@ export const PurchaseOrderModal: React.FC<PurchaseOrderModalProps> = ({
       const defaultConv = item.unitConversions?.[0] || { unit: item.baseUnit, multiplier: 1 };
       const deficit = Math.max(1, (item.safetyStock * 2) - item.currentStock);
       const orderQty = Math.max(1, Math.ceil(deficit / defaultConv.multiplier));
+      const defaultModelText = item.spec ? `${item.name} ${item.spec}` : item.name;
       return {
         item,
         orderQuantity: orderQty,
         orderUnit: defaultConv.unit,
         calculatedBaseQuantity: orderQty * defaultConv.multiplier,
-        note: '',
+        note: defaultModelText,
       };
     });
   });
@@ -90,6 +92,14 @@ export const PurchaseOrderModal: React.FC<PurchaseOrderModalProps> = ({
     });
   };
 
+  const handleUpdateModelText = (index: number, text: string) => {
+    setOrderItems((prev) => {
+      const next = [...prev];
+      next[index] = { ...next[index], note: text };
+      return next;
+    });
+  };
+
   const handleRemove = (index: number) => {
     setOrderItems((prev) => prev.filter((_, i) => i !== index));
   };
@@ -108,12 +118,13 @@ export const PurchaseOrderModal: React.FC<PurchaseOrderModalProps> = ({
       const defaultConv = item.unitConversions?.[0] || { unit: item.baseUnit, multiplier: 1 };
       const deficit = Math.max(1, (item.safetyStock * 2) - item.currentStock);
       const orderQty = Math.max(1, Math.ceil(deficit / defaultConv.multiplier));
+      const defaultModelText = item.spec ? `${item.name} ${item.spec}` : item.name;
       return {
         item,
         orderQuantity: orderQty,
         orderUnit: defaultConv.unit,
         calculatedBaseQuantity: orderQty * defaultConv.multiplier,
-        note: '',
+        note: defaultModelText,
       };
     });
 
@@ -133,7 +144,8 @@ export const PurchaseOrderModal: React.FC<PurchaseOrderModalProps> = ({
         defaultDesiredDelivery: desiredDelivery,
         defaultDeliveryLocation: deliveryLocation,
       });
-      addToast('success', `中西電機 注文書 (${fileName}) を出力しました！`);
+      const sheetCount = Math.max(1, Math.ceil(orderItems.length / 15));
+      addToast('success', `中西電機 注文書 (${fileName} / 計${sheetCount}シート) を出力しました！`);
       try {
         confetti({ particleCount: 70, spread: 60, origin: { y: 0.7 } });
       } catch {}
@@ -166,6 +178,8 @@ export const PurchaseOrderModal: React.FC<PurchaseOrderModalProps> = ({
     window.print();
   };
 
+  const totalSheets = Math.max(1, Math.ceil(orderItems.length / 15));
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md animate-in fade-in duration-200">
       <div className="bg-slate-900 border border-slate-700 rounded-3xl w-full max-w-4xl max-h-[90vh] shadow-2xl flex flex-col overflow-hidden">
@@ -176,17 +190,17 @@ export const PurchaseOrderModal: React.FC<PurchaseOrderModalProps> = ({
               <ShoppingCart className="w-6 h-6" />
             </div>
             <div>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
                 <h3 className="font-extrabold text-lg text-white">資材発注書作成 & エクスポート</h3>
                 <span className="px-2 py-0.5 rounded-lg bg-slate-800 border border-slate-700 font-mono text-xs text-amber-400 font-bold">
                   {orderNumber}
                 </span>
                 <span className="px-2 py-0.5 rounded-lg bg-emerald-950 border border-emerald-700 font-bold text-xs text-emerald-300">
-                  中西電機工業 様式対応
+                  中西電機 注文書様式完全準拠
                 </span>
               </div>
               <p className="text-xs text-slate-400">
-                発注品目と数量を選択し、「注文見積り書_中西電機」の正規Excelフォーマットで即時出力できます
+                発注品目の型番・数量・単位を直接調整し、「注文見積り書_中西電機」の正規Excelフォーマットで即時出力できます
               </p>
             </div>
           </div>
@@ -203,13 +217,13 @@ export const PurchaseOrderModal: React.FC<PurchaseOrderModalProps> = ({
           <div>
             <label className="text-slate-400 font-bold block mb-1 flex items-center gap-1">
               <Briefcase className="w-3.5 h-3.5 text-blue-400" />
-              <span>工番 (任意)</span>
+              <span>工番 (デフォルト空白)</span>
             </label>
             <input
               type="text"
               value={jobCode}
               onChange={(e) => setJobCode(e.target.value)}
-              placeholder="例: KF4641E"
+              placeholder="空白 (必要時入力)"
               className="w-full px-2.5 py-1.5 bg-slate-800 border border-slate-700 rounded-xl text-white font-mono focus:outline-none focus:border-blue-500 text-xs"
             />
           </div>
@@ -261,7 +275,8 @@ export const PurchaseOrderModal: React.FC<PurchaseOrderModalProps> = ({
         <div className="px-5 py-2.5 bg-slate-900 border-b border-slate-800 flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-2">
             <span className="text-xs font-bold text-slate-300">
-              発注対象: <strong className="text-amber-400 text-sm">{orderItems.length}</strong> 件 (最大15件/票)
+              発注対象: <strong className="text-amber-400 text-sm">{orderItems.length}</strong> 件
+              {orderItems.length > 15 ? ` (全${totalSheets}シートに自動分割)` : ' (1シート: 1~15件)'}
             </span>
             <button
               type="button"
@@ -291,92 +306,120 @@ export const PurchaseOrderModal: React.FC<PurchaseOrderModalProps> = ({
           ) : (
             orderItems.map((order, idx) => {
               const isLow = order.item.currentStock <= order.item.safetyStock;
+              const sheetNo = Math.floor(idx / 15) + 1;
               return (
                 <div
                   key={order.item.id}
-                  className="bg-slate-950/70 border border-slate-800 rounded-2xl p-3.5 sm:p-4 shadow-sm flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3"
+                  className="bg-slate-950/70 border border-slate-800 rounded-2xl p-3.5 sm:p-4 shadow-sm flex flex-col gap-2.5"
                 >
-                  {/* Left: Item Info */}
-                  <div className="flex-1 min-w-0">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="font-mono text-xs font-bold text-amber-400 bg-amber-950/80 px-2 py-0.5 rounded-lg border border-amber-800">
-                        NO. {idx + 1}
-                      </span>
-                      <span className="font-mono text-xs font-bold text-slate-400 bg-slate-900 px-2 py-0.5 rounded-lg border border-slate-800">
-                        {order.item.code}
-                      </span>
-                      <span className="text-xs font-bold text-blue-400 flex items-center gap-0.5">
-                        <Box className="w-3 h-3" />
-                        <span>{order.item.location}</span>
-                      </span>
-                      {order.item.supplier && (
-                        <span className="text-xs font-bold text-slate-300 flex items-center gap-1">
-                          <Building2 className="w-3 h-3 text-blue-400" />
-                          <span>{order.item.supplier}</span>
+                  {/* Top Row: Item Info & Controls */}
+                  <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="font-mono text-xs font-bold text-amber-400 bg-amber-950/80 px-2 py-0.5 rounded-lg border border-amber-800">
+                          NO. {idx + 1} {totalSheets > 1 && `(Sheet ${sheetNo})`}
                         </span>
+                        <span className="font-mono text-xs font-bold text-slate-400 bg-slate-900 px-2 py-0.5 rounded-lg border border-slate-800">
+                          {order.item.code}
+                        </span>
+                        <span className="text-xs font-bold text-blue-400 flex items-center gap-0.5">
+                          <Box className="w-3 h-3" />
+                          <span>{order.item.location}</span>
+                        </span>
+                        {order.item.supplier && (
+                          <span className="text-xs font-bold text-slate-300 flex items-center gap-1">
+                            <Building2 className="w-3 h-3 text-blue-400" />
+                            <span>{order.item.supplier}</span>
+                          </span>
+                        )}
+                      </div>
+
+                      <h4 className="font-black text-sm sm:text-base text-white truncate mt-1">
+                        {order.item.name}
+                      </h4>
+                      {order.item.spec && (
+                        <p className="text-xs text-amber-300 font-bold truncate mt-0.5">規格型番: {order.item.spec}</p>
                       )}
+
+                      <div className="flex items-center gap-3 text-xs mt-1">
+                        <span className="text-slate-400">
+                          現在庫: <strong className={isLow ? 'text-amber-400' : 'text-slate-200'}>{order.item.currentStock}</strong> {order.item.baseUnit}
+                        </span>
+                        <span className="text-slate-400">
+                          安全在庫: <strong>{order.item.safetyStock}</strong> {order.item.baseUnit}
+                        </span>
+                      </div>
                     </div>
 
-                    <h4 className="font-black text-sm sm:text-base text-white truncate mt-1">
-                      {order.item.name}
-                    </h4>
-                    {order.item.spec && (
-                      <p className="text-xs text-amber-300 font-bold truncate mt-0.5">規格型番: {order.item.spec}</p>
-                    )}
+                    {/* Right: Quantity Controls */}
+                    <div className="flex items-center gap-2.5 w-full sm:w-auto justify-between sm:justify-end border-t sm:border-t-0 border-slate-800 pt-2 sm:pt-0">
+                      <div className="text-right">
+                        <label className="text-[10px] text-slate-500 font-bold block mb-0.5">発注数量 & 単位</label>
+                        <div className="flex items-center gap-1.5">
+                          <input
+                            type="number"
+                            min="1"
+                            value={order.orderQuantity}
+                            onChange={(e) => handleUpdateQty(idx, parseInt(e.target.value, 10) || 1)}
+                            className="w-16 px-2 py-1.5 bg-slate-800 border border-slate-700 rounded-xl text-center text-sm font-black text-amber-400 focus:outline-none focus:border-amber-500"
+                          />
 
-                    <div className="flex items-center gap-3 text-xs mt-1">
-                      <span className="text-slate-400">
-                        現在庫: <strong className={isLow ? 'text-amber-400' : 'text-slate-200'}>{order.item.currentStock}</strong> {order.item.baseUnit}
-                      </span>
-                      <span className="text-slate-400">
-                        安全在庫: <strong>{order.item.safetyStock}</strong> {order.item.baseUnit}
-                      </span>
+                          {/* Unit Select & Custom input */}
+                          <input
+                            type="text"
+                            value={order.orderUnit}
+                            onChange={(e) => handleUpdateUnit(idx, e.target.value)}
+                            list={`units-list-${idx}`}
+                            className="w-20 px-2 py-1.5 bg-slate-800 border border-slate-700 rounded-xl text-xs font-bold text-white text-center focus:outline-none focus:border-blue-500"
+                            placeholder="単位"
+                          />
+                          <datalist id={`units-list-${idx}`}>
+                            <option value={order.item.baseUnit} />
+                            <option value="P" />
+                            <option value="巻" />
+                            <option value="袋" />
+                            <option value="箱" />
+                            <option value="個" />
+                            <option value="本" />
+                            <option value="組" />
+                            <option value="式" />
+                            {order.item.unitConversions?.map((c) => (
+                              <option key={c.unit} value={c.unit} />
+                            ))}
+                          </datalist>
+                        </div>
+
+                        {order.calculatedBaseQuantity !== order.orderQuantity && (
+                          <span className="text-[10px] text-slate-400 block mt-0.5">
+                            (= {order.calculatedBaseQuantity} {order.item.baseUnit})
+                          </span>
+                        )}
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => handleRemove(idx)}
+                        className="p-2 text-slate-500 hover:text-rose-400 rounded-xl hover:bg-slate-800 transition"
+                        title="リストから除外"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
                     </div>
                   </div>
 
-                  {/* Right: Quantity Controls */}
-                  <div className="flex items-center gap-2.5 w-full sm:w-auto justify-between sm:justify-end border-t sm:border-t-0 border-slate-800 pt-2 sm:pt-0">
-                    <div className="text-right">
-                      <label className="text-[10px] text-slate-500 font-bold block mb-0.5">発注数量 & 単位</label>
-                      <div className="flex items-center gap-1.5">
-                        <input
-                          type="number"
-                          min="1"
-                          value={order.orderQuantity}
-                          onChange={(e) => handleUpdateQty(idx, parseInt(e.target.value, 10) || 1)}
-                          className="w-16 px-2 py-1.5 bg-slate-800 border border-slate-700 rounded-xl text-center text-sm font-black text-amber-400 focus:outline-none focus:border-amber-500"
-                        />
-
-                        {/* Unit Select */}
-                        <select
-                          value={order.orderUnit}
-                          onChange={(e) => handleUpdateUnit(idx, e.target.value)}
-                          className="px-2.5 py-1.5 bg-slate-800 border border-slate-700 rounded-xl text-xs font-bold text-white focus:outline-none"
-                        >
-                          <option value={order.item.baseUnit}>{order.item.baseUnit}</option>
-                          {order.item.unitConversions?.map((c) => (
-                            <option key={c.unit} value={c.unit}>
-                              {c.unit} (×{c.multiplier})
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-
-                      {order.calculatedBaseQuantity !== order.orderQuantity && (
-                        <span className="text-[10px] text-slate-400 block mt-0.5">
-                          (= {order.calculatedBaseQuantity} {order.item.baseUnit})
-                        </span>
-                      )}
-                    </div>
-
-                    <button
-                      type="button"
-                      onClick={() => handleRemove(idx)}
-                      className="p-2 text-slate-500 hover:text-rose-400 rounded-xl hover:bg-slate-800 transition"
-                      title="リストから除外"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
+                  {/* Bottom Row: Editable Excel Model Text (型番列の出力文字列) */}
+                  <div className="bg-slate-900/80 p-2 rounded-xl border border-slate-800 flex items-center gap-2">
+                    <label className="text-[11px] text-slate-400 font-bold flex items-center gap-1 shrink-0">
+                      <Edit3 className="w-3 h-3 text-blue-400" />
+                      <span>Excel「型番」列の印字内容:</span>
+                    </label>
+                    <input
+                      type="text"
+                      value={order.note || ''}
+                      onChange={(e) => handleUpdateModelText(idx, e.target.value)}
+                      placeholder="例: マークチューブ Φ4.2mm / 1.25Y-3.5..."
+                      className="flex-1 px-2.5 py-1 bg-slate-950 border border-slate-800 rounded-lg text-xs text-white font-mono focus:outline-none focus:border-blue-500"
+                    />
                   </div>
                 </div>
               );
@@ -388,8 +431,8 @@ export const PurchaseOrderModal: React.FC<PurchaseOrderModalProps> = ({
         <div className="p-4 bg-slate-950 border-t border-slate-800 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
           <div className="text-xs text-slate-400">
             合計 <strong className="text-white font-bold">{orderItems.length}</strong> 品目
-            {orderItems.length > 15 && (
-              <span className="text-amber-400 ml-1 font-bold">（※15件以降は2枚目出力となります）</span>
+            {totalSheets > 1 && (
+              <span className="text-amber-400 ml-1 font-bold">（※全 {totalSheets} シートに自動出力）</span>
             )}
           </div>
 
