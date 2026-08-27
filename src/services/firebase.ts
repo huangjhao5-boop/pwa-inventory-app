@@ -88,7 +88,15 @@ class CloudSyncService {
       };
     }
 
-    return null;
+    // Default configuration for the user's project
+    return {
+      apiKey: "AIzaSyDlw1rWP925sdZZeQMdMrbRi-sYVlegjIc",
+      authDomain: "pwa-inventory-app-9c88d.firebaseapp.com",
+      projectId: "pwa-inventory-app-9c88d",
+      storageBucket: "pwa-inventory-app-9c88d.firebasestorage.app",
+      messagingSenderId: "499776972100",
+      appId: "1:499776972100:web:2eb1cd3319039c5cea6311",
+    };
   }
 
   saveConfig(config: FirebaseConfigOptions): boolean {
