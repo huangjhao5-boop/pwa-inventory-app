@@ -182,15 +182,44 @@ export const SettingsView: React.FC = () => {
               value={operatorInput}
               onChange={(e) => setOperatorInput(e.target.value)}
               className="flex-1 px-3.5 py-2 bg-slate-800 border border-slate-700 rounded-xl text-sm text-white focus:outline-none focus:border-blue-500 font-medium"
-              placeholder="例: 現場担当-01 / 山田"
+              placeholder="例: M.K(TW) / 作業員A"
             />
             <button
               type="submit"
               className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-xl text-xs transition"
             >
-              更新
+              変更・保存
             </button>
           </form>
+
+          {/* Quick Operator Pills */}
+          <div className="space-y-1.5 pt-1">
+            <span className="text-[11px] text-slate-400 font-bold block">登録済み作業員（タップして瞬時に切替）:</span>
+            <div className="flex flex-wrap gap-1.5">
+              {(settings.recentOperators || ['M.K(TW)', '現場作業員-A', '電気工事担当']).map((op) => {
+                const isActive = settings.activeOperator === op;
+                return (
+                  <button
+                    key={op}
+                    type="button"
+                    onClick={() => {
+                      setOperatorInput(op);
+                      updateSettings({ activeOperator: op });
+                      addToast('success', `担当作業員を「${op}」に切り替えました`);
+                    }}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1 border ${
+                      isActive
+                        ? 'bg-blue-600 border-blue-400 text-white shadow-md'
+                        : 'bg-slate-800/90 border-slate-700 text-slate-300 hover:bg-slate-700 hover:text-white'
+                    }`}
+                  >
+                    <span>{op}</span>
+                    {isActive && <span className="text-[10px] bg-blue-400 text-slate-950 px-1 rounded font-black">選択中</span>}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
         </div>
 
         {/* Section 2: Gemini AI Vision Setting */}

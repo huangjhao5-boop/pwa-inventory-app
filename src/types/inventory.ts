@@ -135,6 +135,7 @@ export interface AppSettings {
   vibrationEnabled: boolean;
   debounceMs: number;
   activeOperator: string;
+  recentOperators?: string[];
   offlineMode: boolean;
   viewMode: SystemViewMode;
   autoTorch: boolean;

@@ -93,7 +93,8 @@ const DEFAULT_SETTINGS: AppSettings = {
   soundEnabled: true,
   vibrationEnabled: true,
   debounceMs: 1500,
-  activeOperator: '現場担当-01',
+  activeOperator: 'M.K(TW)',
+  recentOperators: ['M.K(TW)', '現場作業員-A', '電気工事担当'],
   offlineMode: false,
   viewMode: 'FIELD',
   autoTorch: false,
@@ -334,7 +335,17 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
   }, []);
 
   const updateSettings = useCallback(async (newSettings: Partial<AppSettings>) => {
-    setSettings((prev) => ({ ...prev, ...newSettings }));
+    setSettings((prev) => {
+      const next = { ...prev, ...newSettings };
+      if (newSettings.activeOperator && newSettings.activeOperator.trim()) {
+        const trimmed = newSettings.activeOperator.trim();
+        const currentList = prev.recentOperators || ['M.K(TW)', '現場作業員-A'];
+        if (!currentList.includes(trimmed)) {
+          next.recentOperators = [trimmed, ...currentList.filter((n) => n !== trimmed)].slice(0, 10);
+        }
+      }
+      return next;
+    });
     for (const [key, val] of Object.entries(newSettings)) {
       await LocalDatabaseService.saveSetting(key, val);
     }

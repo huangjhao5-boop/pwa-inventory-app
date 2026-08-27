@@ -21,6 +21,7 @@ import {
   Building2,
   Tag,
   CheckCircle2,
+  Check,
   Image as ImageIcon,
   Plus,
   Trash2,
@@ -88,12 +89,12 @@ export const ActionBottomSheet: React.FC = () => {
     items,
   } = useInventory();
 
-  // 'MENU' | 'KEYPAD' | 'INQUIRY' | 'NEW_ITEM' | 'NEW_ITEM_INBOUND'
   const [currentStep, setCurrentStep] = useState<'MENU' | 'KEYPAD' | 'INQUIRY' | 'NEW_ITEM' | 'NEW_ITEM_INBOUND'>('MENU');
   const [selectedAction, setSelectedAction] = useState<ActionType>('IN');
   const [quantity, setQuantity] = useState<number>(1);
   const [selectedUnit, setSelectedUnit] = useState<string>('個');
   const [note, setNote] = useState<string>('');
+  const [isConfirmModalOpen, setIsConfirmModalOpen] = useState<boolean>(false);
 
   // New Item form
   const [newItemName, setNewItemName] = useState('');
@@ -198,7 +199,28 @@ export const ActionBottomSheet: React.FC = () => {
       unit: activeScannedItem.baseUnit,
       multiplier: 1,
     };
+    const baseQty = quantity * conv.multiplier;
+
+    if (selectedAction === 'OUT') {
+      if (baseQty > activeScannedItem.currentStock) {
+        addToast('error', `⚠️ 出庫数量 (${baseQty} ${activeScannedItem.baseUnit}) が現在庫数 (${activeScannedItem.currentStock} ${activeScannedItem.baseUnit}) を超過しています！`);
+        return;
+      }
+      setIsConfirmModalOpen(true);
+      return;
+    }
+
     await recordTransaction(activeScannedItem, selectedAction, quantity, selectedUnit, conv.multiplier, note);
+  };
+
+  const handleExecuteOut = async () => {
+    if (!activeScannedItem) return;
+    const conv = activeScannedItem.unitConversions?.find((u) => u.unit === selectedUnit) || {
+      unit: activeScannedItem.baseUnit,
+      multiplier: 1,
+    };
+    setIsConfirmModalOpen(false);
+    await recordTransaction(activeScannedItem, 'OUT', quantity, selectedUnit, conv.multiplier, note);
   };
 
   // AI 視覚認識 & 自己学習ナレッジ照合
@@ -543,13 +565,15 @@ export const ActionBottomSheet: React.FC = () => {
                 onSelectUnit={setSelectedUnit}
                 onConfirm={handleConfirmTransaction}
                 soundEnabled={settings.soundEnabled}
+                maxStock={activeScannedItem.currentStock}
+                isOutAction={selectedAction === 'OUT'}
                 confirmLabel={
                   selectedAction === 'IN'
                     ? settings.requirePcApprovalForInbound
                       ? `承認待ち送信 (+${quantity} ${selectedUnit})`
                       : `入荷確定 (+${quantity} ${selectedUnit})`
                     : selectedAction === 'OUT'
-                    ? `出庫確定 (-${quantity} ${selectedUnit})`
+                    ? `出庫確認へ (-${quantity} ${selectedUnit})`
                     : `発注登録 (${quantity} ${selectedUnit})`
                 }
                 confirmColor={
@@ -876,6 +900,70 @@ export const ActionBottomSheet: React.FC = () => {
           )}
         </div>
       </div>
+
+      {/* ── 出庫二次確認モーダル ── */}
+      {isConfirmModalOpen && activeScannedItem && (
+        <div className="fixed inset-0 z-60 flex items-center justify-center p-4 bg-slate-950/85 backdrop-blur-md animate-in fade-in duration-150">
+          <div className="bg-slate-900 border border-slate-700 rounded-3xl p-5 w-full max-w-sm shadow-2xl space-y-4">
+            <div className="text-center space-y-1">
+              <div className="w-12 h-12 rounded-2xl bg-rose-600/20 text-rose-400 border border-rose-500/40 flex items-center justify-center mx-auto mb-2 shadow-inner">
+                <ArrowUpCircle className="w-7 h-7 stroke-[2.5]" />
+              </div>
+              <h3 className="text-lg font-black text-white">出庫内容の最終確認</h3>
+              <p className="text-xs text-slate-400">以下の内容で在庫を払い出します。よろしいですか？</p>
+            </div>
+
+            <div className="bg-slate-950 p-4 rounded-2xl border border-slate-800 space-y-2.5 text-xs">
+              <div className="flex justify-between items-start text-slate-300 gap-2">
+                <span className="text-slate-400 shrink-0">対象品目:</span>
+                <strong className="text-white text-right break-words">{activeScannedItem.name}</strong>
+              </div>
+              <div className="flex justify-between text-slate-300">
+                <span className="text-slate-400">出庫数量:</span>
+                <strong className="text-rose-400 font-black text-sm">
+                  {quantity} {selectedUnit}
+                  {(() => {
+                    const conv = activeScannedItem.unitConversions?.find((u) => u.unit === selectedUnit) || { multiplier: 1 };
+                    return conv.multiplier > 1 ? ` (換算: -${quantity * conv.multiplier} ${activeScannedItem.baseUnit})` : '';
+                  })()}
+                </strong>
+              </div>
+              <div className="flex justify-between text-slate-300">
+                <span className="text-slate-400">現在庫:</span>
+                <span className="font-bold">{activeScannedItem.currentStock} {activeScannedItem.baseUnit}</span>
+              </div>
+              <div className="flex justify-between text-slate-300 pt-1.5 border-t border-slate-800">
+                <span className="text-slate-300 font-bold">出庫後残在庫:</span>
+                <strong className="text-emerald-400 font-black text-base">
+                  {Math.max(0, activeScannedItem.currentStock - quantity * ((activeScannedItem.unitConversions?.find((u) => u.unit === selectedUnit)?.multiplier) || 1))} {activeScannedItem.baseUnit}
+                </strong>
+              </div>
+              <div className="flex justify-between text-slate-400 text-[11px] pt-1">
+                <span>担当作業員:</span>
+                <strong className="text-blue-400 font-bold">{settings.activeOperator}</strong>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2.5 pt-1">
+              <button
+                type="button"
+                onClick={() => setIsConfirmModalOpen(false)}
+                className="py-3 bg-slate-800 hover:bg-slate-700 active:scale-95 text-slate-300 font-bold text-xs rounded-xl transition"
+              >
+                キャンセル
+              </button>
+              <button
+                type="button"
+                onClick={handleExecuteOut}
+                className="py-3 bg-rose-600 hover:bg-rose-500 active:scale-95 text-white font-extrabold text-xs rounded-xl shadow-lg shadow-rose-950/50 transition flex items-center justify-center gap-1.5"
+              >
+                <Check className="w-4 h-4 stroke-[3]" />
+                <span>出庫を実行する</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
