@@ -3,6 +3,7 @@ import { ItemMaster, UnitConversion, PRESET_UNITS } from '../../types/inventory'
 import { useInventory } from '../../context/InventoryContext';
 import { AiVisionService } from '../../utils/geminiAiVision';
 import { VisualKnowledgeService } from '../../utils/visualKnowledgeService';
+import { ImageCompressor } from '../../utils/imageCompressor';
 import { X, Plus, Trash2, Layers, Building2, Box, Loader2, Sparkles, Image as ImageIcon } from 'lucide-react';
 
 interface ItemFormModalProps {
@@ -108,7 +109,8 @@ export const ItemFormModal: React.FC<ItemFormModalProps> = ({
     if (!file) return;
     const reader = new FileReader();
     reader.onload = async (event) => {
-      const base64 = event.target?.result as string;
+      const rawBase64 = event.target?.result as string;
+      const base64 = await ImageCompressor.compressImage(rawBase64, 360, 360, 0.65);
       setImageUrl(base64);
 
       // Run AI Vision & OCR

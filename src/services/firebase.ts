@@ -29,7 +29,10 @@ function sanitizeForFirestore<T extends Record<string, any>>(obj: T): Record<str
   for (const key of Object.keys(obj)) {
     const val = obj[key];
     if (val !== undefined) {
-      if (val !== null && typeof val === 'object' && !Array.isArray(val) && !(val instanceof Date)) {
+      if (typeof val === 'string' && val.length > 400000 && val.startsWith('data:image')) {
+        // Firestore 1MB制限を超えないよう保護
+        result[key] = val.slice(0, 80000);
+      } else if (val !== null && typeof val === 'object' && !Array.isArray(val) && !(val instanceof Date)) {
         result[key] = sanitizeForFirestore(val);
       } else if (Array.isArray(val)) {
         result[key] = val.map((item) =>
@@ -344,7 +347,10 @@ class CloudSyncService {
         (snapshot) => {
           snapshot.docChanges().forEach((change) => {
             if (change.type === 'removed') {
-              onRemoteItemUpdate({ id: change.doc.id } as ItemMaster, true);
+              // pendingWrites でのローカル失敗ロールバックによる誤削除を防止
+              if (!snapshot.metadata.hasPendingWrites) {
+                onRemoteItemUpdate({ id: change.doc.id } as ItemMaster, true);
+              }
             } else if (change.type === 'added' || change.type === 'modified') {
               const data = change.doc.data() as ItemMaster;
               if (data.id && data.code && data.name) {
@@ -381,7 +387,9 @@ class CloudSyncService {
           (snapshot) => {
             snapshot.docChanges().forEach((change) => {
               if (change.type === 'removed') {
-                onRemotePendingUpdate({ id: change.doc.id } as PendingInbound, true);
+                if (!snapshot.metadata.hasPendingWrites) {
+                  onRemotePendingUpdate({ id: change.doc.id } as PendingInbound, true);
+                }
               } else if (change.type === 'added' || change.type === 'modified') {
                 const data = change.doc.data() as PendingInbound;
                 if (data.id && data.itemCode) {

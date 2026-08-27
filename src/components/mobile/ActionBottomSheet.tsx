@@ -5,6 +5,7 @@ import { NumericKeypad } from './NumericKeypad';
 import { StockInquiryCard } from './StockInquiryCard';
 import { AiVisionService } from '../../utils/geminiAiVision';
 import { VisualKnowledgeService } from '../../utils/visualKnowledgeService';
+import { ImageCompressor } from '../../utils/imageCompressor';
 import {
   ArrowDownCircle,
   ArrowUpCircle,
@@ -186,10 +187,13 @@ export const ActionBottomSheet: React.FC = () => {
     if (!file) return;
     const reader = new FileReader();
     reader.onload = async (event) => {
-      const base64 = event.target?.result as string;
-      setItemImage(base64);
+      const rawBase64 = event.target?.result as string;
       setIsVisionProcessing(true);
       setVisionBadgeMessage(null);
+
+      // 高画質カメラ写真をFirestore・IDB安全な軽量サイズ（約25KB）に高速圧縮
+      const base64 = await ImageCompressor.compressImage(rawBase64, 360, 360, 0.65);
+      setItemImage(base64);
 
       try {
         const result = await AiVisionService.smartRecognize(
@@ -354,14 +358,15 @@ export const ActionBottomSheet: React.FC = () => {
       supplier: newItemSupplier.trim() || undefined,
       imageUrl: itemImage || undefined,
       baseUnit: newItemBaseUnit,
-      currentStock: 0,
+      currentStock: quantity,
       safetyStock: Number(newItemSafetyStock) || 0,
       location: newItemBoxName.trim() || '端子ボックス (A-01)',
       qrCode: `INV:v1:${activeScannedCode}`,
       unitConversions: allConversions,
       updatedAt: new Date().toISOString(),
     };
-    await recordTransaction(item, 'IN', quantity, selectedUnit, 1, '新規登録初回入荷');
+    await saveItem(item);
+    await recordTransaction(item, 'IN', quantity, selectedUnit, 1, '新規登録初回入荷', false);
   };
 
   return (
