@@ -46,7 +46,26 @@ export const CsvImportExportModal: React.FC<CsvImportExportModalProps> = ({
     if (parsedItems.length === 0) return;
     setIsProcessing(true);
     try {
-      await importItems(parsedItems);
+      const completeItems: ItemMaster[] = parsedItems.map((item) => ({
+        id: item.id || `item-${item.code || Date.now()}`,
+        code: item.code || `CODE-${Date.now()}`,
+        name: item.name || '未命名商品',
+        spec: item.spec || '',
+        category: item.category || '一般部品',
+        supplier: item.supplier || undefined,
+        imageUrl: item.imageUrl || undefined,
+        baseUnit: item.baseUnit || '個',
+        currentStock: Number(item.currentStock) || 0,
+        safetyStock: Number(item.safetyStock) || 0,
+        location: item.location || '1號盒 (A-01)',
+        qrCode: item.qrCode || `INV:v1:${item.code}`,
+        unitConversions: item.unitConversions || [{ unit: item.baseUnit || '個', multiplier: 1 }],
+        updatedAt: new Date().toISOString(),
+        note: item.note || undefined,
+      }));
+
+      await importItems(completeItems);
+      addToast('success', `${completeItems.length}件の品目をインポートしました`);
       onClose();
     } catch (e) {
       console.error(e);
