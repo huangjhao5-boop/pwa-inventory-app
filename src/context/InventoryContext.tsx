@@ -202,6 +202,9 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
       setPendingInbounds(storedPendings);
       if (savedSettings && Object.keys(savedSettings).length > 0) {
         setSettings((prev) => ({ ...prev, ...savedSettings }));
+        if (savedSettings.viewMode === 'PC_ADMIN') {
+          setActiveTab('ITEMS');
+        }
       }
 
       const cloudEnabled = cloudSync.isCloudEnabled();
@@ -330,8 +333,8 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
     setIsBottomSheetOpen(false);
     setActiveScannedItem(null);
     setActiveScannedCode(null);
-    setActiveTab('SCAN');
-  }, []);
+    setActiveTab(settings.viewMode === 'PC_ADMIN' ? 'ITEMS' : 'SCAN');
+  }, [settings.viewMode]);
 
   // ─── Item CRUD ───
   const saveItem = useCallback(async (item: ItemMaster) => {

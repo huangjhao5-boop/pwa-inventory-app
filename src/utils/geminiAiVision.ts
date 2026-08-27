@@ -1,8 +1,9 @@
 import { ItemMaster } from '../types/inventory';
 import { OcrHelper } from './ocrHelper';
+import { VisualKnowledgeService } from './visualKnowledgeService';
 
 export interface AiVisionResult {
-  source: 'GEMINI_AI' | 'IMAGE_MATCH' | 'LOCAL_OCR';
+  source: 'LEARNED_MEMORY' | 'IMAGE_MATCH' | 'GEMINI_AI' | 'LOCAL_OCR';
   matchedExistingItem?: ItemMaster;
   suggestedName?: string;
   suggestedSpec?: string;
@@ -23,14 +24,11 @@ export class AiVisionService {
     capturedImageBase64: string,
     existingItems: ItemMaster[]
   ): ItemMaster | null {
-    // 基準画像が登録されている品目をフィルタ
     const itemsWithImages = existingItems.filter((i) => Boolean(i.imageUrl));
     if (itemsWithImages.length === 0) return null;
 
-    // 完全一致または画像サイズ・ハッシュ等の類似性チェック
     const matched = itemsWithImages.find((item) => {
       if (!item.imageUrl) return false;
-      // 単純一致チェック
       if (item.imageUrl === capturedImageBase64) return true;
       return false;
     });
@@ -46,7 +44,6 @@ export class AiVisionService {
     apiKey: string
   ): Promise<AiVisionResult | null> {
     try {
-      // base64 データヘッダーの除去
       const base64Data = imageBase64.replace(/^data:image\/\w+;base64,/, '');
       const mimeType = imageBase64.match(/^data:(image\/\w+);base64,/)?.[1] || 'image/jpeg';
 
@@ -116,7 +113,7 @@ export class AiVisionService {
         suggestedBaseUnit: parsed.baseUnit || '個',
         suggestedBoxName: parsed.boxName || '端子ボックス (A-01)',
         suggestedQuantity: Number(parsed.suggestedQuantity) || 1,
-        confidenceScore: Number(parsed.confidenceScore) || 90,
+        confidenceScore: Number(parsed.confidenceScore) || 92,
         rawAnalysis: parsed.summary,
       };
     } catch (err) {
@@ -126,7 +123,11 @@ export class AiVisionService {
   }
 
   /**
-   * 総合画像解析エンジン（基準写真照合 -> Gemini AI -> 高度ローカルOCR の順で高精度判定）
+   * 総合スマート認識エンジン：
+   * 1. 登録済み基準画像との完全照合
+   * 2. 過去のユーザー修正に基づく自己学習ナレッジ（Visual Knowledge Bank）照合
+   * 3. Gemini AI マルチモーダル視覚認識（APIキー設定時）
+   * 4. 高精度ローカル電工 OCR + 学習特徴照合
    */
   static async smartRecognize(
     imageBase64: string,
@@ -150,7 +151,33 @@ export class AiVisionService {
       };
     }
 
-    // 2. Gemini AI マルチモーダル認識（APIキー設定時）
+    // 先に OCR テキストを取得（学習データ照合およびフォールバック用）
+    const ocrResult = await OcrHelper.recognizeImage(imageBase64);
+
+    // 2. 過去のユーザー修正・学習ナレッジからの検索
+    const learnedMatch = await VisualKnowledgeService.findBestMatch(
+      imageBase64,
+      ocrResult.rawText,
+      existingItems
+    );
+
+    if (learnedMatch.matchedEntry && learnedMatch.confidenceScore >= 60) {
+      const entry = learnedMatch.matchedEntry;
+      return {
+        source: 'LEARNED_MEMORY',
+        matchedExistingItem: learnedMatch.matchedItem || undefined,
+        suggestedName: entry.name,
+        suggestedSpec: entry.spec,
+        suggestedSupplier: entry.supplier,
+        suggestedCategory: entry.category || '配線・電気資材',
+        suggestedBaseUnit: entry.baseUnit || '個',
+        suggestedBoxName: entry.boxName || '端子ボックス (A-01)',
+        confidenceScore: learnedMatch.confidenceScore,
+        rawAnalysis: `🧠 ${learnedMatch.explanation}`,
+      };
+    }
+
+    // 3. Gemini AI マルチモーダル認識（APIキー設定時）
     if (apiKey && apiKey.trim().length > 5) {
       const aiResult = await this.analyzeWithGemini(imageBase64, apiKey.trim());
       if (aiResult) {
@@ -158,8 +185,7 @@ export class AiVisionService {
       }
     }
 
-    // 3. 高精度ローカル電工 OCR フォールバック
-    const ocrResult = await OcrHelper.recognizeImage(imageBase64);
+    // 4. 高精度ローカル電工 OCR フォールバック
     return {
       source: 'LOCAL_OCR',
       suggestedName: ocrResult.suggestedName,

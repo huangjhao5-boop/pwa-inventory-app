@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { ItemMaster, UnitConversion, PRESET_UNITS } from '../../types/inventory';
 import { useInventory } from '../../context/InventoryContext';
 import { AiVisionService } from '../../utils/geminiAiVision';
+import { VisualKnowledgeService } from '../../utils/visualKnowledgeService';
 import { X, Plus, Trash2, Layers, Building2, Box, Loader2, Sparkles, Image as ImageIcon } from 'lucide-react';
 
 interface ItemFormModalProps {
@@ -160,6 +161,10 @@ export const ItemFormModal: React.FC<ItemFormModalProps> = ({
       updatedAt: new Date().toISOString(),
       note: note.trim() || undefined,
     };
+
+    if (imageUrl) {
+      VisualKnowledgeService.learnFromItem(item, imageUrl);
+    }
 
     await saveItem(item);
     onClose();

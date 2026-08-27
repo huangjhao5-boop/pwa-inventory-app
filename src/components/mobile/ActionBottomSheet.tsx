@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useInventory } from '../../context/InventoryContext';
-import { ActionType, ItemMaster, PRESET_UNITS } from '../../types/inventory';
+import { ActionType, ItemMaster, PRESET_UNITS, UnitConversion } from '../../types/inventory';
 import { NumericKeypad } from './NumericKeypad';
 import { StockInquiryCard } from './StockInquiryCard';
 import { AiVisionService } from '../../utils/geminiAiVision';
+import { VisualKnowledgeService } from '../../utils/visualKnowledgeService';
 import {
   ArrowDownCircle,
   ArrowUpCircle,
@@ -20,6 +21,8 @@ import {
   Tag,
   CheckCircle2,
   Image as ImageIcon,
+  Plus,
+  Trash2,
 } from 'lucide-react';
 
 // ─── 電工向けプリセット（日本語） ───────────────────
@@ -101,13 +104,21 @@ export const ActionBottomSheet: React.FC = () => {
   const [newItemBoxName, setNewItemBoxName] = useState('端子ボックス (A-01)');
   const [itemImage, setItemImage] = useState<string | null>(null);
 
+  // Multi-level unit conversions (箱, 箱(小), 袋, パック, 個)
+  const [newItemConversions, setNewItemConversions] = useState<UnitConversion[]>([
+    { unit: '箱', multiplier: 1000 },
+    { unit: '袋', multiplier: 100 },
+    { unit: 'パック', multiplier: 10 },
+  ]);
+
   // 初回登録時の入庫数量
   const [initialInboundQty, setInitialInboundQty] = useState(1);
 
-  // AI & Vision state
+  // AI & Vision & Learning state
   const [isVisionProcessing, setIsVisionProcessing] = useState(false);
   const [visionBadgeMessage, setVisionBadgeMessage] = useState<string | null>(null);
-  const [visionSource, setVisionSource] = useState<'GEMINI_AI' | 'IMAGE_MATCH' | 'LOCAL_OCR' | null>(null);
+  const [visionSource, setVisionSource] = useState<'LEARNED_MEMORY' | 'GEMINI_AI' | 'IMAGE_MATCH' | 'LOCAL_OCR' | null>(null);
+  const [rawOcrText, setRawOcrText] = useState<string>('');
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -131,7 +142,13 @@ export const ActionBottomSheet: React.FC = () => {
         setItemImage(null);
         setVisionBadgeMessage(null);
         setVisionSource(null);
+        setRawOcrText('');
         setInitialInboundQty(1);
+        setNewItemConversions([
+          { unit: '箱', multiplier: 1000 },
+          { unit: '袋', multiplier: 100 },
+          { unit: 'パック', multiplier: 10 },
+        ]);
       }
     }
   }, [isBottomSheetOpen, activeScannedItem, activeScannedCode]);
@@ -163,7 +180,7 @@ export const ActionBottomSheet: React.FC = () => {
     await recordTransaction(activeScannedItem, selectedAction, quantity, selectedUnit, conv.multiplier, note);
   };
 
-  // AI 視覚認識 & 基準写真照合
+  // AI 視覚認識 & 自己学習ナレッジ照合
   const handlePhotoCapture = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -182,6 +199,7 @@ export const ActionBottomSheet: React.FC = () => {
         );
         setIsVisionProcessing(false);
         setVisionSource(result.source);
+        if (result.rawAnalysis) setRawOcrText(result.rawAnalysis);
 
         const detectedParts: string[] = [];
         if (result.suggestedName) {
@@ -211,12 +229,15 @@ export const ActionBottomSheet: React.FC = () => {
           detectedParts.push(`推定量: ${result.suggestedQuantity}`);
         }
 
-        if (result.source === 'IMAGE_MATCH') {
+        if (result.source === 'LEARNED_MEMORY') {
+          setVisionBadgeMessage(`🧠 過去の学習データから自動予測 (${result.confidenceScore}% 一致): ${detectedParts.join(' | ')}`);
+          addToast('success', '過去の学習履歴から品名・型番を復元しました！');
+        } else if (result.source === 'IMAGE_MATCH') {
           setVisionBadgeMessage(`🎯 登録済みの基準写真と一致しました: ${result.suggestedName}`);
           addToast('success', '登録済みの基準写真と一致しました！');
         } else if (result.source === 'GEMINI_AI') {
-          setVisionBadgeMessage(`✨ Gemini AI 解析完了: ${detectedParts.join(' | ')}`);
-          addToast('success', 'Gemini AI が品名・型番を自動認識しました！');
+          setVisionBadgeMessage(`✨ Gemini AI 高精度解析: ${detectedParts.join(' | ')}`);
+          addToast('success', 'Gemini AI が品名・型番を認識しました！');
         } else {
           setVisionBadgeMessage(detectedParts.length > 0 ? `📷 OCR自動読取: ${detectedParts.join(' | ')}` : '写真を設定しました。品名を選択または直接入力してください');
           addToast('info', '写真から文字情報を抽出しました');
@@ -229,10 +250,30 @@ export const ActionBottomSheet: React.FC = () => {
     reader.readAsDataURL(file);
   };
 
-  // 商品を登録し、そのまま【入庫数量入力】へ進む
+  const handleAddConversion = () => {
+    setNewItemConversions([...newItemConversions, { unit: '袋', multiplier: 50 }]);
+  };
+
+  const handleRemoveConversion = (idx: number) => {
+    setNewItemConversions(newItemConversions.filter((_, i) => i !== idx));
+  };
+
+  const handleUpdateConversion = (idx: number, field: 'unit' | 'multiplier', val: any) => {
+    const next = [...newItemConversions];
+    if (field === 'unit') next[idx].unit = String(val);
+    else next[idx].multiplier = Math.max(1, Number(val) || 1);
+    setNewItemConversions(next);
+  };
+
+  // 商品を登録し、そのまま【入庫数量入力】へ進む (学習ナレッジにフィードバック蓄積)
   const handleSaveAndGoToInbound = async () => {
     if (!activeScannedCode) return;
     const nameToUse = newItemName.trim() || `新商品-${activeScannedCode.slice(-6)}`;
+    const allConversions: UnitConversion[] = [
+      ...newItemConversions.filter((c) => c.unit !== newItemBaseUnit),
+      { unit: newItemBaseUnit, multiplier: 1 },
+    ];
+
     const newItem: ItemMaster = {
       id: `item-${activeScannedCode}`,
       code: activeScannedCode,
@@ -246,13 +287,15 @@ export const ActionBottomSheet: React.FC = () => {
       safetyStock: Number(newItemSafetyStock) || 0,
       location: newItemBoxName.trim() || '端子ボックス (A-01)',
       qrCode: `INV:v1:${activeScannedCode}`,
-      unitConversions: [
-        { unit: '箱', multiplier: 50 },
-        { unit: '袋', multiplier: 10 },
-        { unit: newItemBaseUnit, multiplier: 1 },
-      ],
+      unitConversions: allConversions,
       updatedAt: new Date().toISOString(),
     };
+
+    // 自己学習ナレッジバンクに登録（次回以降の認識精度が向上）
+    if (itemImage) {
+      VisualKnowledgeService.learnFromItem(newItem, itemImage, rawOcrText);
+    }
+
     await saveItem(newItem);
     setSelectedAction('IN');
     setSelectedUnit(newItemBaseUnit);
@@ -264,6 +307,11 @@ export const ActionBottomSheet: React.FC = () => {
   const handleSaveOnly = async () => {
     if (!activeScannedCode) return;
     const nameToUse = newItemName.trim() || `新商品-${activeScannedCode.slice(-6)}`;
+    const allConversions: UnitConversion[] = [
+      ...newItemConversions.filter((c) => c.unit !== newItemBaseUnit),
+      { unit: newItemBaseUnit, multiplier: 1 },
+    ];
+
     const newItem: ItemMaster = {
       id: `item-${activeScannedCode}`,
       code: activeScannedCode,
@@ -277,13 +325,14 @@ export const ActionBottomSheet: React.FC = () => {
       safetyStock: Number(newItemSafetyStock) || 0,
       location: newItemBoxName.trim() || '端子ボックス (A-01)',
       qrCode: `INV:v1:${activeScannedCode}`,
-      unitConversions: [
-        { unit: '箱', multiplier: 50 },
-        { unit: '袋', multiplier: 10 },
-        { unit: newItemBaseUnit, multiplier: 1 },
-      ],
+      unitConversions: allConversions,
       updatedAt: new Date().toISOString(),
     };
+
+    if (itemImage) {
+      VisualKnowledgeService.learnFromItem(newItem, itemImage, rawOcrText);
+    }
+
     await saveItem(newItem);
     closeBottomSheet();
   };
@@ -291,6 +340,11 @@ export const ActionBottomSheet: React.FC = () => {
   // 新規登録品の入庫確定
   const handleConfirmNewItemInbound = async () => {
     if (!activeScannedCode) return;
+    const allConversions: UnitConversion[] = [
+      ...newItemConversions.filter((c) => c.unit !== newItemBaseUnit),
+      { unit: newItemBaseUnit, multiplier: 1 },
+    ];
+
     const item: ItemMaster = {
       id: `item-${activeScannedCode}`,
       code: activeScannedCode,
@@ -304,11 +358,7 @@ export const ActionBottomSheet: React.FC = () => {
       safetyStock: Number(newItemSafetyStock) || 0,
       location: newItemBoxName.trim() || '端子ボックス (A-01)',
       qrCode: `INV:v1:${activeScannedCode}`,
-      unitConversions: [
-        { unit: '箱', multiplier: 50 },
-        { unit: '袋', multiplier: 10 },
-        { unit: newItemBaseUnit, multiplier: 1 },
-      ],
+      unitConversions: allConversions,
       updatedAt: new Date().toISOString(),
     };
     await recordTransaction(item, 'IN', quantity, selectedUnit, 1, '新規登録初回入荷');
@@ -358,7 +408,7 @@ export const ActionBottomSheet: React.FC = () => {
                     <img
                       src={activeScannedItem.imageUrl}
                       alt="基準写真"
-                      className="w-12 h-12 rounded-xl object-cover border border-slate-700 shrink-0"
+                      className="w-12 h-12 rounded-xl object-cover border border-slate-700 shrink-0 bg-black"
                     />
                   )}
                   <div>
@@ -414,7 +464,7 @@ export const ActionBottomSheet: React.FC = () => {
             </div>
           )}
 
-          {/* ── STEP 2: テンキー入力 ── */}
+          {/* ── STEP 2: テンキー & 目測概算入力 ── */}
           {currentStep === 'KEYPAD' && activeScannedItem && (
             <div className="space-y-3">
               <div className={`py-2 px-3.5 rounded-xl font-bold text-xs flex items-center justify-between ${
@@ -469,7 +519,7 @@ export const ActionBottomSheet: React.FC = () => {
             </div>
           )}
 
-          {/* ── STEP 4: 新規品目登録（AI視覚認識 & 写真照合） ── */}
+          {/* ── STEP 4: 新規品目登録（AI視覚認識 & 自己学習フィードバック） ── */}
           {currentStep === 'NEW_ITEM' && (
             <div className="space-y-4">
               {/* AI 視覚認識 & 写真撮影カード */}
@@ -477,7 +527,7 @@ export const ActionBottomSheet: React.FC = () => {
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <Sparkles className="w-5 h-5 text-amber-400" />
-                    <span className="font-extrabold text-sm text-white">AI視覚認識 & 基準写真照合</span>
+                    <span className="font-extrabold text-sm text-white">AI視覚認識 & 自己学習</span>
                   </div>
                   <span className="text-xs font-mono text-blue-300 bg-blue-900/60 px-2 py-0.5 rounded-lg border border-blue-700/50">
                     {activeScannedCode}
@@ -485,7 +535,7 @@ export const ActionBottomSheet: React.FC = () => {
                 </div>
 
                 <p className="text-xs text-slate-300 leading-relaxed">
-                  部品本体や銘板ラベルを撮影すると、AIが品名・メーカー・型番・数量を高精度に自動認識して入力します。
+                  写真を撮影すると、AIと過去の学習履歴から品名・型番・メーカーを自動認識します。修正して保存すると次回以降の精度がさらに向上します。
                 </p>
 
                 <input type="file" ref={fileInputRef} accept="image/*" capture="environment"
@@ -500,7 +550,7 @@ export const ActionBottomSheet: React.FC = () => {
                       <Camera className="w-5 h-5 text-emerald-400" />
                     )}
                     <span className="font-extrabold text-xs">
-                      {isVisionProcessing ? 'AI解析中...' : itemImage ? '写真を撮り直す' : '📸 写真撮影・AI解析'}
+                      {isVisionProcessing ? 'AI解析中...' : itemImage ? '写真を撮り直す' : '📸 写真撮影・AI認識'}
                     </span>
                   </button>
 
@@ -513,7 +563,9 @@ export const ActionBottomSheet: React.FC = () => {
 
                 {visionBadgeMessage && (
                   <div className={`p-2.5 rounded-xl text-xs font-semibold flex items-center gap-2 border ${
-                    visionSource === 'IMAGE_MATCH'
+                    visionSource === 'LEARNED_MEMORY'
+                      ? 'bg-amber-950/80 border-amber-500 text-amber-200'
+                      : visionSource === 'IMAGE_MATCH'
                       ? 'bg-purple-950/80 border-purple-500 text-purple-200'
                       : visionSource === 'GEMINI_AI'
                       ? 'bg-emerald-950/80 border-emerald-500 text-emerald-200'
@@ -529,7 +581,7 @@ export const ActionBottomSheet: React.FC = () => {
                     <img src={itemImage} alt="撮影画像" className="w-full h-full object-cover" />
                     <div className="absolute bottom-1.5 left-2 bg-black/70 px-2 py-0.5 rounded text-[10px] text-white flex items-center gap-1">
                       <ImageIcon className="w-3 h-3 text-emerald-400" />
-                      <span>基準画像としてマスタ登録</span>
+                      <span>基準画像として学習・保存</span>
                     </div>
                     <button type="button" onClick={() => { setItemImage(null); setVisionBadgeMessage(null); }}
                       className="absolute top-1.5 right-1.5 p-1.5 bg-black/80 hover:bg-black text-white rounded-full">
@@ -641,6 +693,30 @@ export const ActionBottomSheet: React.FC = () => {
                   </div>
                 </div>
 
+                {/* 包装単位・換算倍率リスト (箱、袋、パック等) */}
+                <div className="p-3 bg-slate-900 rounded-2xl border border-slate-800 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-slate-300 text-xs">包装単位換算 (箱/袋/パック/組)</span>
+                    <button type="button" onClick={handleAddConversion} className="text-blue-400 hover:text-blue-300 text-xs font-bold flex items-center gap-0.5">
+                      <Plus className="w-3.5 h-3.5" /> 追加
+                    </button>
+                  </div>
+                  {newItemConversions.map((conv, idx) => (
+                    <div key={idx} className="flex items-center gap-1.5">
+                      <span className="text-slate-400 text-xs">1</span>
+                      <input type="text" value={conv.unit} onChange={(e) => handleUpdateConversion(idx, 'unit', e.target.value)}
+                        placeholder="単位 (箱)" className="w-20 px-2 py-1 bg-slate-800 border border-slate-700 rounded-lg text-white font-bold text-xs" />
+                      <span className="text-slate-400 text-xs">=</span>
+                      <input type="number" min="1" value={conv.multiplier} onChange={(e) => handleUpdateConversion(idx, 'multiplier', e.target.value)}
+                        className="w-20 px-2 py-1 bg-slate-800 border border-slate-700 rounded-lg text-white font-bold text-xs text-center" />
+                      <span className="text-slate-400 text-xs">{newItemBaseUnit}</span>
+                      <button type="button" onClick={() => handleRemoveConversion(idx)} className="p-1 text-slate-500 hover:text-rose-400 ml-auto">
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+
                 <div className="grid grid-cols-2 gap-2 pt-1">
                   <button type="button" onClick={handleSaveAndGoToInbound}
                     className="py-3 bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold text-xs rounded-xl shadow transition flex items-center justify-center gap-1">
@@ -661,7 +737,7 @@ export const ActionBottomSheet: React.FC = () => {
           {currentStep === 'NEW_ITEM_INBOUND' && (
             <div className="space-y-3">
               <div className="bg-emerald-950/60 border border-emerald-700/60 rounded-2xl p-3.5 text-xs">
-                <p className="font-bold text-emerald-300 mb-1">✅ 品目マスタを登録しました！</p>
+                <p className="font-bold text-emerald-300 mb-1">✅ 品目マスタを登録・学習しました！</p>
                 <p className="text-slate-300">
                   品名：<strong className="text-white">{newItemName}</strong>
                   {newItemSupplier && ` | メーカー：${newItemSupplier}`}

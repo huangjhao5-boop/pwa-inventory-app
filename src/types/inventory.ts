@@ -7,21 +7,41 @@ export const PRESET_UNITS = [
   '本',
   '枚',
   '箱',
+  '箱(大)',
+  '箱(小)',
   '袋',
-  '巻',
-  '式',
-  '本/組',
   'パック',
-  'セット',
+  '束',
+  '巻',
+  '組',
+  '式',
   'kg',
   'm',
   'L'
 ] as const;
 
 export interface UnitConversion {
-  unit: string;        // 包装単位 (例: 箱, 袋, パック, 巻)
-  multiplier: number;  // 換算基準数量 (例: 1箱 = 50個 -> multiplier: 50)
+  unit: string;        // 包装単位 (例: 箱, 箱(小), 袋, パック, 巻, 束)
+  multiplier: number;  // 換算基準数量 (例: 1袋 = 100本, 1箱 = 1000本, 1小箱 = 50個)
 }
+
+/**
+ * 消耗品・小物品用 目測割合・残量換算 (結束バンド、端子、ネジなど)
+ */
+export interface FractionalRatio {
+  label: string;      // 表示名 (例: "満杯 (100%)", "約7〜8割 (3/4)", "半分程度 (1/2)", "残り約1/3", "残り約1/4", "残り僅か (10%)")
+  ratio: number;      // 係数 (1.0, 0.75, 0.5, 0.33, 0.25, 0.1)
+  description?: string;
+}
+
+export const PRESET_FRACTIONS: FractionalRatio[] = [
+  { label: '満杯 (100%)', ratio: 1.0, description: '新品・全量' },
+  { label: '約3/4 (75%)', ratio: 0.75, description: '使用歴あり・約7〜8割残' },
+  { label: '半分 (50%)', ratio: 0.5, description: '約半分使用' },
+  { label: '約1/3 (33%)', ratio: 0.33, description: '残り約3割' },
+  { label: '約1/4 (25%)', ratio: 0.25, description: '残り約2〜3割' },
+  { label: '僅か (10%)', ratio: 0.1, description: '残り少・要補充' },
+];
 
 export interface ItemMaster {
   id: string;
@@ -36,9 +56,28 @@ export interface ItemMaster {
   safetyStock: number;        // 安全在庫数 (アラート閾値)
   location: string;           // 保管ボックス名 / 棚番 (例: 1号ボックス (A-01))
   qrCode?: string;            // 自社QRコード文字列 (例: INV:v1:4901480000011)
-  unitConversions: UnitConversion[]; // 包装単位換算設定
+  unitConversions: UnitConversion[]; // 包装単位換算設定 (箱, 袋, パックなど複数)
   updatedAt: string;          // 最終更新日時 ISO
   note?: string;              // 備考・メモ
+}
+
+/**
+ * 視覚学習ナレッジエントリ (撮影・手動修正のフィードバックから自己学習)
+ */
+export interface VisualKnowledgeEntry {
+  id: string;
+  itemCode: string;
+  name: string;
+  spec?: string;
+  supplier?: string;
+  category?: string;
+  baseUnit?: string;
+  boxName?: string;
+  colorHash: string;          // 視覚的カラーハッシュ
+  featureTokens: string[];    // テキスト・形状特徴トークン
+  imageThumbnail: string;     // サムネイル
+  matchCount: number;         // 正解回数 (学習強度)
+  lastLearnedAt: number;      // 最終学習日時
 }
 
 /**
