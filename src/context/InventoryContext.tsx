@@ -142,11 +142,26 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
   const refreshData = useCallback(async () => {
     try {
       await LocalDatabaseService.initSeedData();
-      const [storedItems, storedLogs, savedSettings] = await Promise.all([
+      let [storedItems, storedLogs, savedSettings] = await Promise.all([
         LocalDatabaseService.getAllItems(),
         LocalDatabaseService.getAllLogs(),
         LocalDatabaseService.getSettings(),
       ]);
+
+      // クラウド同期が有効な場合、Firestore から最新品目を取得
+      if (cloudSync.isCloudEnabled()) {
+        const cloudItems = await cloudSync.fetchAllCloudItems();
+        if (cloudItems.length > 0) {
+          await LocalDatabaseService.saveItemsBatch(cloudItems);
+          storedItems = await LocalDatabaseService.getAllItems();
+        } else if (storedItems.length > 0) {
+          // クラウドが空の場合は初期ローカルデータをクラウドに投入
+          for (const item of storedItems) {
+            await cloudSync.syncItemToCloud(item);
+          }
+        }
+      }
+
       setItems(storedItems);
       setLogs(storedLogs);
       if (savedSettings && Object.keys(savedSettings).length > 0) {
