@@ -12,14 +12,14 @@ export const ToastContainer: React.FC = () => {
       {toasts.map((toast) => (
         <div
           key={toast.id}
-          className={`pointer-events-auto flex items-start gap-3 p-3.5 rounded-2xl shadow-2xl border text-xs sm:text-sm font-medium transition-all transform animate-in slide-in-from-top-2 duration-200 ${
+          className={`pointer-events-auto flex items-start gap-3 p-3.5 rounded-2xl shadow-2xl border text-xs sm:text-sm font-medium transition-all animate-in slide-in-from-top-2 duration-200 ${
             toast.type === 'success'
-              ? 'bg-emerald-950/95 border-emerald-500/50 text-emerald-100 shadow-emerald-950/50'
+              ? 'bg-emerald-950/95 border-emerald-500/50 text-emerald-100'
               : toast.type === 'warning'
-              ? 'bg-amber-950/95 border-amber-500/50 text-amber-100 shadow-amber-950/50'
+              ? 'bg-amber-950/95 border-amber-500/50 text-amber-100'
               : toast.type === 'error'
-              ? 'bg-rose-950/95 border-rose-500/50 text-rose-100 shadow-rose-950/50'
-              : 'bg-sky-950/95 border-sky-500/50 text-sky-100 shadow-sky-950/50'
+              ? 'bg-rose-950/95 border-rose-500/50 text-rose-100'
+              : 'bg-sky-950/95 border-sky-500/50 text-sky-100'
           }`}
         >
           <div className="mt-0.5 shrink-0">
@@ -28,10 +28,10 @@ export const ToastContainer: React.FC = () => {
             {toast.type === 'error' && <XCircle className="w-5 h-5 text-rose-400" />}
             {toast.type === 'info' && <Info className="w-5 h-5 text-sky-400" />}
           </div>
-          <div className="flex-1 break-words">{toast.text || (toast as any).message}</div>
+          <div className="flex-1 break-words">{toast.text}</div>
           <button
-            onClick={() => removeToast && removeToast(toast.id)}
-            className="text-slate-400 hover:text-white p-1 rounded transition"
+            onClick={() => removeToast(toast.id)}
+            className="text-slate-400 hover:text-white p-1 rounded transition shrink-0"
           >
             <X className="w-4 h-4" />
           </button>
