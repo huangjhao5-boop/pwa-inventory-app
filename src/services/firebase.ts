@@ -6,6 +6,7 @@ import {
   doc,
   setDoc,
   getDocs,
+  deleteDoc,
   onSnapshot,
   Firestore,
   Unsubscribe,
@@ -44,6 +45,13 @@ function sanitizeForFirestore<T extends Record<string, any>>(obj: T): Record<str
     }
   }
   return result;
+}
+
+export interface DiagnosticResult {
+  step: string;
+  status: 'SUCCESS' | 'ERROR' | 'PENDING';
+  message: string;
+  details?: string;
 }
 
 class CloudSyncService {
@@ -151,17 +159,82 @@ class CloudSyncService {
   }
 
   /**
-   * 接続テスト
+   * 完整診斷工具：檢測資料庫建立狀態、讀取與寫入權限
    */
-  async testConnection(config: FirebaseConfigOptions): Promise<{ success: boolean; message: string }> {
+  async runFullDiagnostics(): Promise<{ success: boolean; results: DiagnosticResult[] }> {
+    const results: DiagnosticResult[] = [];
+    const config = this.getConfig();
+
+    if (!config) {
+      results.push({
+        step: '1. Firebase Config 設定',
+        status: 'ERROR',
+        message: '未找到 Firebase Config 設定',
+      });
+      return { success: false, results };
+    }
+
+    results.push({
+      step: '1. Firebase 專案設定驗證',
+      status: 'SUCCESS',
+      message: `專案 ID: ${config.projectId}`,
+    });
+
     try {
-      const tempApp = initializeApp(config, `test_app_${Date.now()}`);
-      const tempDb = getFirestore(tempApp);
-      const testCol = collection(tempDb, 'inventory_items');
-      await getDocs(testCol);
-      return { success: true, message: 'Firebase Firestore 接続成功！' };
-    } catch (e: any) {
-      return { success: false, message: e.message || '接続に失敗しました。Firestore Database が有効か確認してください。' };
+      if (!this.db) {
+        this.init(config);
+      }
+      if (!this.db) {
+        throw new Error('Firestore 初始化失敗');
+      }
+
+      // Step 2: Test Write
+      const testDocRef = doc(this.db, 'inventory_items', '_test_connection');
+      await setDoc(testDocRef, {
+        test: true,
+        timestamp: new Date().toISOString(),
+      });
+      results.push({
+        step: '2. 雲端寫入測試 (Write Test)',
+        status: 'SUCCESS',
+        message: '成功寫入測試資料至 Firestore',
+      });
+
+      // Step 3: Test Read
+      const snapshot = await getDocs(collection(this.db, 'inventory_items'));
+      results.push({
+        step: '3. 雲端讀取測試 (Read Test)',
+        status: 'SUCCESS',
+        message: `成功連線並讀取到 ${snapshot.size} 筆品目資料`,
+      });
+
+      // Cleanup test doc
+      await deleteDoc(testDocRef);
+      results.push({
+        step: '4. 測試資料清理 (Cleanup)',
+        status: 'SUCCESS',
+        message: '測試環境完全正常，可正常出入庫同步！',
+      });
+
+      return { success: true, results };
+    } catch (err: any) {
+      console.error('Diagnostic error:', err);
+      let advice = '請檢查 Firebase 控制台設定。';
+
+      if (err.message?.includes('permission-denied') || err.code === 'permission-denied') {
+        advice = '【權限被拒絕】請前往 Firebase Console -> Firestore Database -> 規則 (Rules)，將規則改為 allow read, write: if true; 並點擊「發布 (Publish)」！';
+      } else if (err.message?.includes('not-found') || err.code === 'not-found' || err.message?.includes('database') || err.code === 'unavailable') {
+        advice = '【資料庫尚未建立】請前往 Firebase Console 左側點擊「Firestore Database」並點擊「建立資料庫 (Create database)」！';
+      }
+
+      results.push({
+        step: '連線診斷失敗',
+        status: 'ERROR',
+        message: err.message || '無法連線至 Firestore',
+        details: advice,
+      });
+
+      return { success: false, results };
     }
   }
 
@@ -175,7 +248,10 @@ class CloudSyncService {
       const snapshot = await getDocs(itemsCol);
       const items: ItemMaster[] = [];
       snapshot.forEach((doc) => {
-        items.push(doc.data() as ItemMaster);
+        const data = doc.data() as ItemMaster;
+        if (data.id && data.code && data.name) {
+          items.push(data);
+        }
       });
       return items;
     } catch (e) {
@@ -193,7 +269,6 @@ class CloudSyncService {
       const cleanData = sanitizeForFirestore(item);
       const itemRef = doc(this.db, 'inventory_items', item.id);
       await setDoc(itemRef, cleanData, { merge: true });
-      console.log('Synced item to Firestore successfully:', item.code);
       return true;
     } catch (e) {
       console.error('Failed to sync item to Firestore:', e);
@@ -210,7 +285,6 @@ class CloudSyncService {
       const cleanData = sanitizeForFirestore(log);
       const logRef = doc(this.db, 'inventory_logs', log.id);
       await setDoc(logRef, cleanData, { merge: true });
-      console.log('Synced log to Firestore successfully:', log.id);
       return true;
     } catch (e) {
       console.error('Failed to sync log to Firestore:', e);
@@ -239,12 +313,14 @@ class CloudSyncService {
           snapshot.docChanges().forEach((change) => {
             if (change.type === 'added' || change.type === 'modified') {
               const data = change.doc.data() as ItemMaster;
-              onRemoteItemUpdate(data);
+              if (data.id && data.code && data.name) {
+                onRemoteItemUpdate(data);
+              }
             }
           });
         },
         (err) => {
-          console.warn('Firestore items listener error (Rules check needed?):', err);
+          console.warn('Firestore items listener error:', err);
         }
       );
 
@@ -256,12 +332,14 @@ class CloudSyncService {
           snapshot.docChanges().forEach((change) => {
             if (change.type === 'added' || change.type === 'modified') {
               const data = change.doc.data() as InventoryLog;
-              onRemoteLogUpdate(data);
+              if (data.id && data.itemId) {
+                onRemoteLogUpdate(data);
+              }
             }
           });
         },
         (err) => {
-          console.warn('Firestore logs listener error (Rules check needed?):', err);
+          console.warn('Firestore logs listener error:', err);
         }
       );
     } catch (err) {

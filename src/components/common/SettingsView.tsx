@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useInventory } from '../../context/InventoryContext';
 import { LocalDatabaseService } from '../../services/db';
-import { cloudSync } from '../../services/firebase';
+import { cloudSync, DiagnosticResult } from '../../services/firebase';
 import {
   SlidersHorizontal,
   Volume2,
@@ -14,6 +14,8 @@ import {
   AlertCircle,
   HelpCircle,
   KeyRound,
+  Stethoscope,
+  Activity,
 } from 'lucide-react';
 
 export const SettingsView: React.FC = () => {
@@ -38,6 +40,10 @@ export const SettingsView: React.FC = () => {
   const [isTestingCloud, setIsTestingCloud] = useState(false);
   const [showFirebaseHelp, setShowFirebaseHelp] = useState(false);
 
+  // Diagnostic Results
+  const [diagnosticResults, setDiagnosticResults] = useState<DiagnosticResult[] | null>(null);
+  const [isRunningDiagnostics, setIsRunningDiagnostics] = useState(false);
+
   const handleSaveOperator = (e: React.FormEvent) => {
     e.preventDefault();
     if (!operatorInput.trim()) return;
@@ -50,6 +56,20 @@ export const SettingsView: React.FC = () => {
     updateSettings({ debounceMs: val });
   };
 
+  const handleRunDiagnostics = async () => {
+    setIsRunningDiagnostics(true);
+    setDiagnosticResults(null);
+    const { success, results } = await cloudSync.runFullDiagnostics();
+    setDiagnosticResults(results);
+    setIsRunningDiagnostics(false);
+    if (success) {
+      addToast('success', 'Firebase 雲端連線與讀寫測試全部通過！');
+      refreshData();
+    } else {
+      addToast('error', '診斷發現問題，請查看下方提示！');
+    }
+  };
+
   const handleSaveFirebaseConfig = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!firebaseJson.trim()) {
@@ -58,9 +78,7 @@ export const SettingsView: React.FC = () => {
     }
 
     try {
-      // Parse JSON or raw config object
       let parsed = JSON.parse(firebaseJson);
-      // Support nested firebaseConfig if copied directly from console
       if (parsed.firebaseConfig) parsed = parsed.firebaseConfig;
 
       if (!parsed.apiKey || !parsed.projectId) {
@@ -69,17 +87,18 @@ export const SettingsView: React.FC = () => {
       }
 
       setIsTestingCloud(true);
-      const testResult = await cloudSync.testConnection(parsed);
+      const testResult = await cloudSync.runFullDiagnostics();
       setIsTestingCloud(false);
 
       if (testResult.success) {
         saveFirebaseConfig(parsed);
       } else {
-        addToast('error', `接続エラー: ${testResult.message}`);
+        addToast('error', '連線失敗，已列出診斷詳情');
+        setDiagnosticResults(testResult.results);
       }
     } catch (err: any) {
       setIsTestingCloud(false);
-      addToast('error', `JSON 形式が正しくありません: ${err.message}`);
+      addToast('error', `JSON 格式錯誤: ${err.message}`);
     }
   };
 
@@ -106,22 +125,22 @@ export const SettingsView: React.FC = () => {
         </div>
         <div>
           <h2 className="font-extrabold text-lg sm:text-xl text-white">
-            系統設定與雲端同步 (Settings & Cloud Sync)
+            系統設定與雲端診斷 (Settings & Cloud Sync)
           </h2>
           <p className="text-xs text-slate-400">
-            Firebase 即時跨裝置資料庫連線、防呆參數與作業員設定
+            Firebase 即時跨裝置資料庫連線、即時診斷與防呆參數
           </p>
         </div>
       </div>
 
       <div className="space-y-4">
-        {/* Section 1: Firebase Cloud Connection */}
+        {/* Section 1: Firebase Cloud Connection & Diagnostics */}
         <div className="bg-slate-900 border border-slate-800 rounded-3xl p-4 sm:p-5 shadow-lg space-y-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <Cloud className="w-5 h-5 text-blue-400" />
               <h3 className="font-bold text-sm sm:text-base text-slate-200">
-                ☁️ Firebase 雲端資料庫同步設定
+                ☁️ Firebase 雲端資料庫連線
               </h3>
             </div>
             {isCloudConnected ? (
@@ -138,15 +157,63 @@ export const SettingsView: React.FC = () => {
           </div>
 
           <p className="text-xs text-slate-400 leading-relaxed">
-            設定 Firebase 之後，手機掃描的庫存增減、PC端的品目修改將會**即時同步**到所有設備！未連線時會自動切換為離線模式。
+            目前預設已綁定您的 Firebase 專案（`pwa-inventory-app-9c88d`）。若掃描後未同步，請點擊下方 **「🔍 一鍵診斷連線與權限」** 立即檢查原因！
           </p>
+
+          {/* Quick Diagnostics Action */}
+          <div className="bg-slate-950 p-4 rounded-2xl border border-slate-800 space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Stethoscope className="w-4 h-4 text-emerald-400" />
+                <span className="font-bold text-xs sm:text-sm text-slate-200">
+                  即時連線健康檢查 (Diagnostics)
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={handleRunDiagnostics}
+                disabled={isRunningDiagnostics}
+                className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 active:scale-95 disabled:opacity-50 text-white font-extrabold text-xs rounded-xl shadow transition flex items-center gap-1.5"
+              >
+                <Activity className={`w-3.5 h-3.5 ${isRunningDiagnostics ? 'animate-spin' : ''}`} />
+                <span>{isRunningDiagnostics ? '診斷中...' : '🔍 一鍵診斷連線與權限'}</span>
+              </button>
+            </div>
+
+            {/* Diagnostic Output Results */}
+            {diagnosticResults && (
+              <div className="pt-2 border-t border-slate-800 space-y-2 animate-in fade-in">
+                {diagnosticResults.map((res, i) => (
+                  <div
+                    key={i}
+                    className={`p-2.5 rounded-xl border text-xs flex flex-col gap-1 ${
+                      res.status === 'SUCCESS'
+                        ? 'bg-emerald-950/40 border-emerald-800/80 text-emerald-300'
+                        : 'bg-rose-950/60 border-rose-700 text-rose-200'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between font-bold">
+                      <span>{res.step}</span>
+                      <span>{res.status === 'SUCCESS' ? '✓ 通過' : '✕ 失敗'}</span>
+                    </div>
+                    <div>{res.message}</div>
+                    {res.details && (
+                      <div className="mt-1 p-2 bg-black/60 rounded-lg text-amber-300 font-semibold leading-relaxed border border-amber-500/30">
+                        👉 建議解決方式: {res.details}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
 
           <form onSubmit={handleSaveFirebaseConfig} className="space-y-3">
             <div>
               <div className="flex items-center justify-between mb-1.5">
                 <label className="text-xs font-bold text-slate-300 flex items-center gap-1">
                   <KeyRound className="w-3.5 h-3.5 text-blue-400" />
-                  <span>貼上 Firebase Config JSON:</span>
+                  <span>修改或覆蓋 Firebase Config JSON:</span>
                 </label>
                 <button
                   type="button"
@@ -168,10 +235,10 @@ export const SettingsView: React.FC = () => {
               )}
 
               <textarea
-                rows={5}
+                rows={4}
                 value={firebaseJson}
                 onChange={(e) => setFirebaseJson(e.target.value)}
-                placeholder={`{\n  "apiKey": "AIzaSy...",\n  "authDomain": "your-app.firebaseapp.com",\n  "projectId": "your-app-id",\n  "storageBucket": "your-app.appspot.com"\n}`}
+                placeholder={`{\n  "apiKey": "AIzaSy...",\n  "projectId": "pwa-inventory-app-9c88d"\n}`}
                 className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-700 rounded-2xl text-xs font-mono text-white focus:outline-none focus:border-blue-500 placeholder-slate-600"
               />
             </div>
@@ -186,7 +253,7 @@ export const SettingsView: React.FC = () => {
                   }}
                   className="px-3.5 py-2 bg-rose-950/60 hover:bg-rose-900 text-rose-300 border border-rose-800 rounded-xl text-xs font-bold transition"
                 >
-                  解除雲端連線
+                  切換為純單機模式
                 </button>
               )}
 
@@ -196,7 +263,7 @@ export const SettingsView: React.FC = () => {
                 className="px-5 py-2 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white font-extrabold rounded-xl text-xs shadow-lg shadow-blue-950 transition flex items-center gap-1.5"
               >
                 <Cloud className="w-4 h-4" />
-                <span>{isTestingCloud ? '連線測試中...' : '儲存並啟用雲端同步'}</span>
+                <span>{isTestingCloud ? '連線測試中...' : '儲存設定'}</span>
               </button>
             </div>
           </form>
