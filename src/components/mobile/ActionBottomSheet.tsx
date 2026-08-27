@@ -122,6 +122,26 @@ export const ActionBottomSheet: React.FC = () => {
   const [rawOcrText, setRawOcrText] = useState<string>('');
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const updatePhotoRef = useRef<HTMLInputElement>(null);
+
+  const handleUpdateExistingPhoto = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !activeScannedItem) return;
+    const reader = new FileReader();
+    reader.onload = async (event) => {
+      const rawBase64 = event.target?.result as string;
+      const compressed = await ImageCompressor.compressImage(rawBase64, 360, 360, 0.65);
+      const updated: ItemMaster = {
+        ...activeScannedItem,
+        imageUrl: compressed,
+        updatedAt: new Date().toISOString(),
+      };
+      await saveItem(updated);
+      VisualKnowledgeService.learnFromItem(updated, compressed);
+      addToast('success', '📸 商品写真を更新・学習しました！');
+    };
+    reader.readAsDataURL(file);
+  };
 
   useEffect(() => {
     if (isBottomSheetOpen) {
@@ -406,16 +426,34 @@ export const ActionBottomSheet: React.FC = () => {
           {/* ── STEP 1: メインメニュー ── */}
           {currentStep === 'MENU' && activeScannedItem && (
             <div className="space-y-3">
-              {/* 在庫状況カード */}
-              <div className="bg-slate-950/90 p-3.5 rounded-2xl border border-slate-800 flex items-center justify-between">
+              {/* 在庫状況 & 写真更新カード */}
+              <div className="bg-slate-950/90 p-3.5 rounded-2xl border border-slate-800 flex items-center justify-between gap-3 shadow-inner">
+                <input
+                  type="file"
+                  ref={updatePhotoRef}
+                  accept="image/*"
+                  capture="environment"
+                  onChange={handleUpdateExistingPhoto}
+                  className="hidden"
+                />
                 <div className="flex items-center gap-3">
-                  {activeScannedItem.imageUrl && (
-                    <img
-                      src={activeScannedItem.imageUrl}
-                      alt="基準写真"
-                      className="w-12 h-12 rounded-xl object-cover border border-slate-700 shrink-0 bg-black"
-                    />
-                  )}
+                  <div className="relative group cursor-pointer" onClick={() => updatePhotoRef.current?.click()}>
+                    {activeScannedItem.imageUrl ? (
+                      <img
+                        src={activeScannedItem.imageUrl}
+                        alt="基準写真"
+                        className="w-14 h-14 rounded-2xl object-cover border border-slate-700 shrink-0 bg-black shadow-md hover:opacity-80 transition"
+                      />
+                    ) : (
+                      <div className="w-14 h-14 rounded-2xl bg-slate-800/80 border border-dashed border-slate-600 flex flex-col items-center justify-center text-slate-400 hover:text-white transition">
+                        <Camera className="w-5 h-5 text-emerald-400" />
+                        <span className="text-[9px] mt-0.5 font-bold">写真登録</span>
+                      </div>
+                    )}
+                    <div className="absolute -bottom-1 -right-1 p-1 bg-blue-600 hover:bg-blue-500 text-white rounded-full shadow border border-slate-900">
+                      <Camera className="w-3 h-3" />
+                    </div>
+                  </div>
                   <div>
                     <span className="text-[11px] text-slate-400 font-semibold block">現在庫数</span>
                     <div className="text-2xl font-black text-emerald-400">
@@ -432,6 +470,14 @@ export const ActionBottomSheet: React.FC = () => {
                       <span className="text-xs text-slate-300 font-normal"> ({activeScannedItem.supplier})</span>
                     )}
                   </div>
+                  <button
+                    type="button"
+                    onClick={() => updatePhotoRef.current?.click()}
+                    className="mt-1 text-[11px] font-bold text-blue-400 hover:text-blue-300 flex items-center gap-1 ml-auto"
+                  >
+                    <Camera className="w-3 h-3 text-emerald-400" />
+                    <span>写真を変更・再撮影</span>
+                  </button>
                 </div>
               </div>
 
@@ -698,25 +744,48 @@ export const ActionBottomSheet: React.FC = () => {
                   </div>
                 </div>
 
-                {/* 包装単位・換算倍率リスト (箱、袋、パック等) */}
-                <div className="p-3 bg-slate-900 rounded-2xl border border-slate-800 space-y-2">
+                {/* 包装単位・換算倍率リスト (箱、袋、パック、束、巻等) */}
+                <div className="p-3.5 bg-slate-900 rounded-2xl border border-slate-800 space-y-2.5">
                   <div className="flex items-center justify-between">
-                    <span className="font-bold text-slate-300 text-xs">包装単位換算 (箱/袋/パック/組)</span>
-                    <button type="button" onClick={handleAddConversion} className="text-blue-400 hover:text-blue-300 text-xs font-bold flex items-center gap-0.5">
-                      <Plus className="w-3.5 h-3.5" /> 追加
+                    <span className="font-bold text-slate-300 text-xs">包装単位換算 (箱 / 袋 / 盒 / パック / 束 / 巻)</span>
+                    <button type="button" onClick={handleAddConversion} className="text-blue-400 hover:text-blue-300 text-xs font-bold flex items-center gap-1 bg-blue-900/30 px-2 py-1 rounded-lg border border-blue-700/50">
+                      <Plus className="w-3.5 h-3.5" /> 単位を追加
                     </button>
                   </div>
                   {newItemConversions.map((conv, idx) => (
-                    <div key={idx} className="flex items-center gap-1.5">
-                      <span className="text-slate-400 text-xs">1</span>
-                      <input type="text" value={conv.unit} onChange={(e) => handleUpdateConversion(idx, 'unit', e.target.value)}
-                        placeholder="単位 (箱)" className="w-20 px-2 py-1 bg-slate-800 border border-slate-700 rounded-lg text-white font-bold text-xs" />
-                      <span className="text-slate-400 text-xs">=</span>
-                      <input type="number" min="1" value={conv.multiplier} onChange={(e) => handleUpdateConversion(idx, 'multiplier', e.target.value)}
-                        className="w-20 px-2 py-1 bg-slate-800 border border-slate-700 rounded-lg text-white font-bold text-xs text-center" />
-                      <span className="text-slate-400 text-xs">{newItemBaseUnit}</span>
+                    <div key={idx} className="flex items-center gap-1.5 bg-slate-950 p-2 rounded-xl border border-slate-800">
+                      <span className="text-slate-400 text-xs font-bold">1</span>
+                      <select
+                        value={PRESET_UNITS.includes(conv.unit as any) ? conv.unit : 'custom'}
+                        onChange={(e) => {
+                          if (e.target.value !== 'custom') {
+                            handleUpdateConversion(idx, 'unit', e.target.value);
+                          }
+                        }}
+                        className="px-2 py-1 bg-slate-800 border border-slate-700 rounded-lg text-white font-bold text-xs"
+                      >
+                        {PRESET_UNITS.filter((u) => u !== newItemBaseUnit).map((u) => (
+                          <option key={u} value={u}>{u}</option>
+                        ))}
+                      </select>
+                      <input
+                        type="text"
+                        value={conv.unit}
+                        onChange={(e) => handleUpdateConversion(idx, 'unit', e.target.value)}
+                        placeholder="単位名"
+                        className="w-16 px-1.5 py-1 bg-slate-800 border border-slate-700 rounded-lg text-white font-bold text-xs text-center"
+                      />
+                      <span className="text-slate-400 text-xs font-bold">=</span>
+                      <input
+                        type="number"
+                        min="1"
+                        value={conv.multiplier}
+                        onChange={(e) => handleUpdateConversion(idx, 'multiplier', e.target.value)}
+                        className="w-20 px-2 py-1 bg-slate-800 border border-slate-700 rounded-lg text-white font-black text-xs text-center text-emerald-400"
+                      />
+                      <span className="text-slate-300 font-bold text-xs">{newItemBaseUnit}</span>
                       <button type="button" onClick={() => handleRemoveConversion(idx)} className="p-1 text-slate-500 hover:text-rose-400 ml-auto">
-                        <Trash2 className="w-3.5 h-3.5" />
+                        <Trash2 className="w-4 h-4" />
                       </button>
                     </div>
                   ))}

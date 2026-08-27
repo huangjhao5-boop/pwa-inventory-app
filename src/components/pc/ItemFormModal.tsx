@@ -390,24 +390,38 @@ export const ItemFormModal: React.FC<ItemFormModalProps> = ({
 
             <div className="space-y-2">
               {conversions.map((conv, idx) => (
-                <div key={idx} className="flex items-center gap-2">
-                  <span className="text-xs text-slate-400">1</span>
+                <div key={idx} className="flex items-center gap-2 bg-slate-900/90 p-2 rounded-xl border border-slate-800">
+                  <span className="text-xs text-slate-400 font-bold">1</span>
+                  <select
+                    value={PRESET_UNITS.includes(conv.unit as any) ? conv.unit : 'custom'}
+                    onChange={(e) => {
+                      if (e.target.value !== 'custom') {
+                        handleUpdateConversion(idx, 'unit', e.target.value);
+                      }
+                    }}
+                    className="px-2 py-1.5 bg-slate-800 border border-slate-700 rounded-lg text-white text-xs font-bold"
+                  >
+                    <option value="custom">カスタム</option>
+                    {PRESET_UNITS.filter((u) => u !== baseUnit).map((u) => (
+                      <option key={u} value={u}>{u}</option>
+                    ))}
+                  </select>
                   <input
                     type="text"
                     value={conv.unit}
                     onChange={(e) => handleUpdateConversion(idx, 'unit', e.target.value)}
-                    placeholder="単位 (例: 箱)"
-                    className="w-24 px-2.5 py-1.5 bg-slate-800 border border-slate-700 rounded-lg text-white text-xs font-bold"
+                    placeholder="単位名"
+                    className="w-20 px-2 py-1.5 bg-slate-800 border border-slate-700 rounded-lg text-white font-bold text-xs text-center"
                   />
-                  <span className="text-xs text-slate-400">=</span>
+                  <span className="text-xs text-slate-400 font-bold">=</span>
                   <input
                     type="number"
                     min="1"
                     value={conv.multiplier}
                     onChange={(e) => handleUpdateConversion(idx, 'multiplier', e.target.value)}
-                    className="w-24 px-2.5 py-1.5 bg-slate-800 border border-slate-700 rounded-lg text-white text-xs font-bold text-center"
+                    className="w-24 px-2.5 py-1.5 bg-slate-800 border border-slate-700 rounded-lg text-white font-black text-xs text-center text-emerald-400"
                   />
-                  <span className="text-xs text-slate-400">{baseUnit}</span>
+                  <span className="text-xs text-slate-300 font-bold">{baseUnit}</span>
 
                   <button
                     type="button"

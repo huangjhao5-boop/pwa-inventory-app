@@ -241,41 +241,6 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({ onScan }) => {
             </button>
           </form>
         )}
-
-        {/* Quick Sample Buttons */}
-        {showManualInput && (
-          <div className="mt-2 flex flex-wrap gap-1.5 justify-center">
-            <span className="text-[11px] text-slate-500 self-center">テスト用:</span>
-            <button
-              type="button"
-              onClick={() => onCodeDetected('4901480000028')}
-              className="text-xs px-2 py-1 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-lg text-slate-300"
-            >
-              丸形圧着端子
-            </button>
-            <button
-              type="button"
-              onClick={() => onCodeDetected('4901480000035')}
-              className="text-xs px-2 py-1 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-lg text-slate-300"
-            >
-              結束バンド
-            </button>
-            <button
-              type="button"
-              onClick={() => onCodeDetected('4901480000042')}
-              className="text-xs px-2 py-1 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-lg text-slate-300"
-            >
-              ヒューズ
-            </button>
-            <button
-              type="button"
-              onClick={() => onCodeDetected('4901480000011')}
-              className="text-xs px-2 py-1 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-lg text-slate-300"
-            >
-              ボルトM6
-            </button>
-          </div>
-        )}
       </div>
     </div>
   );
