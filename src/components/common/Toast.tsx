@@ -12,7 +12,7 @@ export const ToastContainer: React.FC = () => {
       {toasts.map((toast) => (
         <div
           key={toast.id}
-          className={`pointer-events-auto flex items-start gap-3 p-3.5 rounded-xl shadow-2xl border text-sm font-medium transition-all transform animate-in slide-in-from-top-2 duration-200 ${
+          className={`pointer-events-auto flex items-start gap-3 p-3.5 rounded-2xl shadow-2xl border text-xs sm:text-sm font-medium transition-all transform animate-in slide-in-from-top-2 duration-200 ${
             toast.type === 'success'
               ? 'bg-emerald-950/95 border-emerald-500/50 text-emerald-100 shadow-emerald-950/50'
               : toast.type === 'warning'
@@ -28,9 +28,9 @@ export const ToastContainer: React.FC = () => {
             {toast.type === 'error' && <XCircle className="w-5 h-5 text-rose-400" />}
             {toast.type === 'info' && <Info className="w-5 h-5 text-sky-400" />}
           </div>
-          <div className="flex-1 break-words">{toast.message}</div>
+          <div className="flex-1 break-words">{toast.text || (toast as any).message}</div>
           <button
-            onClick={() => removeToast(toast.id)}
+            onClick={() => removeToast && removeToast(toast.id)}
             className="text-slate-400 hover:text-white p-1 rounded transition"
           >
             <X className="w-4 h-4" />

@@ -2,6 +2,14 @@ import { openDB, DBSchema, IDBPDatabase } from 'idb';
 import { ItemMaster, InventoryLog, PendingInbound, AppSettings } from '../types/inventory';
 import { INITIAL_DEMO_ITEMS } from '../utils/demoData';
 
+export interface OfflineQueueItem {
+  id: string;
+  type: 'LOG' | 'ITEM' | 'PENDING_INBOUND';
+  payload: any;
+  retryCount: number;
+  createdAt: number;
+}
+
 interface SmartInventoryDB extends DBSchema {
   items: {
     key: string;
@@ -10,7 +18,6 @@ interface SmartInventoryDB extends DBSchema {
       'by-code': string;
       'by-location': string;
       'by-category': string;
-      'by-supplier': string;
     };
   };
   logs: {
@@ -33,13 +40,7 @@ interface SmartInventoryDB extends DBSchema {
   };
   offline_queue: {
     key: string;
-    value: {
-      id: string;
-      type: 'LOG' | 'ITEM' | 'PENDING_INBOUND';
-      payload: any;
-      retryCount: number;
-      createdAt: number;
-    };
+    value: OfflineQueueItem;
     indexes: {
       'by-created': number;
     };
@@ -58,21 +59,13 @@ let dbPromise: Promise<IDBPDatabase<SmartInventoryDB>> | null = null;
 export const getDB = () => {
   if (!dbPromise) {
     dbPromise = openDB<SmartInventoryDB>(DB_NAME, DB_VERSION, {
-      upgrade(db, oldVersion) {
+      upgrade(db) {
         // Items table
         if (!db.objectStoreNames.contains('items')) {
           const itemStore = db.createObjectStore('items', { keyPath: 'id' });
           itemStore.createIndex('by-code', 'code', { unique: true });
           itemStore.createIndex('by-location', 'location');
           itemStore.createIndex('by-category', 'category');
-        }
-
-        // Upgrade index for supplier if missing
-        if (db.objectStoreNames.contains('items')) {
-          const itemStore = db.transaction.objectStore('items');
-          if (!itemStore.indexNames.contains('by-supplier')) {
-            itemStore.createIndex('by-supplier', 'supplier');
-          }
         }
 
         // Logs table
@@ -84,7 +77,7 @@ export const getDB = () => {
           logStore.createIndex('by-synced', 'synced');
         }
 
-        // Pending Inbounds table (Version 2)
+        // Pending Inbounds table
         if (!db.objectStoreNames.contains('pending_inbounds')) {
           const pendingStore = db.createObjectStore('pending_inbounds', { keyPath: 'id' });
           pendingStore.createIndex('by-status', 'status');
@@ -108,9 +101,6 @@ export const getDB = () => {
 };
 
 export class LocalDatabaseService {
-  /**
-   * 初回起動時にデモデータを投入（データが空の場合のみ）
-   */
   static async initSeedData(): Promise<void> {
     const db = await getDB();
     const count = await db.count('items');
@@ -159,7 +149,7 @@ export class LocalDatabaseService {
     await db.delete('items', id);
   }
 
-  // --- PENDING INBOUND OPERATIONS (待審核入庫) ---
+  // --- PENDING INBOUND OPERATIONS ---
 
   static async getAllPendingInbounds(): Promise<PendingInbound[]> {
     const db = await getDB();
@@ -195,6 +185,23 @@ export class LocalDatabaseService {
   static async getAllLogs(): Promise<InventoryLog[]> {
     const db = await getDB();
     return db.getAllFromIndex('logs', 'by-timestamp');
+  }
+
+  // --- OFFLINE QUEUE OPERATIONS ---
+
+  static async getOfflineQueue(): Promise<OfflineQueueItem[]> {
+    const db = await getDB();
+    return db.getAllFromIndex('offline_queue', 'by-created');
+  }
+
+  static async addToOfflineQueue(item: OfflineQueueItem): Promise<void> {
+    const db = await getDB();
+    await db.put('offline_queue', item);
+  }
+
+  static async removeOfflineQueueItem(id: string): Promise<void> {
+    const db = await getDB();
+    await db.delete('offline_queue', id);
   }
 
   // --- SETTINGS OPERATIONS ---

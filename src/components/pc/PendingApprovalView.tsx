@@ -20,11 +20,9 @@ export const PendingApprovalView: React.FC = () => {
     approvePendingInbound,
     batchApprovePendingInbounds,
     rejectPendingInbound,
-    addToast,
   } = useInventory();
 
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
-  const [editingPending, setEditingPending] = useState<PendingInbound | null>(null);
 
   const pendingList = pendingInbounds.filter((p) => p.status === 'PENDING');
 

@@ -12,13 +12,14 @@ import { LocalDatabaseService } from '../services/db';
 import { useNetworkSync } from '../hooks/useNetworkSync';
 import { cloudSync, FirebaseConfigOptions } from '../services/firebase';
 
-interface ToastMessage {
+export interface ToastMessage {
   id: string;
-  type: 'success' | 'error' | 'info';
+  type: 'success' | 'error' | 'info' | 'warning';
   text: string;
+  message?: string;
 }
 
-interface InventoryContextType {
+export interface InventoryContextType {
   // State
   items: ItemMaster[];
   logs: InventoryLog[];
@@ -28,14 +29,18 @@ interface InventoryContextType {
   settings: AppSettings;
   updateSettings: (newSettings: Partial<AppSettings>) => void;
   toasts: ToastMessage[];
-  addToast: (type: 'success' | 'error' | 'info', text: string) => void;
+  addToast: (type: 'success' | 'error' | 'info' | 'warning', text: string) => void;
+  removeToast: (id: string) => void;
 
   // Network & Sync
   isOnline: boolean;
   isCloudConnected: boolean;
+  setIsCloudConnected: (connected: boolean) => void;
   pendingSyncCount: number;
+  pendingCount: number;
   isSyncing: boolean;
   triggerManualSync: () => Promise<void>;
+  triggerSync: () => Promise<void>;
   saveFirebaseConfig: (config: FirebaseConfigOptions) => void;
   clearFirebaseConfig: () => void;
 
@@ -50,9 +55,13 @@ interface InventoryContextType {
   batchScanList: BatchScanItem[];
   addToBatch: (item: ItemMaster, actionType: 'IN' | 'OUT', unit: string, multiplier: number, quantity: number) => void;
   updateBatchItemQty: (id: string, newQty: number) => void;
+  updateBatchItem: (id: string, updates: Partial<BatchScanItem>) => void;
   removeFromBatch: (id: string) => void;
+  removeBatchItem: (id: string) => void;
   clearBatch: () => void;
+  clearBatchList: () => void;
   commitBatch: () => Promise<void>;
+  commitBatchList: () => Promise<boolean>;
 
   // Transactions & Master CRUD
   recordTransaction: (
@@ -65,6 +74,7 @@ interface InventoryContextType {
     isPendingApproval?: boolean
   ) => Promise<boolean>;
   saveItem: (item: ItemMaster) => Promise<void>;
+  importItems: (items: ItemMaster[]) => Promise<void>;
   deleteItem: (id: string) => Promise<void>;
   refreshData: () => Promise<void>;
 
@@ -75,7 +85,9 @@ interface InventoryContextType {
 
   // QR Modal
   isQRModalOpen: boolean;
+  isQRGeneratorOpen: boolean;
   qrModalItem: ItemMaster | null;
+  qrGeneratorTarget: ItemMaster | null;
   openQRGenerator: (item: ItemMaster) => void;
   closeQRGenerator: () => void;
 }
@@ -88,7 +100,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   offlineMode: false,
   viewMode: 'FIELD',
   autoTorch: false,
-  requirePcApprovalForInbound: true, // 預設開啟 PC 端審核入庫流程
+  requirePcApprovalForInbound: true,
 };
 
 const InventoryContext = createContext<InventoryContextType | null>(null);
@@ -113,25 +125,31 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
   // Batch Mode List
   const [batchScanList, setBatchScanList] = useState<BatchScanItem[]>([]);
 
-  // Toast Helper
-  const addToast = useCallback((type: 'success' | 'error' | 'info', text: string) => {
-    const id = `toast-${Date.now()}-${Math.random()}`;
-    setToasts((prev) => [...prev, { id, type, text }]);
-    setTimeout(() => {
-      setToasts((prev) => prev.filter((t) => t.id !== id));
-    }, 3500);
+  // Toast Helpers
+  const removeToast = useCallback((id: string) => {
+    setToasts((prev) => prev.filter((t) => t.id !== id));
   }, []);
+
+  const addToast = useCallback((type: 'success' | 'error' | 'info' | 'warning', text: string) => {
+    const id = `toast-${Date.now()}-${Math.random()}`;
+    setToasts((prev) => [...prev, { id, type, text, message: text }]);
+    setTimeout(() => {
+      removeToast(id);
+    }, 3500);
+  }, [removeToast]);
 
   // Network Sync Hook
   const {
     isOnline,
-    pendingSyncCount,
+    pendingCount,
     isSyncing,
     refreshPendingCount,
-    triggerManualSync,
-    isCloudConnected,
-    setIsCloudConnected,
-  } = useNetworkSync(addToast);
+    triggerSync,
+  } = useNetworkSync((count) => {
+    addToast('success', `離線資料已自動補傳 ${count} 筆`);
+  });
+
+  const [isCloudConnected, setIsCloudConnected] = useState(() => cloudSync.isCloudEnabled());
 
   // Load Data
   const refreshData = useCallback(async () => {
@@ -144,7 +162,6 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
         LocalDatabaseService.getSettings(),
       ]);
 
-      // クラウド同期が有効な場合、Firestore から最新品目＆待審核リストを取得
       if (cloudSync.isCloudEnabled()) {
         const [cloudItems, cloudPendings] = await Promise.all([
           cloudSync.fetchAllCloudItems(),
@@ -177,7 +194,7 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
     } catch (e) {
       console.error('Failed to load inventory data:', e);
     }
-  }, [refreshPendingCount, setIsCloudConnected]);
+  }, [refreshPendingCount]);
 
   // Realtime Cloud Listener
   useEffect(() => {
@@ -229,7 +246,6 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
     };
   }, [refreshData]);
 
-  // Update Settings
   const updateSettings = useCallback(
     async (newSettings: Partial<AppSettings>) => {
       setSettings((prev) => {
@@ -254,16 +270,15 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
         addToast('error', 'Firebase 設定無效，已回復本地單機模式');
       }
     },
-    [addToast, refreshData, setIsCloudConnected]
+    [addToast, refreshData]
   );
 
   const clearFirebaseConfig = useCallback(() => {
     cloudSync.clearConfig();
     setIsCloudConnected(false);
     addToast('info', '已切換為純本地單機模式');
-  }, [addToast, setIsCloudConnected]);
+  }, [addToast]);
 
-  // Open BottomSheet
   const openBottomSheet = useCallback(
     async (code: string) => {
       const found = items.find((i) => i.code === code || i.qrCode === code);
@@ -280,7 +295,6 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
     setActiveScannedCode(null);
   }, []);
 
-  // Save Item
   const saveItem = useCallback(
     async (item: ItemMaster) => {
       try {
@@ -306,7 +320,29 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
     [addToast]
   );
 
-  // Delete Item
+  const importItems = useCallback(
+    async (newItems: ItemMaster[]) => {
+      try {
+        await LocalDatabaseService.saveItemsBatch(newItems);
+        setItems((prev) => {
+          const map = new Map(prev.map((i) => [i.id, i]));
+          newItems.forEach((i) => map.set(i.id, i));
+          return Array.from(map.values());
+        });
+        if (cloudSync.isCloudEnabled()) {
+          for (const item of newItems) {
+            await cloudSync.syncItemToCloud(item);
+          }
+        }
+        addToast('success', `成功匯入 ${newItems.length} 筆品目！`);
+      } catch (err) {
+        console.error('Failed to import items:', err);
+        addToast('error', '匯入失敗');
+      }
+    },
+    [addToast]
+  );
+
   const deleteItem = useCallback(
     async (id: string) => {
       try {
@@ -321,7 +357,6 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
     [addToast]
   );
 
-  // Record Transaction
   const recordTransaction = useCallback(
     async (
       item: ItemMaster,
@@ -335,7 +370,6 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
       try {
         const baseQty = quantity * multiplier;
 
-        // 若為入庫 (IN) 且開啟了「PC 端審核後才正式入庫」模式
         const shouldBePending =
           type === 'IN' && (isPendingApproval !== undefined ? isPendingApproval : settings.requirePcApprovalForInbound);
 
@@ -375,7 +409,6 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
           return true;
         }
 
-        // 直接正式出入庫 (OUT 或非審核模式)
         let delta = 0;
         if (type === 'IN') delta = baseQty;
         else if (type === 'OUT') delta = -baseQty;
@@ -435,7 +468,6 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
     [settings, addToast, closeBottomSheet]
   );
 
-  // PC 端審核通過正式入庫
   const approvePendingInbound = useCallback(
     async (pending: PendingInbound) => {
       try {
@@ -452,7 +484,7 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
             baseUnit: pending.unit,
             currentStock: 0,
             safetyStock: 10,
-            location: pending.location || '1號盒',
+            location: pending.location || '1號盒 (A-01)',
             unitConversions: [{ unit: pending.unit, multiplier: 1 }],
             updatedAt: new Date().toISOString(),
           };
@@ -523,7 +555,6 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
     [items, addToast]
   );
 
-  // 批次核准
   const batchApprovePendingInbounds = useCallback(
     async (pendings: PendingInbound[]) => {
       try {
@@ -539,7 +570,6 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
     [approvePendingInbound, addToast]
   );
 
-  // 駁回入庫
   const rejectPendingInbound = useCallback(
     async (id: string) => {
       try {
@@ -591,6 +621,21 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
     );
   }, []);
 
+  const updateBatchItem = useCallback((id: string, updates: Partial<BatchScanItem>) => {
+    setBatchScanList((prev) =>
+      prev.map((item) => {
+        if (item.id !== id) return item;
+        const updated = { ...item, ...updates };
+        if (updates.enteredQuantity !== undefined || updates.selectedUnit !== undefined) {
+          const conv = item.item.unitConversions?.find((c) => c.unit === updated.selectedUnit) || { multiplier: 1 };
+          updated.multiplier = conv.multiplier;
+          updated.calculatedBaseQuantity = (updated.enteredQuantity || 1) * conv.multiplier;
+        }
+        return updated;
+      })
+    );
+  }, []);
+
   const removeFromBatch = useCallback((id: string) => {
     setBatchScanList((prev) => prev.filter((i) => i.id !== id));
   }, []);
@@ -620,6 +665,15 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
     }
   }, [batchScanList, recordTransaction, clearBatch, addToast]);
 
+  const commitBatchList = useCallback(async (): Promise<boolean> => {
+    try {
+      await commitBatch();
+      return true;
+    } catch {
+      return false;
+    }
+  }, [commitBatch]);
+
   const openQRGenerator = useCallback((item: ItemMaster) => {
     setQrModalItem(item);
     setIsQRModalOpen(true);
@@ -642,11 +696,15 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
         updateSettings,
         toasts,
         addToast,
+        removeToast,
         isOnline,
         isCloudConnected,
-        pendingSyncCount,
+        setIsCloudConnected,
+        pendingSyncCount: pendingCount,
+        pendingCount,
         isSyncing,
-        triggerManualSync,
+        triggerManualSync: triggerSync,
+        triggerSync,
         saveFirebaseConfig,
         clearFirebaseConfig,
         isBottomSheetOpen,
@@ -657,18 +715,25 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
         batchScanList,
         addToBatch,
         updateBatchItemQty,
+        updateBatchItem,
         removeFromBatch,
+        removeBatchItem: removeFromBatch,
         clearBatch,
+        clearBatchList: clearBatch,
         commitBatch,
+        commitBatchList,
         recordTransaction,
         saveItem,
+        importItems,
         deleteItem,
         refreshData,
         approvePendingInbound,
         batchApprovePendingInbounds,
         rejectPendingInbound,
         isQRModalOpen,
+        isQRGeneratorOpen: isQRModalOpen,
         qrModalItem,
+        qrGeneratorTarget: qrModalItem,
         openQRGenerator,
         closeQRGenerator,
       }}
