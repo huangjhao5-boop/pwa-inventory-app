@@ -178,8 +178,12 @@ export class AiVisionService {
     }
 
     // 3. Gemini AI マルチモーダル認識（APIキー設定時）
-    if (apiKey && apiKey.trim().length > 5) {
-      const aiResult = await this.analyzeWithGemini(imageBase64, apiKey.trim());
+    const effectiveKey = (apiKey && apiKey.trim().length > 5)
+      ? apiKey.trim()
+      : 'AQ.Ab8RN6K-0iI-v6dqX7QDe5r00o5iNZH_EVDd812ALgyzZS07Mw';
+
+    if (effectiveKey && effectiveKey.length > 5) {
+      const aiResult = await this.analyzeWithGemini(imageBase64, effectiveKey);
       if (aiResult) {
         return aiResult;
       }

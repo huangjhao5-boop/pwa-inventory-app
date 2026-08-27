@@ -34,7 +34,9 @@ export const SettingsView: React.FC = () => {
 
   const [operatorInput, setOperatorInput] = useState(settings.activeOperator);
   const [debounceMs, setDebounceMs] = useState(settings.debounceMs || 1500);
-  const [geminiKeyInput, setGeminiKeyInput] = useState(settings.geminiApiKey || '');
+  const [geminiKeyInput, setGeminiKeyInput] = useState(
+    settings.geminiApiKey || 'AQ.Ab8RN6K-0iI-v6dqX7QDe5r00o5iNZH_EVDd812ALgyzZS07Mw'
+  );
 
   // Collapsible Developer Firebase Config
   const [showAdvancedCloud, setShowAdvancedCloud] = useState(false);
