@@ -4,7 +4,7 @@ import { useInventory } from '../../context/InventoryContext';
 import { AiVisionService } from '../../utils/geminiAiVision';
 import { VisualKnowledgeService } from '../../utils/visualKnowledgeService';
 import { ImageCompressor } from '../../utils/imageCompressor';
-import { X, Plus, Trash2, Layers, Building2, Box, Loader2, Sparkles, Image as ImageIcon } from 'lucide-react';
+import { X, Plus, Trash2, Layers, Building2, Box, Loader2, Sparkles, Image as ImageIcon, ExternalLink } from 'lucide-react';
 
 interface ItemFormModalProps {
   isOpen: boolean;
@@ -30,6 +30,7 @@ export const ItemFormModal: React.FC<ItemFormModalProps> = ({
   const [safetyStock, setSafetyStock] = useState(10);
   const [location, setLocation] = useState('端子ボックス (A-01)');
   const [qrCode, setQrCode] = useState('');
+  const [orderUrl, setOrderUrl] = useState('');
   const [note, setNote] = useState('');
 
   // Dynamic packaging unit conversions
@@ -56,6 +57,7 @@ export const ItemFormModal: React.FC<ItemFormModalProps> = ({
       setSafetyStock(initialItem.safetyStock || 0);
       setLocation(initialItem.location || '端子ボックス (A-01)');
       setQrCode(initialItem.qrCode || `INV:v1:${initialItem.code}`);
+      setOrderUrl(initialItem.orderUrl || '');
       setNote(initialItem.note || '');
       setConversions(
         initialItem.unitConversions?.filter((c) => c.unit !== initialItem.baseUnit) || []
@@ -72,6 +74,7 @@ export const ItemFormModal: React.FC<ItemFormModalProps> = ({
       setSafetyStock(10);
       setLocation('端子ボックス (A-01)');
       setQrCode('');
+      setOrderUrl('');
       setNote('');
       setConversions([
         { unit: '箱', multiplier: 50 },
@@ -159,6 +162,7 @@ export const ItemFormModal: React.FC<ItemFormModalProps> = ({
       safetyStock: Number(safetyStock) || 0,
       location: location.trim() || '端子ボックス (A-01)',
       qrCode: qrCode.trim() || `INV:v1:${code.trim()}`,
+      orderUrl: orderUrl.trim() || undefined,
       unitConversions: allConversions,
       updatedAt: new Date().toISOString(),
       note: note.trim() || undefined,
@@ -363,6 +367,56 @@ export const ItemFormModal: React.FC<ItemFormModalProps> = ({
                   </span>
                 </div>
               )}
+            </div>
+
+            {/* 発注先Webリンク (EC/商社URL) */}
+            <div className="col-span-full pt-1">
+              <div className="flex items-center justify-between mb-1.5">
+                <label className="block font-bold text-slate-300 text-xs flex items-center gap-1.5">
+                  <ExternalLink className="w-3.5 h-3.5 text-blue-400" />
+                  <span>発注先Webリンク (モノタロウ、Amazon、ミスミ、電材商社EC等)</span>
+                </label>
+                <div className="flex items-center gap-1 text-[11px]">
+                  <span className="text-slate-500">ワンクリック検索:</span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const q = encodeURIComponent(`${supplier} ${name} ${spec}`.trim());
+                      window.open(`https://www.monotaro.com/s/q-${q}/`, '_blank');
+                    }}
+                    className="text-amber-400 hover:underline px-1.5 py-0.5 rounded bg-slate-800 border border-slate-700 font-bold"
+                  >
+                    モノタロウ
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const q = encodeURIComponent(`${supplier} ${name} ${spec}`.trim());
+                      window.open(`https://www.amazon.co.jp/s?k=${q}`, '_blank');
+                    }}
+                    className="text-amber-400 hover:underline px-1.5 py-0.5 rounded bg-slate-800 border border-slate-700 font-bold"
+                  >
+                    Amazon
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const q = encodeURIComponent(`${supplier} ${name} ${spec}`.trim());
+                      window.open(`https://www.google.com/search?q=${q}`, '_blank');
+                    }}
+                    className="text-blue-400 hover:underline px-1.5 py-0.5 rounded bg-slate-800 border border-slate-700 font-bold"
+                  >
+                    Google
+                  </button>
+                </div>
+              </div>
+              <input
+                type="url"
+                value={orderUrl}
+                onChange={(e) => setOrderUrl(e.target.value)}
+                placeholder="https://www.monotaro.com/p/... (発注先商品ページのURLを貼り付け)"
+                className="w-full px-3.5 py-2.5 bg-slate-800 border border-slate-700 rounded-xl text-white text-xs font-mono focus:outline-none focus:border-blue-500"
+              />
             </div>
           </div>
 

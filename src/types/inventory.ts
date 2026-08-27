@@ -56,6 +56,7 @@ export interface ItemMaster {
   safetyStock: number;        // 安全在庫数 (アラート閾値)
   location: string;           // 保管ボックス名 / 棚番 (例: 1号ボックス (A-01))
   qrCode?: string;            // 自社QRコード文字列 (例: INV:v1:4901480000011)
+  orderUrl?: string;          // 発注先Webリンク (モノタロウ、Amazon、ミスミ、電材商社EC等)
   unitConversions: UnitConversion[]; // 包装単位換算設定 (箱, 袋, パックなど複数)
   updatedAt: string;          // 最終更新日時 ISO
   note?: string;              // 備考・メモ
