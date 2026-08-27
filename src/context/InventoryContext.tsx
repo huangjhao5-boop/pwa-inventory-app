@@ -218,19 +218,42 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
             cloudSync.fetchAllPendingInbounds(),
           ]);
 
-          if (cloudItems.length > 0) {
-            await LocalDatabaseService.saveItemsBatch(cloudItems);
-            setItems(cloudItems);
-          } else if (storedItems.length > 0) {
-            for (const item of storedItems) {
-              cloudSync.syncItemToCloud(item);
+          // 安全な雙向マージ（ローカルで新規追加された品目が消えるのを防止）
+          const itemMap = new Map<string, ItemMaster>();
+          storedItems.forEach((item) => itemMap.set(item.id, item));
+
+          cloudItems.forEach((cItem) => {
+            const local = itemMap.get(cItem.id);
+            if (!local || (cItem.updatedAt && cItem.updatedAt >= local.updatedAt)) {
+              itemMap.set(cItem.id, cItem);
+            }
+          });
+
+          // クラウドに未同期のローカル品目をバックグラウンドでクラウドへ同期
+          for (const [id, item] of itemMap.entries()) {
+            if (!cloudItems.some((ci) => ci.id === id)) {
+              cloudSync.syncItemToCloud(item).catch(() => {});
             }
           }
 
-          if (cloudPendings.length > 0) {
-            await LocalDatabaseService.savePendingInboundsBatch(cloudPendings);
-            setPendingInbounds(cloudPendings);
+          const finalItems = Array.from(itemMap.values());
+          await LocalDatabaseService.saveItemsBatch(finalItems);
+          setItems(finalItems);
+
+          // 承認待ちデータの安全なマージ
+          const pendingMap = new Map<string, PendingInbound>();
+          storedPendings.forEach((p) => pendingMap.set(p.id, p));
+          cloudPendings.forEach((cp) => pendingMap.set(cp.id, cp));
+
+          for (const [id, pend] of pendingMap.entries()) {
+            if (!cloudPendings.some((cp) => cp.id === id)) {
+              cloudSync.syncPendingInboundToCloud(pend).catch(() => {});
+            }
           }
+
+          const finalPendings = Array.from(pendingMap.values());
+          await LocalDatabaseService.savePendingInboundsBatch(finalPendings);
+          setPendingInbounds(finalPendings);
         } catch (e) {
           console.warn('Cloud initial fetch failed:', e);
         }

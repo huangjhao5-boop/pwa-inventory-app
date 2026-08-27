@@ -1,6 +1,5 @@
 import { openDB, DBSchema, IDBPDatabase } from 'idb';
 import { ItemMaster, InventoryLog, PendingInbound, AppSettings } from '../types/inventory';
-import { INITIAL_DEMO_ITEMS } from '../utils/demoData';
 
 export interface OfflineQueueItem {
   id: string;
@@ -102,15 +101,7 @@ export const getDB = () => {
 
 export class LocalDatabaseService {
   static async initSeedData(): Promise<void> {
-    const db = await getDB();
-    const count = await db.count('items');
-    if (count === 0) {
-      const tx = db.transaction('items', 'readwrite');
-      for (const item of INITIAL_DEMO_ITEMS) {
-        await tx.store.put(item);
-      }
-      await tx.done;
-    }
+    // 模擬ファイル自動生成を削除（空のデータベースから開始）
   }
 
   // --- ITEM MASTER OPERATIONS ---
