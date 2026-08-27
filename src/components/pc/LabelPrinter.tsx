@@ -2,11 +2,15 @@ import React, { useState } from 'react';
 import { useInventory } from '../../context/InventoryContext';
 import { LabelLayout } from '../../types/inventory';
 import { LabelSheetPreview } from './LabelSheetPreview';
-import { Printer, CheckSquare, Layers } from 'lucide-react';
+import { Printer, CheckSquare, Layers, Download, Image as ImageIcon, Sparkles } from 'lucide-react';
+import confetti from 'canvas-confetti';
 
 export const LabelPrinter: React.FC = () => {
-  const { items } = useInventory();
+  const { items, addToast } = useInventory();
   const [layout, setLayout] = useState<LabelLayout>('A-ONE-24');
+  const [pureQrOnly, setPureQrOnly] = useState<boolean>(true); // ユーザー要望によりデフォルトはQRコード単体（文字なし）
+  const [isExportingImage, setIsExportingImage] = useState(false);
+
   const [selectedItemIds, setSelectedItemIds] = useState<Record<string, boolean>>(() => {
     const initial: Record<string, boolean> = {};
     items.slice(0, 6).forEach((i) => {
@@ -46,6 +50,158 @@ export const LabelPrinter: React.FC = () => {
     window.print();
   };
 
+  // 1. ラベルシート全体を高解像度 PNG 画像として出力・保存
+  const handleExportSheetAsPng = async () => {
+    const container = document.getElementById('printable-label-sheet');
+    if (!container) {
+      addToast('error', '印刷プレビューが見つかりません');
+      return;
+    }
+
+    try {
+      setIsExportingImage(true);
+      addToast('info', '高解像度 PNG 画像を生成中...');
+
+      // SVG QRコードを Canvas に描画
+      const svgs = Array.from(container.querySelectorAll('svg'));
+      if (svgs.length === 0) {
+        addToast('warning', 'QRコードがありません');
+        setIsExportingImage(false);
+        return;
+      }
+
+      // レンダリング用オフスクリーン Canvas
+      const cols = layout === 'A-ONE-24' ? 3 : layout === 'A-ONE-44' ? 4 : 1;
+      const rows = Math.ceil(svgs.length / cols);
+      const cellWidth = pureQrOnly ? 280 : 360;
+      const cellHeight = pureQrOnly ? 280 : 180;
+      const padding = 30;
+
+      const canvas = document.createElement('canvas');
+      canvas.width = cols * cellWidth + padding * 2;
+      canvas.height = rows * cellHeight + padding * 2;
+
+      const ctx = canvas.getContext('2d');
+      if (!ctx) throw new Error('Canvas context not available');
+
+      // 背景白塗り
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      // 各QRコードを順次描画
+      const promises = svgs.map((svg, idx) => {
+        return new Promise<void>((resolve) => {
+          const svgData = new XMLSerializer().serializeToString(svg);
+          const img = new Image();
+          const colIdx = idx % cols;
+          const rowIdx = Math.floor(idx / cols);
+          const x = padding + colIdx * cellWidth;
+          const y = padding + rowIdx * cellHeight;
+
+          img.onload = () => {
+            // 外枠ボーダー
+            ctx.strokeStyle = '#e2e8f0';
+            ctx.lineWidth = 2;
+            ctx.strokeRect(x + 5, y + 5, cellWidth - 10, cellHeight - 10);
+
+            if (pureQrOnly) {
+              const qrSize = Math.min(cellWidth - 40, cellHeight - 40);
+              const qrX = x + (cellWidth - qrSize) / 2;
+              const qrY = y + (cellHeight - qrSize) / 2;
+              ctx.drawImage(img, qrX, qrY, qrSize, qrSize);
+            } else {
+              const qrSize = 120;
+              ctx.drawImage(img, x + 15, y + 25, qrSize, qrSize);
+
+              const item = selectedItemsWithCopies[Math.min(idx, selectedItemsWithCopies.length - 1)]?.item;
+              if (item) {
+                ctx.fillStyle = '#0f172a';
+                ctx.font = 'bold 15px sans-serif';
+                ctx.fillText(item.name.slice(0, 14), x + 145, y + 50);
+
+                ctx.fillStyle = '#64748b';
+                ctx.font = '12px sans-serif';
+                if (item.spec) ctx.fillText(item.spec.slice(0, 16), x + 145, y + 75);
+                ctx.fillText(`ボックス: ${item.location}`, x + 145, y + 100);
+
+                ctx.fillStyle = '#94a3b8';
+                ctx.font = 'bold 11px monospace';
+                ctx.fillText(item.code, x + 145, y + 125);
+              }
+            }
+            resolve();
+          };
+
+          img.src = 'data:image/svg+xml;base64,' + btoa(unescape(encodeURIComponent(svgData)));
+        });
+      });
+
+      await Promise.all(promises);
+
+      // PNG ダウンロード
+      const pngUrl = canvas.toDataURL('image/png');
+      const a = document.createElement('a');
+      a.href = pngUrl;
+      a.download = `QR_ラベルシート_${layout}_${new Date().toISOString().slice(0, 10)}.png`;
+      a.click();
+
+      setIsExportingImage(false);
+      addToast('success', 'QRラベルシートを PNG 画像として出力しました！');
+
+      try {
+        confetti({ particleCount: 60, spread: 60, origin: { y: 0.7 } });
+      } catch {}
+    } catch (e) {
+      console.error('Export sheet image failed:', e);
+      setIsExportingImage(false);
+      addToast('error', '画像の出力に失敗しました');
+    }
+  };
+
+  // 2. 選択品目のQRコード画像を個別PNGとして連続出力
+  const handleExportIndividualQrPngs = async () => {
+    const selected = items.filter((i) => selectedItemIds[i.id]);
+    if (selected.length === 0) {
+      addToast('warning', '品目が選択されていません');
+      return;
+    }
+
+    addToast('info', `${selected.length}件のQRコード画像をダウンロードします...`);
+
+    for (const item of selected) {
+      const canvas = document.createElement('canvas');
+      canvas.width = 500;
+      canvas.height = 500;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) continue;
+
+      // Pure QR Code generator
+      const qrImg = new Image();
+      // Use standard QR generator URL or local canvas
+      const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=460x460&data=${encodeURIComponent(item.code)}`;
+
+      await new Promise<void>((resolve) => {
+        qrImg.crossOrigin = 'anonymous';
+        qrImg.onload = () => {
+          ctx.fillStyle = '#ffffff';
+          ctx.fillRect(0, 0, 500, 500);
+          ctx.drawImage(qrImg, 20, 20, 460, 460);
+
+          const pngData = canvas.toDataURL('image/png');
+          const a = document.createElement('a');
+          a.href = pngData;
+          a.download = `QR_${item.code}_${item.name.replace(/[\/\\:*?"<>|]/g, '_')}.png`;
+          a.click();
+          setTimeout(resolve, 200);
+        };
+        qrImg.onerror = () => resolve();
+        qrImg.src = qrUrl;
+      });
+    }
+
+    addToast('success', `${selected.length}件のQRコードPNG画像を保存しました`);
+  };
+
   return (
     <div className="max-w-7xl mx-auto space-y-4 pb-20 md:pb-8">
       {/* Top Header */}
@@ -57,24 +213,47 @@ export const LabelPrinter: React.FC = () => {
             </span>
             <div>
               <h2 className="font-extrabold text-lg sm:text-xl text-white">
-                QR ラベル一括印刷 (Label Printer)
+                QR ラベル一括印刷 & 画像出力 (Label Printer)
               </h2>
               <p className="text-xs text-slate-400">
-                市販のA4ラベルシール・耐水透明封膜に対応 / 一般プリンターから直接印刷可能
+                A4ラベル用紙への直接印刷だけでなく、高解像度 PNG 画像としての一括保存に対応
               </p>
             </div>
           </div>
         </div>
 
-        {/* Action Button */}
-        <div className="flex items-center gap-3 w-full md:w-auto">
+        {/* Action Buttons */}
+        <div className="flex flex-wrap items-center gap-2 w-full md:w-auto justify-end">
+          {/* Export Individual PNGs */}
+          <button
+            onClick={handleExportIndividualQrPngs}
+            disabled={totalLabels === 0}
+            className="flex items-center justify-center gap-1.5 px-3.5 py-2.5 bg-slate-800 hover:bg-slate-700 active:scale-95 disabled:opacity-50 text-slate-200 border border-slate-700 font-bold text-xs rounded-xl transition shadow"
+            title="各品目のQRコードを個別のPNG画像としてダウンロード"
+          >
+            <Download className="w-4 h-4 text-emerald-400" />
+            <span>個別 QR画像保存</span>
+          </button>
+
+          {/* Export Sheet as PNG */}
+          <button
+            onClick={handleExportSheetAsPng}
+            disabled={totalLabels === 0 || isExportingImage}
+            className="flex items-center justify-center gap-1.5 px-4 py-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 active:scale-95 disabled:opacity-50 text-white font-extrabold text-xs rounded-xl shadow-lg shadow-blue-950/60 transition"
+            title="プレビュー画面全体を1枚のPNG画像として保存"
+          >
+            <ImageIcon className="w-4 h-4 stroke-[2.5]" />
+            <span>シートを画像 (PNG) で出力</span>
+          </button>
+
+          {/* Print Dialog */}
           <button
             onClick={handlePrint}
             disabled={totalLabels === 0}
-            className="flex-1 md:flex-none flex items-center justify-center gap-2 px-6 py-3 bg-blue-600 hover:bg-blue-500 active:scale-95 disabled:opacity-50 text-white font-extrabold text-sm rounded-2xl shadow-xl shadow-blue-950 transition"
+            className="flex items-center justify-center gap-1.5 px-4 py-2.5 bg-slate-800 hover:bg-slate-700 active:scale-95 disabled:opacity-50 text-slate-100 font-bold text-xs rounded-xl border border-slate-700 transition"
           >
-            <Printer className="w-4 h-4 stroke-[2.5]" />
-            <span>印刷ダイアログを開く ({totalLabels} 枚)</span>
+            <Printer className="w-4 h-4 text-blue-400" />
+            <span>プリンター印刷 ({totalLabels}枚)</span>
           </button>
         </div>
       </div>
@@ -85,8 +264,41 @@ export const LabelPrinter: React.FC = () => {
         <div className="bg-slate-900 border border-slate-800 rounded-3xl p-4 sm:p-5 space-y-4 shadow-lg">
           <h3 className="font-bold text-sm text-slate-200 flex items-center gap-2">
             <Layers className="w-4 h-4 text-blue-400" />
-            <span>ラベル用紙規格の選択</span>
+            <span>出力形式 & ラベル用紙規格</span>
           </h3>
+
+          {/* QR only or Full Label Toggle */}
+          <div className="bg-slate-950 p-3 rounded-2xl border border-slate-800 space-y-2">
+            <label className="text-xs font-bold text-slate-300 block">出力デザイン形式</label>
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => setPureQrOnly(true)}
+                className={`py-2 px-3 rounded-xl text-xs font-bold border transition flex items-center justify-center gap-1.5 ${
+                  pureQrOnly
+                    ? 'bg-blue-600 border-blue-400 text-white shadow-md'
+                    : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-white'
+                }`}
+              >
+                <Sparkles className="w-3.5 h-3.5" />
+                <span>QRコード単体のみ</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setPureQrOnly(false)}
+                className={`py-2 px-3 rounded-xl text-xs font-bold border transition flex items-center justify-center gap-1.5 ${
+                  !pureQrOnly
+                    ? 'bg-blue-600 border-blue-400 text-white shadow-md'
+                    : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-white'
+                }`}
+              >
+                <span>品名・型番ラベル付</span>
+              </button>
+            </div>
+            <p className="text-[11px] text-slate-400">
+              {pureQrOnly ? '文字なしの純粋なQRコード画像のみを整列出力します' : '品名・ボックス名・型番・コードを印字した完全ラベル'}
+            </p>
+          </div>
 
           <div className="space-y-2">
             <label
@@ -164,18 +376,14 @@ export const LabelPrinter: React.FC = () => {
               </div>
             </label>
           </div>
-
-          <div className="bg-slate-950 p-3 rounded-2xl border border-slate-800 text-xs text-slate-400 space-y-1">
-            <p className="font-semibold text-slate-300">💡 印刷のヒント:</p>
-            <p>・市販の耐水・耐擦傷フィルムラベル紙を使用すると、長期間油や水濡れから保護できます。</p>
-            <p>・ブラウザの印刷設定で「拡大/縮小: 100% (規定値)」を選択してください。</p>
-          </div>
         </div>
 
         {/* Right Column (2 cols): Item Selection List */}
         <div className="lg:col-span-2 bg-slate-900 border border-slate-800 rounded-3xl p-4 sm:p-5 space-y-3 shadow-lg flex flex-col">
           <div className="flex items-center justify-between">
-            <h3 className="font-bold text-sm text-slate-200">印刷する品目を選択</h3>
+            <h3 className="font-bold text-sm text-slate-200">
+              出力する品目を選択 ({Object.values(selectedItemIds).filter(Boolean).length} 品目 / 計 {totalLabels} 枚)
+            </h3>
             <button
               onClick={toggleSelectAll}
               className="text-xs text-blue-400 hover:text-blue-300 font-semibold flex items-center gap-1"
@@ -235,9 +443,13 @@ export const LabelPrinter: React.FC = () => {
       {/* Print Preview Section */}
       <div className="space-y-2">
         <h3 className="font-bold text-sm text-slate-300 px-2 print:hidden">
-          📄 印刷プレビュー ({layout})
+          📄 出力プレビュー ({layout} / {pureQrOnly ? 'QRコード単体' : 'ラベル付'})
         </h3>
-        <LabelSheetPreview items={selectedItemsWithCopies} layout={layout} />
+        <LabelSheetPreview
+          items={selectedItemsWithCopies}
+          layout={layout}
+          pureQrOnly={pureQrOnly}
+        />
       </div>
     </div>
   );
