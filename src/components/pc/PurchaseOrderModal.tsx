@@ -2,18 +2,22 @@ import React, { useState } from 'react';
 import { useInventory } from '../../context/InventoryContext';
 import { ItemMaster } from '../../types/inventory';
 import { CsvHelper, PurchaseOrderItem } from '../../utils/csvHelper';
+import { NakanishiOrderExcelExporter, formatReiwaDate } from '../../utils/nakanishiOrderExporter';
 import {
   ShoppingCart,
   X,
   Copy,
   Printer,
-  ExternalLink,
   Trash2,
   Building2,
   Box,
   AlertTriangle,
   FileSpreadsheet,
   Check,
+  FileText,
+  Calendar,
+  MapPin,
+  Briefcase,
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 
@@ -45,6 +49,12 @@ export const PurchaseOrderModal: React.FC<PurchaseOrderModalProps> = ({
       };
     });
   });
+
+  // 中西電機工業 注文書固有のパラメータ
+  const [jobCode, setJobCode] = useState('');
+  const [desiredDelivery, setDesiredDelivery] = useState('大至急');
+  const [deliveryLocation, setDeliveryLocation] = useState('事務所');
+  const [recipientPerson, setRecipientPerson] = useState('林');
 
   const [copied, setCopied] = useState(false);
   const [orderNumber] = useState(() => `PO-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}-${Math.floor(Math.random() * 900 + 100)}`);
@@ -111,18 +121,37 @@ export const PurchaseOrderModal: React.FC<PurchaseOrderModalProps> = ({
     addToast('success', `${newOrders.length}件の要発制品目を追加しました`);
   };
 
-  // Export 1: CSV Export
+  // Export 1: 中西電機工業 注文書 Excel (.xlsx) 出力
+  const handleExportNakanishiExcel = () => {
+    if (orderItems.length === 0) return;
+    try {
+      const fileName = NakanishiOrderExcelExporter.exportNakanishiOrder(orderItems, {
+        operatorName: settings.activeOperator || '黄',
+        recipientCompany: '中西電機工業㈱',
+        recipientPerson,
+        defaultJobCode: jobCode,
+        defaultDesiredDelivery: desiredDelivery,
+        defaultDeliveryLocation: deliveryLocation,
+      });
+      addToast('success', `中西電機 注文書 (${fileName}) を出力しました！`);
+      try {
+        confetti({ particleCount: 70, spread: 60, origin: { y: 0.7 } });
+      } catch {}
+    } catch (e) {
+      console.error('Export Excel failed:', e);
+      addToast('error', 'Excel出力に失敗しました');
+    }
+  };
+
+  // Export 2: CSV Export
   const handleExportCsv = () => {
     if (orderItems.length === 0) return;
     const csvContent = CsvHelper.exportPurchaseOrdersToCsv(orderItems, orderNumber);
     CsvHelper.downloadCsv(csvContent, `発注書_${orderNumber}.csv`);
     addToast('success', `発注書CSV (${orderNumber}.csv) を出力しました`);
-    try {
-      confetti({ particleCount: 60, spread: 60, origin: { y: 0.7 } });
-    } catch {}
   };
 
-  // Export 2: Copy Text for LINE / Email
+  // Export 3: Copy Text for LINE / Email
   const handleCopyText = async () => {
     if (orderItems.length === 0) return;
     const text = CsvHelper.formatPurchaseOrderText(orderItems, settings.activeOperator);
@@ -132,7 +161,7 @@ export const PurchaseOrderModal: React.FC<PurchaseOrderModalProps> = ({
     addToast('success', '発注依頼テキストをクリップボードにコピーしました（LINE・メール送信可）');
   };
 
-  // Export 3: Print Purchase Order
+  // Export 4: Print Purchase Order
   const handlePrint = () => {
     window.print();
   };
@@ -152,9 +181,12 @@ export const PurchaseOrderModal: React.FC<PurchaseOrderModalProps> = ({
                 <span className="px-2 py-0.5 rounded-lg bg-slate-800 border border-slate-700 font-mono text-xs text-amber-400 font-bold">
                   {orderNumber}
                 </span>
+                <span className="px-2 py-0.5 rounded-lg bg-emerald-950 border border-emerald-700 font-bold text-xs text-emerald-300">
+                  中西電機工業 様式対応
+                </span>
               </div>
               <p className="text-xs text-slate-400">
-                発注品目と数量を選択し、CSV出力・LINE依頼文コピー・発注伝票印刷を行えます
+                発注品目と数量を選択し、「注文見積り書_中西電機」の正規Excelフォーマットで即時出力できます
               </p>
             </div>
           </div>
@@ -166,11 +198,70 @@ export const PurchaseOrderModal: React.FC<PurchaseOrderModalProps> = ({
           </button>
         </div>
 
+        {/* 中西電機 注文書 ヘッダーパラメータ設定バー */}
+        <div className="px-5 py-3 bg-slate-950/80 border-b border-slate-800 grid grid-cols-2 sm:grid-cols-4 gap-2.5 text-xs">
+          <div>
+            <label className="text-slate-400 font-bold block mb-1 flex items-center gap-1">
+              <Briefcase className="w-3.5 h-3.5 text-blue-400" />
+              <span>工番 (任意)</span>
+            </label>
+            <input
+              type="text"
+              value={jobCode}
+              onChange={(e) => setJobCode(e.target.value)}
+              placeholder="例: KF4641E"
+              className="w-full px-2.5 py-1.5 bg-slate-800 border border-slate-700 rounded-xl text-white font-mono focus:outline-none focus:border-blue-500 text-xs"
+            />
+          </div>
+
+          <div>
+            <label className="text-slate-400 font-bold block mb-1 flex items-center gap-1">
+              <Calendar className="w-3.5 h-3.5 text-amber-400" />
+              <span>希望納期</span>
+            </label>
+            <input
+              type="text"
+              value={desiredDelivery}
+              onChange={(e) => setDesiredDelivery(e.target.value)}
+              placeholder="大至急 / 8月30日..."
+              className="w-full px-2.5 py-1.5 bg-slate-800 border border-slate-700 rounded-xl text-white focus:outline-none focus:border-amber-500 text-xs"
+            />
+          </div>
+
+          <div>
+            <label className="text-slate-400 font-bold block mb-1 flex items-center gap-1">
+              <MapPin className="w-3.5 h-3.5 text-emerald-400" />
+              <span>納品場所</span>
+            </label>
+            <input
+              type="text"
+              value={deliveryLocation}
+              onChange={(e) => setDeliveryLocation(e.target.value)}
+              placeholder="事務所 / 第2工場..."
+              className="w-full px-2.5 py-1.5 bg-slate-800 border border-slate-700 rounded-xl text-white focus:outline-none focus:border-emerald-500 text-xs"
+            />
+          </div>
+
+          <div>
+            <label className="text-slate-400 font-bold block mb-1 flex items-center gap-1">
+              <Building2 className="w-3.5 h-3.5 text-blue-400" />
+              <span>中西電機 担当者</span>
+            </label>
+            <input
+              type="text"
+              value={recipientPerson}
+              onChange={(e) => setRecipientPerson(e.target.value)}
+              placeholder="林"
+              className="w-full px-2.5 py-1.5 bg-slate-800 border border-slate-700 rounded-xl text-white focus:outline-none focus:border-blue-500 text-xs"
+            />
+          </div>
+        </div>
+
         {/* Toolbar */}
-        <div className="px-5 py-3 bg-slate-900 border-b border-slate-800 flex flex-wrap items-center justify-between gap-3">
+        <div className="px-5 py-2.5 bg-slate-900 border-b border-slate-800 flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-2">
             <span className="text-xs font-bold text-slate-300">
-              発注対象: <strong className="text-amber-400 text-sm">{orderItems.length}</strong> 件
+              発注対象: <strong className="text-amber-400 text-sm">{orderItems.length}</strong> 件 (最大15件/票)
             </span>
             <button
               type="button"
@@ -180,6 +271,10 @@ export const PurchaseOrderModal: React.FC<PurchaseOrderModalProps> = ({
               <AlertTriangle className="w-3.5 h-3.5 text-amber-400" />
               <span>要発注品（安全在庫割れ）を全件追加</span>
             </button>
+          </div>
+
+          <div className="text-xs text-slate-400">
+            依頼日: <strong className="text-slate-200">{formatReiwaDate()}</strong> / 担当: <strong className="text-blue-400">{settings.activeOperator || '黄'}</strong>
           </div>
         </div>
 
@@ -204,6 +299,9 @@ export const PurchaseOrderModal: React.FC<PurchaseOrderModalProps> = ({
                   {/* Left: Item Info */}
                   <div className="flex-1 min-w-0">
                     <div className="flex flex-wrap items-center gap-2">
+                      <span className="font-mono text-xs font-bold text-amber-400 bg-amber-950/80 px-2 py-0.5 rounded-lg border border-amber-800">
+                        NO. {idx + 1}
+                      </span>
                       <span className="font-mono text-xs font-bold text-slate-400 bg-slate-900 px-2 py-0.5 rounded-lg border border-slate-800">
                         {order.item.code}
                       </span>
@@ -217,24 +315,13 @@ export const PurchaseOrderModal: React.FC<PurchaseOrderModalProps> = ({
                           <span>{order.item.supplier}</span>
                         </span>
                       )}
-                      {order.item.orderUrl && (
-                        <a
-                          href={order.item.orderUrl}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-[11px] font-bold text-cyan-400 hover:underline flex items-center gap-1 bg-cyan-950/60 px-2 py-0.5 rounded-lg border border-cyan-800"
-                        >
-                          <ExternalLink className="w-3 h-3" />
-                          <span>発注ページを開く</span>
-                        </a>
-                      )}
                     </div>
 
                     <h4 className="font-black text-sm sm:text-base text-white truncate mt-1">
                       {order.item.name}
                     </h4>
                     {order.item.spec && (
-                      <p className="text-xs text-slate-400 truncate">{order.item.spec}</p>
+                      <p className="text-xs text-amber-300 font-bold truncate mt-0.5">規格型番: {order.item.spec}</p>
                     )}
 
                     <div className="flex items-center gap-3 text-xs mt-1">
@@ -250,7 +337,7 @@ export const PurchaseOrderModal: React.FC<PurchaseOrderModalProps> = ({
                   {/* Right: Quantity Controls */}
                   <div className="flex items-center gap-2.5 w-full sm:w-auto justify-between sm:justify-end border-t sm:border-t-0 border-slate-800 pt-2 sm:pt-0">
                     <div className="text-right">
-                      <label className="text-[10px] text-slate-500 font-bold block mb-0.5">発注数量</label>
+                      <label className="text-[10px] text-slate-500 font-bold block mb-0.5">発注数量 & 単位</label>
                       <div className="flex items-center gap-1.5">
                         <input
                           type="number"
@@ -300,7 +387,10 @@ export const PurchaseOrderModal: React.FC<PurchaseOrderModalProps> = ({
         {/* Footer Actions (Export Formats) */}
         <div className="p-4 bg-slate-950 border-t border-slate-800 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
           <div className="text-xs text-slate-400">
-            合計 <strong className="text-white font-bold">{orderItems.length}</strong> 品目の発注書
+            合計 <strong className="text-white font-bold">{orderItems.length}</strong> 品目
+            {orderItems.length > 15 && (
+              <span className="text-amber-400 ml-1 font-bold">（※15件以降は2枚目出力となります）</span>
+            )}
           </div>
 
           <div className="flex flex-wrap items-center gap-2 justify-end">
@@ -309,10 +399,10 @@ export const PurchaseOrderModal: React.FC<PurchaseOrderModalProps> = ({
               type="button"
               onClick={handleCopyText}
               disabled={orderItems.length === 0}
-              className="flex-1 sm:flex-initial px-4 py-2.5 bg-slate-800 hover:bg-slate-700 disabled:opacity-40 active:scale-95 text-slate-200 border border-slate-700 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5"
+              className="px-3.5 py-2.5 bg-slate-800 hover:bg-slate-700 disabled:opacity-40 active:scale-95 text-slate-200 border border-slate-700 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5"
             >
               {copied ? <Check className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4 text-blue-400" />}
-              <span>{copied ? 'コピー完了！' : 'テキストコピー (LINE/メール)'}</span>
+              <span>{copied ? 'コピー完了！' : 'テキストコピー'}</span>
             </button>
 
             {/* Format 2: Print */}
@@ -320,22 +410,33 @@ export const PurchaseOrderModal: React.FC<PurchaseOrderModalProps> = ({
               type="button"
               onClick={handlePrint}
               disabled={orderItems.length === 0}
-              className="px-3.5 py-2.5 bg-slate-800 hover:bg-slate-700 disabled:opacity-40 active:scale-95 text-slate-200 border border-slate-700 rounded-xl text-xs font-bold transition flex items-center gap-1.5"
+              className="px-3 py-2.5 bg-slate-800 hover:bg-slate-700 disabled:opacity-40 active:scale-95 text-slate-200 border border-slate-700 rounded-xl text-xs font-bold transition flex items-center gap-1.5"
               title="発注伝票を印刷"
             >
               <Printer className="w-4 h-4 text-slate-400" />
               <span>印刷</span>
             </button>
 
-            {/* Format 3: Download CSV */}
+            {/* Format 3: Generic CSV */}
             <button
               type="button"
               onClick={handleExportCsv}
               disabled={orderItems.length === 0}
-              className="flex-1 sm:flex-initial px-5 py-2.5 bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-500 hover:to-orange-500 disabled:opacity-40 active:scale-95 text-white font-extrabold text-xs rounded-xl shadow-lg shadow-amber-950/60 transition flex items-center justify-center gap-1.5"
+              className="px-3.5 py-2.5 bg-slate-800 hover:bg-slate-700 disabled:opacity-40 active:scale-95 text-slate-200 border border-slate-700 rounded-xl text-xs font-bold transition flex items-center gap-1.5"
             >
-              <FileSpreadsheet className="w-4 h-4 stroke-[2.5]" />
-              <span>発注書 CSV エクスポート</span>
+              <FileSpreadsheet className="w-4 h-4 text-blue-400" />
+              <span>CSV</span>
+            </button>
+
+            {/* Format 4: 中西電機工業 注文書 Excel (.xlsx) */}
+            <button
+              type="button"
+              onClick={handleExportNakanishiExcel}
+              disabled={orderItems.length === 0}
+              className="px-5 py-2.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 disabled:opacity-40 active:scale-95 text-white font-black text-xs rounded-xl shadow-lg shadow-emerald-950/60 transition flex items-center justify-center gap-2"
+            >
+              <FileText className="w-4 h-4 stroke-[2.5]" />
+              <span>📗 中西電機 注文書 (Excel) を出力</span>
             </button>
           </div>
         </div>
