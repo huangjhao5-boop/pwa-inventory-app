@@ -158,12 +158,12 @@ export const SettingsView: React.FC = () => {
                 スマート在庫管理システム (v2.0)
               </div>
               <div className="text-xs text-slate-300 font-medium mt-0.5">
-                システム開発・設計者 (Author): <span className="text-blue-400 font-extrabold text-sm ml-1">k-kaw</span>
+                システム開発・設計者 (Author): <span className="text-blue-400 font-extrabold text-sm ml-1">M.K(TW)</span>
               </div>
             </div>
           </div>
           <span className="text-[11px] font-mono text-slate-400 px-3 py-1 bg-slate-950 rounded-xl border border-slate-800">
-            © 2026 k-kaw. All Rights Reserved.
+            © 2026 M.K(TW). All Rights Reserved.
           </span>
         </div>
 
