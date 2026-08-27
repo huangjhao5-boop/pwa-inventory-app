@@ -467,13 +467,27 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
   ): Promise<boolean> => {
     try {
       const baseQty = quantity * multiplier;
+
+      // 在庫0または在庫不足時の出庫バリデーションガード
+      if (type === 'OUT') {
+        if (item.currentStock <= 0) {
+          addToast('error', `⚠️ 在庫が0のため出庫できません！ (品名: ${item.name})`);
+          return false;
+        }
+        if (baseQty > item.currentStock) {
+          addToast('error', `⚠️ 出庫数量 (${baseQty} ${item.baseUnit}) が現在庫 (${item.currentStock} ${item.baseUnit}) を超過しています！`);
+          return false;
+        }
+      }
+
       const shouldBePending =
-        type === 'IN' && (isPendingApproval !== undefined ? isPendingApproval : settings.requirePcApprovalForInbound);
+        (type === 'IN' || type === 'OUT') && (isPendingApproval !== undefined ? isPendingApproval : settings.requirePcApprovalForInbound);
 
       if (shouldBePending) {
         const pendingId = `pending-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
         const pendingObj: PendingInbound = {
           id: pendingId,
+          type,
           itemCode: item.code,
           itemName: item.name,
           spec: item.spec,
@@ -506,7 +520,12 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
           });
         }
 
-        addToast('info', `📥 入荷承認待ちに登録しました: ${item.name} (+${quantity} ${unit})`);
+        addToast(
+          'info',
+          type === 'OUT'
+            ? `📤 出庫承認待ちに登録しました: ${item.name} (-${quantity} ${unit})`
+            : `📥 入荷承認待ちに登録しました: ${item.name} (+${quantity} ${unit})`
+        );
         closeBottomSheet();
         return true;
       }
@@ -605,7 +624,14 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
         };
       }
 
-      const newStock = item.currentStock + pending.baseQuantity;
+      const isOut = pending.type === 'OUT';
+      if (isOut && item.currentStock < pending.baseQuantity) {
+        addToast('error', `⚠️ 出庫承認エラー: 出庫数量 (${pending.baseQuantity}) が現在庫 (${item.currentStock}) を超過しています！`);
+        return;
+      }
+
+      const delta = isOut ? -pending.baseQuantity : pending.baseQuantity;
+      const newStock = Math.max(0, item.currentStock + delta);
       const updatedItem: ItemMaster = {
         ...item,
         name: pending.itemName || item.name,
@@ -621,15 +647,15 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
         itemId: updatedItem.id,
         itemCode: updatedItem.code,
         itemName: updatedItem.name,
-        type: 'IN',
-        delta: pending.baseQuantity,
+        type: isOut ? 'OUT' : 'IN',
+        delta,
         quantity: pending.quantity,
         unit: pending.unit,
         multiplier: pending.multiplier,
         baseQuantity: pending.baseQuantity,
         operator: `${pending.operator} (PC承認済)`,
         timestamp: new Date().toISOString(),
-        note: `PC正式承認入荷 | ${pending.note || ''}`.trim(),
+        note: `PC正式${isOut ? '出庫' : '入庫'}承認 | ${pending.note || ''}`.trim(),
         synced: cloudSync.isCloudEnabled(),
       };
 
@@ -645,7 +671,12 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
       setLogs((prev) => [log, ...prev]);
       setPendingInbounds((prev) => prev.filter((p) => p.id !== pending.id));
 
-      addToast('success', `正式入庫完了: ${updatedItem.name} +${pending.quantity} ${pending.unit}`);
+      addToast(
+        'success',
+        isOut
+          ? `正式出庫承認完了: ${updatedItem.name} -${pending.quantity} ${pending.unit} (残: ${newStock})`
+          : `正式入庫承認完了: ${updatedItem.name} +${pending.quantity} ${pending.unit} (残: ${newStock})`
+      );
 
       Promise.all([
         LocalDatabaseService.saveItem(updatedItem),

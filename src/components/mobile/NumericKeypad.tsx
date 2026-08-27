@@ -49,12 +49,12 @@ export const NumericKeypad: React.FC<NumericKeypadProps> = ({
   const handleDigit = (digit: string) => {
     audioHaptics.playClick(soundEnabled);
     let newNum = 0;
-    if (isFirstInput) {
-      // 最初の入力時はデフォルト値（1など）を置換
+    if (isFirstInput || value === 1 || value === 0) {
+      // 初期値1または0の場合、直接上書き
       newNum = parseInt(digit, 10);
       setIsFirstInput(false);
     } else {
-      const str = String(value === 0 ? '' : value) + digit;
+      const str = String(value) + digit;
       newNum = Math.min(99999, parseInt(str || '0', 10));
     }
     onChange(newNum);

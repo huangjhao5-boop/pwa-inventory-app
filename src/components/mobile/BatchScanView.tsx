@@ -10,16 +10,21 @@ import {
   ArrowDownCircle,
   ArrowUpCircle,
   Scan,
+  Box,
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 
 export const BatchScanView: React.FC = () => {
   const {
+    items,
     batchScanList,
+    addToBatch,
     updateBatchItem,
+    updateBatchItemQty,
     removeBatchItem,
     clearBatchList,
     commitBatchList,
+    addToast,
   } = useInventory();
 
   const [showScanner, setShowScanner] = useState(true);
@@ -29,6 +34,25 @@ export const BatchScanView: React.FC = () => {
     (acc, curr) => acc + curr.calculatedBaseQuantity,
     0
   );
+
+  // 連続スキャンハンドラー（カメラを止めずに連続でリストへ追加）
+  const handleContinuousScan = (code: string) => {
+    const found = items.find((i) => i.code === code || i.qrCode === code);
+    if (found) {
+      const existing = batchScanList.find(
+        (bi) => bi.item.code === code && bi.actionType === defaultAction
+      );
+      if (existing) {
+        updateBatchItemQty(existing.id, existing.enteredQuantity + 1);
+        addToast('success', `⚡ ${found.name} (+1 数量加算)`);
+      } else {
+        addToBatch(found, defaultAction, found.baseUnit, 1, 1);
+        addToast('success', `✅ ${found.name} をリストに追加 (+1)`);
+      }
+    } else {
+      addToast('warning', `⚠️ 未登録コード: ${code}`);
+    }
+  };
 
   const handleCommit = async () => {
     const success = await commitBatchList();
@@ -59,7 +83,7 @@ export const BatchScanView: React.FC = () => {
                 連続検品・一括確認リスト
               </h2>
               <p className="text-xs text-slate-400">
-                連続スキャンで仮登録し、リスト上で数量・単位を修正して一括送信
+                カメラを止めずに連続スキャン ➔ 下部リストで数量・単位を確認・修正して一括送信
               </p>
             </div>
           </div>
@@ -76,7 +100,7 @@ export const BatchScanView: React.FC = () => {
             }`}
           >
             <ArrowDownCircle className="w-4 h-4" />
-            <span>入荷一括</span>
+            <span>入荷一括モード</span>
           </button>
           <button
             onClick={() => setDefaultAction('OUT')}
@@ -87,7 +111,7 @@ export const BatchScanView: React.FC = () => {
             }`}
           >
             <ArrowUpCircle className="w-4 h-4" />
-            <span>払出一括</span>
+            <span>払出一括モード</span>
           </button>
         </div>
       </div>
@@ -100,14 +124,14 @@ export const BatchScanView: React.FC = () => {
         >
           <div className="flex items-center gap-2">
             <Scan className="w-4 h-4 text-blue-400" />
-            <span>{showScanner ? 'カメラリーダーを最小化' : 'カメラリーダーを展開してスキャン'}</span>
+            <span>{showScanner ? '📸 連続スキャンカメラ稼働中（タップで折りたたむ）' : '📸 カメラリーダーを展開して連続スキャン'}</span>
           </div>
           <span className="text-xs text-blue-400">{showScanner ? '閉じる ▲' : '開く ▼'}</span>
         </button>
 
         {showScanner && (
           <div className="p-3 border-t border-slate-800/80 bg-slate-950/40">
-            <CameraScanner />
+            <CameraScanner onScan={handleContinuousScan} />
           </div>
         )}
       </div>
@@ -117,11 +141,11 @@ export const BatchScanView: React.FC = () => {
         <div className="flex items-center justify-between px-1">
           <div className="flex items-center gap-2 text-sm font-bold text-slate-300">
             <span>検品待機品目:</span>
-            <span className="px-2 py-0.5 rounded-full bg-blue-600 text-white text-xs">
+            <span className="px-2.5 py-0.5 rounded-full bg-blue-600 text-white text-xs font-black">
               {batchScanList.length} 件
             </span>
             <span className="text-xs text-slate-500">
-              (合計換算: <strong className="text-emerald-400">{totalBaseUnits}</strong> 基準単位)
+              (合計換算: <strong className="text-emerald-400 font-black">{totalBaseUnits}</strong> 基準単位)
             </span>
           </div>
 
@@ -139,9 +163,9 @@ export const BatchScanView: React.FC = () => {
         {batchScanList.length === 0 ? (
           <div className="bg-slate-900/60 border border-dashed border-slate-800 rounded-3xl p-10 text-center space-y-2">
             <ListChecks className="w-12 h-12 text-slate-600 mx-auto" />
-            <p className="text-slate-400 font-semibold text-sm">検品リストは空です</p>
+            <p className="text-slate-400 font-semibold text-sm">連続検品リストは空です</p>
             <p className="text-xs text-slate-500 max-w-sm mx-auto">
-              カメラまたはバーコードリーダーで商品を連続スキャンすると、ここに自動でリストアップされます。
+              上のカメラでバーコードを次々にかざすと、画面を閉じずに自動でリストへ蓄積されます。
             </p>
           </div>
         ) : (
@@ -170,8 +194,9 @@ export const BatchScanView: React.FC = () => {
                         {actionType === 'IN' ? '入荷' : '払出'}
                       </span>
                       <span className="text-xs text-slate-400 font-mono truncate">{item.code}</span>
-                      <span className="text-[11px] text-blue-400 font-medium ml-auto sm:ml-0">
-                        ボックス: {item.location}
+                      <span className="text-[11px] text-blue-400 font-medium ml-auto sm:ml-0 flex items-center gap-0.5">
+                        <Box className="w-3 h-3" />
+                        <span>{item.location}</span>
                       </span>
                     </div>
 

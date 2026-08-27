@@ -85,6 +85,7 @@ export interface VisualKnowledgeEntry {
  */
 export interface PendingInbound {
   id: string;
+  type?: 'IN' | 'OUT';        // 入荷 (IN) または 出庫 (OUT)
   itemCode: string;
   itemName: string;
   spec?: string;

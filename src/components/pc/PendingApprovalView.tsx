@@ -12,6 +12,8 @@ import {
   CheckSquare,
   Square,
   Sparkles,
+  ArrowDownCircle,
+  ArrowUpCircle,
 } from 'lucide-react';
 
 export const PendingApprovalView: React.FC = () => {
@@ -54,7 +56,7 @@ export const PendingApprovalView: React.FC = () => {
   };
 
   const handleRejectOne = async (id: string) => {
-    if (window.confirm('この入荷申請を却下しますか？')) {
+    if (window.confirm('この申請を却下しますか？')) {
       await rejectPendingInbound(id);
     }
   };
@@ -69,7 +71,7 @@ export const PendingApprovalView: React.FC = () => {
           </div>
           <div>
             <h2 className="font-black text-lg sm:text-xl text-white flex items-center gap-2">
-              <span>📥 入荷承認待ちリスト (Pending Inbound Approval)</span>
+              <span>📥📤 入出庫承認待ちリスト (Pending Approvals)</span>
               {pendingList.length > 0 && (
                 <span className="px-2.5 py-0.5 rounded-full text-xs font-black bg-amber-500 text-slate-950">
                   {pendingList.length} 件 承認待ち
@@ -77,7 +79,7 @@ export const PendingApprovalView: React.FC = () => {
               )}
             </h2>
             <p className="text-xs text-slate-400">
-              現場スマホでスキャン登録された入荷データです。品名・数量・ボックス名を確認し「正式承認」すると在庫に反映されます。
+              現場スマホでスキャンされた入出庫データです。品名・数量・ボックス名を確認し「正式承認」すると在庫に反映されます。
             </p>
           </div>
         </div>
@@ -105,7 +107,7 @@ export const PendingApprovalView: React.FC = () => {
             <button
               onClick={handleBatchApprove}
               disabled={selectedIds.length === 0}
-              className="px-5 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 active:scale-95 text-white font-extrabold text-xs rounded-xl shadow-lg shadow-emerald-950 transition flex items-center gap-1.5"
+              className="px-5 py-2 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 active:scale-95 text-white font-extrabold text-xs rounded-xl shadow-lg shadow-indigo-950 transition flex items-center gap-1.5"
             >
               <CheckCircle2 className="w-4 h-4 stroke-[2.5]" />
               <span>選択項目を一括承認 ({selectedIds.length})</span>
@@ -121,16 +123,17 @@ export const PendingApprovalView: React.FC = () => {
             <Sparkles className="w-7 h-7 text-emerald-400" />
           </div>
           <h3 className="font-bold text-base text-slate-200">
-            現在、承認待ちの入荷データはありません
+            現在、承認待ちの入出庫データはありません
           </h3>
           <p className="text-xs text-slate-400 max-w-md mx-auto">
-            現場端末で「一時保存・承認待ち」で入荷スキャンされると、ここに即座にリアルタイム表示されます。
+            現場端末で入庫または出庫スキャンされると、ここに即座にリアルタイム表示されます。
           </p>
         </div>
       ) : (
         <div className="space-y-3">
           {pendingList.map((item) => {
             const isSelected = selectedIds.includes(item.id);
+            const isOut = item.type === 'OUT';
             return (
               <div
                 key={item.id}
@@ -170,6 +173,17 @@ export const PendingApprovalView: React.FC = () => {
                   {/* Item info */}
                   <div className="space-y-1 min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-2">
+                      <span
+                        className={`px-2 py-0.5 rounded-lg text-xs font-black flex items-center gap-1 border ${
+                          isOut
+                            ? 'bg-rose-950/80 text-rose-300 border-rose-800'
+                            : 'bg-emerald-950/80 text-emerald-300 border-emerald-800'
+                        }`}
+                      >
+                        {isOut ? <ArrowUpCircle className="w-3.5 h-3.5" /> : <ArrowDownCircle className="w-3.5 h-3.5" />}
+                        <span>{isOut ? '出庫申請' : '入荷申請'}</span>
+                      </span>
+
                       <span className="font-mono text-xs font-bold text-slate-400 bg-slate-950 px-2 py-0.5 rounded-lg border border-slate-800">
                         {item.itemCode}
                       </span>
@@ -209,15 +223,17 @@ export const PendingApprovalView: React.FC = () => {
                 {/* Right: Quantity + Action Buttons */}
                 <div className="flex items-center justify-between md:justify-end gap-4 w-full md:w-auto pt-3 md:pt-0 border-t md:border-t-0 border-slate-800">
                   <div className="text-right">
-                    <span className="text-[10px] text-slate-400 font-semibold block">申請入荷数量</span>
+                    <span className="text-[10px] text-slate-400 font-semibold block">
+                      {isOut ? '申請出庫数量' : '申請入荷数量'}
+                    </span>
                     <div className="flex items-baseline gap-1">
-                      <span className="text-2xl font-black text-emerald-400">
-                        +{item.quantity}
+                      <span className={`text-2xl font-black ${isOut ? 'text-rose-400' : 'text-emerald-400'}`}>
+                        {isOut ? `-${item.quantity}` : `+${item.quantity}`}
                       </span>
                       <span className="text-xs text-slate-300 font-bold">{item.unit}</span>
                       {item.multiplier > 1 && (
                         <span className="text-[11px] text-slate-400 ml-1">
-                          (= {item.baseQuantity} 基準単位)
+                          (= {isOut ? `-${item.baseQuantity}` : `+${item.baseQuantity}`} 基準単位)
                         </span>
                       )}
                     </div>
@@ -238,10 +254,14 @@ export const PendingApprovalView: React.FC = () => {
                     <button
                       type="button"
                       onClick={() => handleApproveOne(item)}
-                      className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white font-extrabold text-xs rounded-xl shadow-md transition flex items-center gap-1.5"
+                      className={`px-4 py-2.5 active:scale-95 text-white font-extrabold text-xs rounded-xl shadow-md transition flex items-center gap-1.5 ${
+                        isOut
+                          ? 'bg-rose-600 hover:bg-rose-500 shadow-rose-950/50'
+                          : 'bg-emerald-600 hover:bg-emerald-500 shadow-emerald-950/50'
+                      }`}
                     >
                       <CheckCircle2 className="w-4 h-4 stroke-[2.5]" />
-                      <span>正式承認・入庫</span>
+                      <span>{isOut ? '正式承認・出庫' : '正式承認・入庫'}</span>
                     </button>
                   </div>
                 </div>
