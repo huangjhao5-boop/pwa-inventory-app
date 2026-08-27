@@ -24,9 +24,21 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({ onScan }) => {
 
   const qrScannerRef = useRef<Html5Qrcode | null>(null);
   const scannerContainerId = 'qr-reader-viewport';
+  const lastScannedRef = useRef<{ code: string; time: number }>({ code: '', time: 0 });
 
   const onCodeDetected = useCallback(
     (decodedText: string) => {
+      const now = Date.now();
+      const isSameCode = lastScannedRef.current.code === decodedText;
+      // 同一コードなら2.0秒、別コードでも0.8秒のクールダウンを設けて暴走・クラッシュを防止
+      const cooldown = isSameCode ? 2000 : 800;
+
+      if (now - lastScannedRef.current.time < cooldown) {
+        return;
+      }
+
+      lastScannedRef.current = { code: decodedText, time: now };
+
       if (onScan) {
         onScan(decodedText);
       } else {
@@ -47,7 +59,6 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({ onScan }) => {
         }
       }
 
-      // Enable native hardware GPU BarcodeDetector for ultra-fast scanning
       const html5QrCode = new Html5Qrcode(scannerContainerId, {
         experimentalFeatures: {
           useBarCodeDetectorIfSupported: true,
@@ -57,7 +68,7 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({ onScan }) => {
       qrScannerRef.current = html5QrCode;
 
       const config = {
-        fps: 30, // Ultra-fast 30fps stream
+        fps: 15, // 安定した 15fps で省電力・端末熱暴走/クラッシュ防止
         qrbox: (viewfinderWidth: number, viewfinderHeight: number) => {
           const minEdge = Math.min(viewfinderWidth, viewfinderHeight);
           const edge = Math.max(220, Math.floor(minEdge * 0.85));
@@ -94,7 +105,7 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({ onScan }) => {
     } catch (err: any) {
       console.warn('Camera start warning:', err);
       setErrorMessage(
-        'カメラの起動中または権限が許可されていません。カメラを許可するか、下部の「手動入力・テストコード」をご利用ください。'
+        'カメラの起動中または権限が許可されていません。カメラを許可するか、下部の手動入力をご利用ください。'
       );
       setIsScanning(false);
     }
@@ -220,7 +231,7 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({ onScan }) => {
             className="flex items-center gap-1.5 text-xs font-medium text-blue-400 hover:text-blue-300 py-1"
           >
             <Keyboard className="w-4 h-4" />
-            <span>{showManualInput ? '手動入力を閉じる' : '手動入力 / テストバーコード'}</span>
+            <span>{showManualInput ? '手動入力を閉じる' : '品目コード手動入力'}</span>
           </button>
         </div>
 

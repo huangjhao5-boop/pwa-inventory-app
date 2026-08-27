@@ -87,6 +87,7 @@ export const ActionBottomSheet: React.FC = () => {
     saveItem,
     addToast,
     items,
+    pendingInbounds,
   } = useInventory();
 
   const [currentStep, setCurrentStep] = useState<'MENU' | 'KEYPAD' | 'INQUIRY' | 'NEW_ITEM' | 'NEW_ITEM_INBOUND'>('MENU');
@@ -201,9 +202,26 @@ export const ActionBottomSheet: React.FC = () => {
     };
     const baseQty = quantity * conv.multiplier;
 
+    // 承認待ちの出庫引当数を差し引いた実質有効在庫を計算
+    const pendingOutBaseQty = pendingInbounds
+      .filter((p) => p.status === 'PENDING' && p.type === 'OUT' && p.itemCode === activeScannedItem.code)
+      .reduce((sum, p) => sum + p.baseQuantity, 0);
+
+    const effectiveStock = Math.max(0, activeScannedItem.currentStock - pendingOutBaseQty);
+
     if (selectedAction === 'OUT') {
-      if (baseQty > activeScannedItem.currentStock) {
-        addToast('error', `⚠️ 出庫数量 (${baseQty} ${activeScannedItem.baseUnit}) が現在庫数 (${activeScannedItem.currentStock} ${activeScannedItem.baseUnit}) を超過しています！`);
+      if (effectiveStock <= 0) {
+        addToast(
+          'error',
+          `⚠️ 有効在庫不足: 現在庫 ${activeScannedItem.currentStock} ${activeScannedItem.baseUnit} 中、${pendingOutBaseQty} ${activeScannedItem.baseUnit} が出庫承認待ち（引当済）のため出庫できません！`
+        );
+        return;
+      }
+      if (baseQty > effectiveStock) {
+        addToast(
+          'error',
+          `⚠️ 出庫数超過: 出庫数量 (${baseQty} ${activeScannedItem.baseUnit}) が利用可能な有効在庫 (${effectiveStock} ${activeScannedItem.baseUnit}) を超過しています！ (現在庫: ${activeScannedItem.currentStock}, 引当待: ${pendingOutBaseQty})`
+        );
         return;
       }
       setIsConfirmModalOpen(true);
@@ -538,54 +556,68 @@ export const ActionBottomSheet: React.FC = () => {
           )}
 
           {/* ── STEP 2: テンキー & 目測概算入力 ── */}
-          {currentStep === 'KEYPAD' && activeScannedItem && (
-            <div className="space-y-3">
-              <div className={`py-2 px-3.5 rounded-xl font-bold text-xs flex items-center justify-between ${
-                selectedAction === 'IN'
-                  ? 'bg-emerald-950/80 text-emerald-300 border border-emerald-800'
-                  : selectedAction === 'OUT'
-                  ? 'bg-rose-950/80 text-rose-300 border border-rose-800'
-                  : 'bg-amber-950/80 text-amber-300 border border-amber-800'
-              }`}>
-                <span>
-                  {selectedAction === 'IN'
-                    ? settings.requirePcApprovalForInbound ? '【現場入荷（PC承認待ち）】' : '【現場直接入荷】'
-                    : selectedAction === 'OUT' ? '【出庫作業】' : '【発注申請】'}
-                </span>
-                <span className="opacity-90">現在庫: {activeScannedItem.currentStock} {activeScannedItem.baseUnit}</span>
+          {currentStep === 'KEYPAD' && activeScannedItem && (() => {
+            const pendingOutBaseQty = pendingInbounds
+              .filter((p) => p.status === 'PENDING' && p.type === 'OUT' && p.itemCode === activeScannedItem.code)
+              .reduce((sum, p) => sum + p.baseQuantity, 0);
+            const effectiveStock = Math.max(0, activeScannedItem.currentStock - pendingOutBaseQty);
+
+            return (
+              <div className="space-y-3">
+                <div className={`py-2 px-3.5 rounded-xl font-bold text-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-1 ${
+                  selectedAction === 'IN'
+                    ? 'bg-emerald-950/80 text-emerald-300 border border-emerald-800'
+                    : selectedAction === 'OUT'
+                    ? 'bg-rose-950/80 text-rose-300 border border-rose-800'
+                    : 'bg-amber-950/80 text-amber-300 border border-amber-800'
+                }`}>
+                  <span>
+                    {selectedAction === 'IN'
+                      ? settings.requirePcApprovalForInbound ? '【現場入荷（PC承認待ち）】' : '【現場直接入荷】'
+                      : selectedAction === 'OUT' ? '【出庫作業】' : '【発注申請】'}
+                  </span>
+                  <div className="flex items-center gap-1.5 opacity-90 text-[11px]">
+                    <span>現在庫: {activeScannedItem.currentStock} {activeScannedItem.baseUnit}</span>
+                    {pendingOutBaseQty > 0 && selectedAction === 'OUT' && (
+                      <span className="text-amber-400 font-bold">
+                        (引当待: -{pendingOutBaseQty} | 有効: {effectiveStock} {activeScannedItem.baseUnit})
+                      </span>
+                    )}
+                  </div>
+                </div>
+                <NumericKeypad
+                  value={quantity}
+                  onChange={setQuantity}
+                  units={activeScannedItem.unitConversions?.length > 0
+                    ? activeScannedItem.unitConversions
+                    : [{ unit: activeScannedItem.baseUnit, multiplier: 1 }]}
+                  baseUnit={activeScannedItem.baseUnit}
+                  selectedUnit={selectedUnit}
+                  onSelectUnit={setSelectedUnit}
+                  onConfirm={handleConfirmTransaction}
+                  soundEnabled={settings.soundEnabled}
+                  maxStock={effectiveStock}
+                  isOutAction={selectedAction === 'OUT'}
+                  confirmLabel={
+                    selectedAction === 'IN'
+                      ? settings.requirePcApprovalForInbound
+                        ? `承認待ち送信 (+${quantity} ${selectedUnit})`
+                        : `入荷確定 (+${quantity} ${selectedUnit})`
+                      : selectedAction === 'OUT'
+                      ? `出庫確認へ (-${quantity} ${selectedUnit})`
+                      : `発注登録 (${quantity} ${selectedUnit})`
+                  }
+                  confirmColor={
+                    selectedAction === 'IN'
+                      ? 'bg-emerald-600 hover:bg-emerald-500'
+                      : selectedAction === 'OUT'
+                      ? 'bg-rose-600 hover:bg-rose-500'
+                      : 'bg-amber-600 hover:bg-amber-500'
+                  }
+                />
               </div>
-              <NumericKeypad
-                value={quantity}
-                onChange={setQuantity}
-                units={activeScannedItem.unitConversions?.length > 0
-                  ? activeScannedItem.unitConversions
-                  : [{ unit: activeScannedItem.baseUnit, multiplier: 1 }]}
-                baseUnit={activeScannedItem.baseUnit}
-                selectedUnit={selectedUnit}
-                onSelectUnit={setSelectedUnit}
-                onConfirm={handleConfirmTransaction}
-                soundEnabled={settings.soundEnabled}
-                maxStock={activeScannedItem.currentStock}
-                isOutAction={selectedAction === 'OUT'}
-                confirmLabel={
-                  selectedAction === 'IN'
-                    ? settings.requirePcApprovalForInbound
-                      ? `承認待ち送信 (+${quantity} ${selectedUnit})`
-                      : `入荷確定 (+${quantity} ${selectedUnit})`
-                    : selectedAction === 'OUT'
-                    ? `出庫確認へ (-${quantity} ${selectedUnit})`
-                    : `発注登録 (${quantity} ${selectedUnit})`
-                }
-                confirmColor={
-                  selectedAction === 'IN'
-                    ? 'bg-emerald-600 hover:bg-emerald-500'
-                    : selectedAction === 'OUT'
-                    ? 'bg-rose-600 hover:bg-rose-500'
-                    : 'bg-amber-600 hover:bg-amber-500'
-                }
-              />
-            </div>
-          )}
+            );
+          })()}
 
           {/* ── STEP 3: 在庫照会 ── */}
           {currentStep === 'INQUIRY' && activeScannedItem && (
@@ -777,27 +809,14 @@ export const ActionBottomSheet: React.FC = () => {
                     </button>
                   </div>
                   {newItemConversions.map((conv, idx) => (
-                    <div key={idx} className="flex items-center gap-1.5 bg-slate-950 p-2 rounded-xl border border-slate-800">
+                    <div key={idx} className="flex items-center gap-2 bg-slate-950 p-2.5 rounded-xl border border-slate-800">
                       <span className="text-slate-400 text-xs font-bold">1</span>
-                      <select
-                        value={PRESET_UNITS.includes(conv.unit as any) ? conv.unit : 'custom'}
-                        onChange={(e) => {
-                          if (e.target.value !== 'custom') {
-                            handleUpdateConversion(idx, 'unit', e.target.value);
-                          }
-                        }}
-                        className="px-2 py-1 bg-slate-800 border border-slate-700 rounded-lg text-white font-bold text-xs"
-                      >
-                        {PRESET_UNITS.filter((u) => u !== newItemBaseUnit).map((u) => (
-                          <option key={u} value={u}>{u}</option>
-                        ))}
-                      </select>
                       <input
                         type="text"
                         value={conv.unit}
                         onChange={(e) => handleUpdateConversion(idx, 'unit', e.target.value)}
-                        placeholder="単位名"
-                        className="w-16 px-1.5 py-1 bg-slate-800 border border-slate-700 rounded-lg text-white font-bold text-xs text-center"
+                        placeholder="例: 箱 / 束"
+                        className="w-20 px-2 py-1 bg-slate-800 border border-slate-700 rounded-lg text-white font-bold text-xs text-center"
                       />
                       <span className="text-slate-400 text-xs font-bold">=</span>
                       <input
@@ -807,8 +826,16 @@ export const ActionBottomSheet: React.FC = () => {
                         onChange={(e) => handleUpdateConversion(idx, 'multiplier', e.target.value)}
                         className="w-20 px-2 py-1 bg-slate-800 border border-slate-700 rounded-lg text-white font-black text-xs text-center text-emerald-400"
                       />
-                      <span className="text-slate-300 font-bold text-xs">{newItemBaseUnit}</span>
-                      <button type="button" onClick={() => handleRemoveConversion(idx)} className="p-1 text-slate-500 hover:text-rose-400 ml-auto">
+                      <select
+                        value={newItemBaseUnit}
+                        onChange={(e) => setNewItemBaseUnit(e.target.value)}
+                        className="px-2 py-1 bg-slate-800 border border-slate-700 rounded-lg text-white font-bold text-xs"
+                      >
+                        {PRESET_UNITS.map((u) => (
+                          <option key={u} value={u}>{u}</option>
+                        ))}
+                      </select>
+                      <button type="button" onClick={() => handleRemoveConversion(idx)} className="p-1.5 text-slate-500 hover:text-rose-400 ml-auto">
                         <Trash2 className="w-4 h-4" />
                       </button>
                     </div>
