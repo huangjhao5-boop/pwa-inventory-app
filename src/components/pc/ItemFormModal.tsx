@@ -392,24 +392,45 @@ export const ItemFormModal: React.FC<ItemFormModalProps> = ({
               {conversions.map((conv, idx) => (
                 <div key={idx} className="flex items-center gap-2 bg-slate-900/90 p-2.5 rounded-xl border border-slate-800">
                   <span className="text-xs text-slate-400 font-bold">1</span>
-                  {/* 左：包装単位入力（箱、パック、袋等） */}
-                  <input
-                    type="text"
-                    value={conv.unit}
-                    onChange={(e) => handleUpdateConversion(idx, 'unit', e.target.value)}
-                    placeholder="例: 箱 / 袋 / 束"
-                    className="w-24 px-2.5 py-1.5 bg-slate-800 border border-slate-700 rounded-lg text-white font-bold text-xs text-center"
-                  />
+                  {/* 左：包装単位プルダウン選択 */}
+                  <select
+                    value={PRESET_UNITS.includes(conv.unit as any) ? conv.unit : 'custom'}
+                    onChange={(e) => {
+                      if (e.target.value !== 'custom') {
+                        handleUpdateConversion(idx, 'unit', e.target.value);
+                      }
+                    }}
+                    className="px-2.5 py-1.5 bg-slate-800 border border-slate-700 rounded-lg text-white font-bold text-xs"
+                    title="包装単位を選択"
+                  >
+                    {PRESET_UNITS.map((u) => (
+                      <option key={u} value={u}>{u}</option>
+                    ))}
+                    <option value="custom">自訂・その他</option>
+                  </select>
+
+                  {!PRESET_UNITS.includes(conv.unit as any) && (
+                    <input
+                      type="text"
+                      value={conv.unit}
+                      onChange={(e) => handleUpdateConversion(idx, 'unit', e.target.value)}
+                      placeholder="単位名"
+                      className="w-16 px-2 py-1.5 bg-slate-800 border border-slate-700 rounded-lg text-white font-bold text-xs text-center"
+                    />
+                  )}
+
                   <span className="text-xs text-slate-400 font-bold">=</span>
+
                   {/* 中：倍率数量 */}
                   <input
                     type="number"
                     min="1"
                     value={conv.multiplier}
                     onChange={(e) => handleUpdateConversion(idx, 'multiplier', e.target.value)}
-                    className="w-24 px-2.5 py-1.5 bg-slate-800 border border-slate-700 rounded-lg text-white font-black text-xs text-center text-emerald-400"
+                    className="w-20 px-2 py-1.5 bg-slate-800 border border-slate-700 rounded-lg text-white font-black text-xs text-center text-emerald-400"
                   />
-                  {/* 右：換算先の基準単位（個・本・枚等へ変更可能） */}
+
+                  {/* 右：換算先の基準単位 */}
                   <select
                     value={baseUnit}
                     onChange={(e) => setBaseUnit(e.target.value)}

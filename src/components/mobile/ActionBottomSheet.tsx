@@ -809,23 +809,46 @@ export const ActionBottomSheet: React.FC = () => {
                     </button>
                   </div>
                   {newItemConversions.map((conv, idx) => (
-                    <div key={idx} className="flex items-center gap-2 bg-slate-950 p-2.5 rounded-xl border border-slate-800">
+                    <div key={idx} className="flex items-center gap-1.5 bg-slate-950 p-2 rounded-xl border border-slate-800">
                       <span className="text-slate-400 text-xs font-bold">1</span>
-                      <input
-                        type="text"
-                        value={conv.unit}
-                        onChange={(e) => handleUpdateConversion(idx, 'unit', e.target.value)}
-                        placeholder="例: 箱 / 束"
-                        className="w-20 px-2 py-1 bg-slate-800 border border-slate-700 rounded-lg text-white font-bold text-xs text-center"
-                      />
+                      {/* 左：包装単位プルダウン */}
+                      <select
+                        value={PRESET_UNITS.includes(conv.unit as any) ? conv.unit : 'custom'}
+                        onChange={(e) => {
+                          if (e.target.value !== 'custom') {
+                            handleUpdateConversion(idx, 'unit', e.target.value);
+                          }
+                        }}
+                        className="px-2 py-1 bg-slate-800 border border-slate-700 rounded-lg text-white font-bold text-xs"
+                      >
+                        {PRESET_UNITS.map((u) => (
+                          <option key={u} value={u}>{u}</option>
+                        ))}
+                        <option value="custom">自訂</option>
+                      </select>
+
+                      {!PRESET_UNITS.includes(conv.unit as any) && (
+                        <input
+                          type="text"
+                          value={conv.unit}
+                          onChange={(e) => handleUpdateConversion(idx, 'unit', e.target.value)}
+                          placeholder="単位名"
+                          className="w-14 px-1.5 py-1 bg-slate-800 border border-slate-700 rounded-lg text-white font-bold text-xs text-center"
+                        />
+                      )}
+
                       <span className="text-slate-400 text-xs font-bold">=</span>
+
+                      {/* 中：倍率 */}
                       <input
                         type="number"
                         min="1"
                         value={conv.multiplier}
                         onChange={(e) => handleUpdateConversion(idx, 'multiplier', e.target.value)}
-                        className="w-20 px-2 py-1 bg-slate-800 border border-slate-700 rounded-lg text-white font-black text-xs text-center text-emerald-400"
+                        className="w-16 px-1.5 py-1 bg-slate-800 border border-slate-700 rounded-lg text-white font-black text-xs text-center text-emerald-400"
                       />
+
+                      {/* 右：基準単位 */}
                       <select
                         value={newItemBaseUnit}
                         onChange={(e) => setNewItemBaseUnit(e.target.value)}
@@ -835,7 +858,8 @@ export const ActionBottomSheet: React.FC = () => {
                           <option key={u} value={u}>{u}</option>
                         ))}
                       </select>
-                      <button type="button" onClick={() => handleRemoveConversion(idx)} className="p-1.5 text-slate-500 hover:text-rose-400 ml-auto">
+
+                      <button type="button" onClick={() => handleRemoveConversion(idx)} className="p-1 text-slate-500 hover:text-rose-400 ml-auto">
                         <Trash2 className="w-4 h-4" />
                       </button>
                     </div>
