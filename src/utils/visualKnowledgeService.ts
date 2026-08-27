@@ -125,6 +125,20 @@ export class VisualKnowledgeService {
   }
 
   /**
+   * 削除された品目を学習ナレッジから除外
+   */
+  static removeItem(itemCode: string): void {
+    const bank = this.getKnowledgeBank();
+    const next = bank.filter((e) => e.itemCode !== itemCode);
+    this.cache = next;
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+    } catch {
+      // ignore
+    }
+  }
+
+  /**
    * 撮影画像とOCRテキストから、過去の学習データをもとに最適品目を予測照合
    */
   static async findBestMatch(

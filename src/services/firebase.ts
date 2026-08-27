@@ -157,7 +157,7 @@ class CloudSyncService {
       results.push({
         step: '1. Firebase Config 設定',
         status: 'ERROR',
-        message: '未找到 Firebase Config 設定',
+        message: '未設定 Firebase Config',
       });
       return { success: false, results };
     }
@@ -275,6 +275,18 @@ class CloudSyncService {
     }
   }
 
+  async deleteItemFromCloud(id: string): Promise<boolean> {
+    if (!this.isCloudEnabled() || !this.db) return true;
+    try {
+      const itemRef = doc(this.db, 'inventory_items', id);
+      await deleteDoc(itemRef);
+      return true;
+    } catch (e) {
+      console.error('Failed to delete item from Firestore:', e);
+      return false;
+    }
+  }
+
   async syncLogToCloud(log: InventoryLog): Promise<boolean> {
     if (!this.isCloudEnabled() || !this.db) return true;
     try {
@@ -314,7 +326,7 @@ class CloudSyncService {
   }
 
   listenCloudChanges(
-    onRemoteItemUpdate: (item: ItemMaster) => void,
+    onRemoteItemUpdate: (item: ItemMaster, isDeleted?: boolean) => void,
     onRemoteLogUpdate: (log: InventoryLog) => void,
     onRemotePendingUpdate?: (pending: PendingInbound, isDeleted?: boolean) => void
   ) {
@@ -325,16 +337,18 @@ class CloudSyncService {
     if (this.unsubscribePending) this.unsubscribePending();
 
     try {
-      // 1. Items Listener
+      // 1. Items Listener (Added, Modified, Removed)
       const itemsCol = collection(this.db, 'inventory_items');
       this.unsubscribeItems = onSnapshot(
         itemsCol,
         (snapshot) => {
           snapshot.docChanges().forEach((change) => {
-            if (change.type === 'added' || change.type === 'modified') {
+            if (change.type === 'removed') {
+              onRemoteItemUpdate({ id: change.doc.id } as ItemMaster, true);
+            } else if (change.type === 'added' || change.type === 'modified') {
               const data = change.doc.data() as ItemMaster;
               if (data.id && data.code && data.name) {
-                onRemoteItemUpdate(data);
+                onRemoteItemUpdate(data, false);
               }
             }
           });

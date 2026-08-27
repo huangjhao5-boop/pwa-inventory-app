@@ -10,6 +10,7 @@ import {
 } from '../types/inventory';
 import { LocalDatabaseService } from '../services/db';
 import { cloudSync, FirebaseConfigOptions } from '../services/firebase';
+import { VisualKnowledgeService } from '../utils/visualKnowledgeService';
 
 // ─────────────── Types ───────────────
 
@@ -249,21 +250,32 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
         setTimeout(() => { initialLoad = false; }, 3000);
 
         cloudSync.listenCloudChanges(
-          (remoteItem) => {
-            if (initialLoad) return;
-            setItems((prev) => {
-              const idx = prev.findIndex((i) => i.id === remoteItem.id);
-              if (idx >= 0) {
-                if (remoteItem.updatedAt > prev[idx].updatedAt) {
-                  const next = [...prev];
-                  next[idx] = remoteItem;
-                  return next;
+          (remoteItem, isDeleted) => {
+            if (isDeleted) {
+              setItems((prev) => {
+                const target = prev.find((i) => i.id === remoteItem.id);
+                if (target) {
+                  VisualKnowledgeService.removeItem(target.code);
                 }
-                return prev;
-              }
-              return [remoteItem, ...prev];
-            });
-            LocalDatabaseService.saveItem(remoteItem);
+                return prev.filter((i) => i.id !== remoteItem.id);
+              });
+              LocalDatabaseService.deleteItem(remoteItem.id);
+            } else {
+              if (initialLoad) return;
+              setItems((prev) => {
+                const idx = prev.findIndex((i) => i.id === remoteItem.id);
+                if (idx >= 0) {
+                  if (remoteItem.updatedAt > prev[idx].updatedAt) {
+                    const next = [...prev];
+                    next[idx] = remoteItem;
+                    return next;
+                  }
+                  return prev;
+                }
+                return [remoteItem, ...prev];
+              });
+              LocalDatabaseService.saveItem(remoteItem);
+            }
           },
           (remoteLog) => {
             if (initialLoad) return;
@@ -390,8 +402,17 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
 
   const deleteItem = useCallback(async (id: string) => {
     try {
+      const targetItem = itemsRef.current.find((i) => i.id === id);
       setItems((prev) => prev.filter((i) => i.id !== id));
       await LocalDatabaseService.deleteItem(id);
+      
+      if (targetItem) {
+        VisualKnowledgeService.removeItem(targetItem.code);
+      }
+
+      if (cloudSync.isCloudEnabled()) {
+        cloudSync.deleteItemFromCloud(id).catch((e) => console.warn('Cloud delete item failed:', e));
+      }
       addToast('info', '品目を削除しました');
     } catch (err) {
       console.error('Failed to delete item:', err);

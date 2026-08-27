@@ -12,12 +12,13 @@ import {
   Cloud,
   CheckCircle2,
   AlertCircle,
-  HelpCircle,
   KeyRound,
   Stethoscope,
   Activity,
   Sparkles,
   ShieldCheck,
+  Code,
+  ChevronDown,
 } from 'lucide-react';
 
 export const SettingsView: React.FC = () => {
@@ -35,7 +36,8 @@ export const SettingsView: React.FC = () => {
   const [debounceMs, setDebounceMs] = useState(settings.debounceMs || 1500);
   const [geminiKeyInput, setGeminiKeyInput] = useState(settings.geminiApiKey || '');
 
-  // Firebase Config Form
+  // Collapsible Developer Firebase Config
+  const [showAdvancedCloud, setShowAdvancedCloud] = useState(false);
   const [firebaseJson, setFirebaseJson] = useState(() => {
     const existing = cloudSync.getConfig();
     return existing ? JSON.stringify(existing, null, 2) : '';
@@ -72,10 +74,10 @@ export const SettingsView: React.FC = () => {
     setDiagnosticResults(results);
     setIsRunningDiagnostics(false);
     if (success) {
-      addToast('success', 'Firebase クラウド接続・読み書きテストが完了しました');
+      addToast('success', 'Firebase クラウド接続・リアルタイム同期テスト完了');
       refreshData();
     } else {
-      addToast('error', '診断で問題を検出しました。詳細をご確認ください');
+      addToast('error', '診断で問題を検出しました');
     }
   };
 
@@ -102,7 +104,7 @@ export const SettingsView: React.FC = () => {
       if (testResult.success) {
         saveFirebaseConfig(parsed);
       } else {
-        addToast('error', '接続に失敗しました。診断結果をご確認ください');
+        addToast('error', '接続に失敗しました');
         setDiagnosticResults(testResult.results);
       }
     } catch (err: any) {
@@ -112,7 +114,7 @@ export const SettingsView: React.FC = () => {
   };
 
   const handleResetDemoData = async () => {
-    if (window.confirm('初期デモデータ（端子、結束バンド、ヒューズ等）を再読み込みしますか？')) {
+    if (window.confirm('初期デモデータ（JIS端子、結束バンド等）を再構築しますか？')) {
       const db = await (await import('../../services/db')).getDB();
       const tx = db.transaction(['items', 'logs', 'offline_queue'], 'readwrite');
       await tx.objectStore('items').clear();
@@ -134,31 +136,77 @@ export const SettingsView: React.FC = () => {
         </div>
         <div>
           <h2 className="font-extrabold text-lg sm:text-xl text-white">
-            システム設定 & クラウド・AI診断
+            システム設定 & 動作環境
           </h2>
           <p className="text-xs text-slate-400">
-            Firebase リアルタイム同期、Gemini AI 視覚認識、スキャン設定
+            担当作業員、AI視覚認識、スキャン設定
           </p>
         </div>
       </div>
 
       <div className="space-y-4">
-        {/* Section 0: Gemini AI Vision Setting */}
+        {/* Section 0: System & Author Attribution */}
+        <div className="bg-slate-900 border border-slate-800 rounded-3xl p-4 sm:p-5 shadow-lg flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 bg-gradient-to-r from-slate-900 via-indigo-950/20 to-slate-900">
+          <div className="flex items-center gap-3">
+            <div className="p-2.5 bg-indigo-600/20 text-indigo-400 border border-indigo-500/30 rounded-2xl">
+              <Code className="w-5 h-5" />
+            </div>
+            <div>
+              <div className="font-extrabold text-sm sm:text-base text-white">
+                スマート在庫管理システム (v2.0)
+              </div>
+              <div className="text-xs text-slate-300 font-medium mt-0.5">
+                システム開発・設計者 (Author): <span className="text-blue-400 font-extrabold text-sm ml-1">k-kaw</span>
+              </div>
+            </div>
+          </div>
+          <span className="text-[11px] font-mono text-slate-400 px-3 py-1 bg-slate-950 rounded-xl border border-slate-800">
+            © 2026 k-kaw. All Rights Reserved.
+          </span>
+        </div>
+
+        {/* Section 1: Operator Setting */}
+        <div className="bg-slate-900 border border-slate-800 rounded-3xl p-4 sm:p-5 shadow-lg space-y-3">
+          <h3 className="font-bold text-sm text-slate-200 flex items-center gap-2">
+            <User className="w-4 h-4 text-blue-400" />
+            <span>担当作業員（オペレーター名）設定</span>
+          </h3>
+          <p className="text-xs text-slate-400">
+            入出庫トランザクションログに記録される作業者名です。
+          </p>
+          <form onSubmit={handleSaveOperator} className="flex gap-2 max-w-md">
+            <input
+              type="text"
+              value={operatorInput}
+              onChange={(e) => setOperatorInput(e.target.value)}
+              className="flex-1 px-3.5 py-2 bg-slate-800 border border-slate-700 rounded-xl text-sm text-white focus:outline-none focus:border-blue-500 font-medium"
+              placeholder="例: 現場担当-01 / 山田"
+            />
+            <button
+              type="submit"
+              className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-xl text-xs transition"
+            >
+              更新
+            </button>
+          </form>
+        </div>
+
+        {/* Section 2: Gemini AI Vision Setting */}
         <div className="bg-slate-900 border border-indigo-500/30 rounded-3xl p-4 sm:p-5 shadow-lg space-y-3 bg-gradient-to-br from-slate-900 via-indigo-950/30 to-slate-900">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <Sparkles className="w-5 h-5 text-amber-400" />
               <h3 className="font-bold text-sm sm:text-base text-white">
-                ✨ Gemini AI マルチモーダル視覚認識
+                ✨ Gemini AI マルチモーダル視覚認識 & 自己学習
               </h3>
             </div>
             <span className="text-xs text-indigo-300 bg-indigo-900/50 px-2.5 py-0.5 rounded-full border border-indigo-700">
-              {settings.geminiApiKey ? 'AI 認識有効' : '未設定 (OCRフォールバック)'}
+              {settings.geminiApiKey ? 'AI 認識有効' : '未設定 (自己学習・OCR併用)'}
             </span>
           </div>
 
           <p className="text-xs text-slate-300 leading-relaxed">
-            Google Gemini API キーを設定すると、部品写真・銘板ラベル・端子パックを撮影した際に、AIが品名・メーカー・規格型番・数量を高精度に自動認識して入力します。
+            Google Gemini API キーを設定すると、撮影した部品や銘板ラベルから品名・型番・メーカーを高精度に自動判定します（ユーザーの修正も自動学習して次回以降の精度が向上します）。
           </p>
 
           <form onSubmit={handleSaveGeminiKey} className="flex gap-2">
@@ -178,7 +226,7 @@ export const SettingsView: React.FC = () => {
           </form>
         </div>
 
-        {/* Section 1: PC Approval Inbound Toggle */}
+        {/* Section 3: PC Approval Inbound Toggle */}
         <div className="bg-slate-900 border border-slate-800 rounded-3xl p-4 sm:p-5 shadow-lg space-y-3">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
@@ -195,17 +243,17 @@ export const SettingsView: React.FC = () => {
             />
           </div>
           <p className="text-xs text-slate-400">
-            有効時、現場でのスキャン入荷は「承認待ち」に一時保存され、PC側で正式承認した時点で在庫に反映されます。
+            有効時、現場でのスキャン入荷は「承認待ち」に一時保存され、PC管理画面で正式承認した時点で在庫に反映されます。
           </p>
         </div>
 
-        {/* Section 2: Firebase Cloud Connection & Diagnostics */}
-        <div className="bg-slate-900 border border-slate-800 rounded-3xl p-4 sm:p-5 shadow-lg space-y-4">
+        {/* Section 4: Cloud Status (Safe Clean Indicator) */}
+        <div className="bg-slate-900 border border-slate-800 rounded-3xl p-4 sm:p-5 shadow-lg space-y-3">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <Cloud className="w-5 h-5 text-blue-400" />
-              <h3 className="font-bold text-sm sm:text-base text-slate-200">
-                ☁️ Firebase クラウドデータベース接続
+              <h3 className="font-bold text-sm text-slate-200">
+                ☁️ リアルタイム・クラウド同期状態
               </h3>
             </div>
             {isCloudConnected ? (
@@ -220,146 +268,88 @@ export const SettingsView: React.FC = () => {
               </span>
             )}
           </div>
-
           <p className="text-xs text-slate-400 leading-relaxed">
-            Firebase プロジェクト（`pwa-inventory-app-9c88d`）が設定されています。接続状態を確認する場合は「🔍 接続・権限のヘルスチェック」を実行してください。
+            Firebase データベース（`pwa-inventory-app-9c88d`）と自動リアルタイム連携中。PC側で削除・変更された品目は現場端末へ即座に自動反映されます。
           </p>
 
-          {/* Quick Diagnostics Action */}
-          <div className="bg-slate-950 p-4 rounded-2xl border border-slate-800 space-y-3">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <Stethoscope className="w-4 h-4 text-emerald-400" />
-                <span className="font-bold text-xs sm:text-sm text-slate-200">
-                  リアルタイム接続診断 (Diagnostics)
-                </span>
-              </div>
-              <button
-                type="button"
-                onClick={handleRunDiagnostics}
-                disabled={isRunningDiagnostics}
-                className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 active:scale-95 disabled:opacity-50 text-white font-extrabold text-xs rounded-xl shadow transition flex items-center gap-1.5"
-              >
-                <Activity className={`w-3.5 h-3.5 ${isRunningDiagnostics ? 'animate-spin' : ''}`} />
-                <span>{isRunningDiagnostics ? '診断中...' : '🔍 接続・権限のヘルスチェック'}</span>
-              </button>
-            </div>
+          {/* Collapsible Advanced Cloud Settings to prevent accidental clicks */}
+          <div className="pt-2 border-t border-slate-800/80">
+            <button
+              type="button"
+              onClick={() => setShowAdvancedCloud(!showAdvancedCloud)}
+              className="text-xs text-slate-500 hover:text-slate-300 flex items-center gap-1 font-semibold transition"
+            >
+              <ChevronDown className={`w-3.5 h-3.5 transition-transform ${showAdvancedCloud ? 'rotate-180' : ''}`} />
+              <span>{showAdvancedCloud ? '詳細設定を閉じる' : '⚙️ 詳細設定・接続診断（クリックして展開）'}</span>
+            </button>
 
-            {/* Diagnostic Output Results */}
-            {diagnosticResults && (
-              <div className="pt-2 border-t border-slate-800 space-y-2 animate-in fade-in">
-                {diagnosticResults.map((res, i) => (
-                  <div
-                    key={i}
-                    className={`p-2.5 rounded-xl border text-xs flex flex-col gap-1 ${
-                      res.status === 'SUCCESS'
-                        ? 'bg-emerald-950/40 border-emerald-800/80 text-emerald-300'
-                        : 'bg-rose-950/60 border-rose-700 text-rose-200'
-                    }`}
+            {showAdvancedCloud && (
+              <div className="mt-3 p-3.5 bg-slate-950 rounded-2xl border border-slate-800 space-y-3 animate-in fade-in">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-slate-300 flex items-center gap-1">
+                    <Stethoscope className="w-4 h-4 text-emerald-400" />
+                    接続ヘルスチェック
+                  </span>
+                  <button
+                    type="button"
+                    onClick={handleRunDiagnostics}
+                    disabled={isRunningDiagnostics}
+                    className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 active:scale-95 disabled:opacity-50 text-slate-200 font-bold text-xs rounded-xl border border-slate-700 transition flex items-center gap-1"
                   >
-                    <div className="flex items-center justify-between font-bold">
-                      <span>{res.step}</span>
-                      <span>{res.status === 'SUCCESS' ? '✓ 成功' : '✕ エラー'}</span>
-                    </div>
-                    <div>{res.message}</div>
-                    {res.details && (
-                      <div className="mt-1 p-2 bg-black/60 rounded-lg text-amber-300 font-semibold leading-relaxed border border-amber-500/30">
-                        👉 推奨対応: {res.details}
+                    <Activity className={`w-3.5 h-3.5 ${isRunningDiagnostics ? 'animate-spin' : ''}`} />
+                    <span>{isRunningDiagnostics ? '診断中...' : '接続診断実行'}</span>
+                  </button>
+                </div>
+
+                {diagnosticResults && (
+                  <div className="space-y-1.5 pt-1">
+                    {diagnosticResults.map((res, i) => (
+                      <div key={i} className={`p-2 rounded-lg border text-xs ${
+                        res.status === 'SUCCESS' ? 'bg-emerald-950/40 border-emerald-800 text-emerald-300' : 'bg-rose-950/60 border-rose-700 text-rose-200'
+                      }`}>
+                        <div className="flex justify-between font-bold">
+                          <span>{res.step}</span>
+                          <span>{res.status === 'SUCCESS' ? '✓ 成功' : '✕ エラー'}</span>
+                        </div>
+                        <div>{res.message}</div>
                       </div>
-                    )}
+                    ))}
                   </div>
-                ))}
+                )}
+
+                <form onSubmit={handleSaveFirebaseConfig} className="space-y-2 pt-2 border-t border-slate-800">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-bold text-slate-400 flex items-center gap-1">
+                      <KeyRound className="w-3.5 h-3.5" />
+                      Firebase Config JSON:
+                    </label>
+                    <button type="button" onClick={() => setShowFirebaseHelp(!showFirebaseHelp)} className="text-[11px] text-blue-400">
+                      {showFirebaseHelp ? '閉じる' : 'ヘルプ'}
+                    </button>
+                  </div>
+                  {showFirebaseHelp && (
+                    <p className="text-[11px] text-slate-400 bg-slate-900 p-2 rounded-lg">
+                      Firebase Console のプロジェクト設定 → Webアプリ構成（firebaseConfig）を貼り付けて保存します。
+                    </p>
+                  )}
+                  <textarea
+                    rows={3}
+                    value={firebaseJson}
+                    onChange={(e) => setFirebaseJson(e.target.value)}
+                    className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-xl text-xs font-mono text-white focus:outline-none"
+                  />
+                  <div className="flex justify-end gap-2">
+                    <button type="submit" disabled={isTestingCloud} className="px-4 py-1.5 bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs rounded-xl shadow">
+                      設定を保存
+                    </button>
+                  </div>
+                </form>
               </div>
             )}
           </div>
-
-          <form onSubmit={handleSaveFirebaseConfig} className="space-y-3">
-            <div>
-              <div className="flex items-center justify-between mb-1.5">
-                <label className="text-xs font-bold text-slate-300 flex items-center gap-1">
-                  <KeyRound className="w-3.5 h-3.5 text-blue-400" />
-                  <span>Firebase Config JSON 設定:</span>
-                </label>
-                <button
-                  type="button"
-                  onClick={() => setShowFirebaseHelp(!showFirebaseHelp)}
-                  className="text-xs text-blue-400 hover:text-blue-300 flex items-center gap-1"
-                >
-                  <HelpCircle className="w-3.5 h-3.5" />
-                  <span>{showFirebaseHelp ? '閉じる' : '設定方法ヘルプ'}</span>
-                </button>
-              </div>
-
-              {showFirebaseHelp && (
-                <div className="p-3.5 bg-slate-950 rounded-2xl border border-slate-800 text-xs text-slate-300 space-y-1.5 mb-2 leading-relaxed">
-                  <p className="font-bold text-amber-400">💡 Firebase 設定取得手順：</p>
-                  <p>1. <a href="https://console.firebase.google.com" target="_blank" rel="noreferrer" className="text-blue-400 underline">Firebase Console</a> でプロジェクトを開きます。</p>
-                  <p>2. 「プロジェクト設定」→「ウェブアプリ」の構成コード（firebaseConfig）をコピーして貼り付けます。</p>
-                </div>
-              )}
-
-              <textarea
-                rows={4}
-                value={firebaseJson}
-                onChange={(e) => setFirebaseJson(e.target.value)}
-                placeholder={`{\n  "apiKey": "AIzaSy...",\n  "projectId": "pwa-inventory-app-9c88d"\n}`}
-                className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-700 rounded-2xl text-xs font-mono text-white focus:outline-none focus:border-blue-500 placeholder-slate-600"
-              />
-            </div>
-
-            <div className="flex flex-wrap items-center gap-2 justify-end">
-              {isCloudConnected && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    clearFirebaseConfig();
-                    setFirebaseJson('');
-                  }}
-                  className="px-3.5 py-2 bg-rose-950/60 hover:bg-rose-900 text-rose-300 border border-rose-800 rounded-xl text-xs font-bold transition"
-                >
-                  単機モードに切り替え
-                </button>
-              )}
-
-              <button
-                type="submit"
-                disabled={isTestingCloud}
-                className="px-5 py-2 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white font-extrabold rounded-xl text-xs shadow-lg shadow-blue-950 transition flex items-center gap-1.5"
-              >
-                <Cloud className="w-4 h-4" />
-                <span>{isTestingCloud ? '接続テスト中...' : '設定を保存'}</span>
-              </button>
-            </div>
-          </form>
         </div>
 
-        {/* Section 3: Operator Setting */}
-        <div className="bg-slate-900 border border-slate-800 rounded-3xl p-4 sm:p-5 shadow-lg space-y-3">
-          <h3 className="font-bold text-sm text-slate-200 flex items-center gap-2">
-            <User className="w-4 h-4 text-blue-400" />
-            <span>担当作業員（オペレーターID）設定</span>
-          </h3>
-          <p className="text-xs text-slate-400">
-            入出庫トランザクションに記録される作業者名です。
-          </p>
-          <form onSubmit={handleSaveOperator} className="flex gap-2 max-w-md">
-            <input
-              type="text"
-              value={operatorInput}
-              onChange={(e) => setOperatorInput(e.target.value)}
-              className="flex-1 px-3.5 py-2 bg-slate-800 border border-slate-700 rounded-xl text-sm text-white focus:outline-none focus:border-blue-500 font-medium"
-              placeholder="例: 現場担当-01 / 山田"
-            />
-            <button
-              type="submit"
-              className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-xl text-xs transition"
-            >
-              更新
-            </button>
-          </form>
-        </div>
-
-        {/* Section 4: Scan Debounce */}
+        {/* Section 5: Scan Debounce */}
         <div className="bg-slate-900 border border-slate-800 rounded-3xl p-4 sm:p-5 shadow-lg space-y-3">
           <div className="flex items-center justify-between">
             <h3 className="font-bold text-sm text-slate-200 flex items-center gap-2">
@@ -370,9 +360,6 @@ export const SettingsView: React.FC = () => {
               {(debounceMs / 1000).toFixed(1)} 秒
             </span>
           </div>
-          <p className="text-xs text-slate-400">
-            同一バーコードの連続誤認識を防ぐロック時間です（推奨: 1.5秒）。
-          </p>
           <input
             type="range"
             min="500"
@@ -382,14 +369,9 @@ export const SettingsView: React.FC = () => {
             onChange={(e) => handleDebounceChange(Number(e.target.value))}
             className="w-full h-2 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-blue-500"
           />
-          <div className="flex justify-between text-[10px] text-slate-500 font-mono">
-            <span>0.5秒 (高速)</span>
-            <span>1.5秒 (標準)</span>
-            <span>4.0秒 (慎重)</span>
-          </div>
         </div>
 
-        {/* Section 5: Feedback Options */}
+        {/* Section 6: Feedback Options */}
         <div className="bg-slate-900 border border-slate-800 rounded-3xl p-4 sm:p-5 shadow-lg space-y-3">
           <h3 className="font-bold text-sm text-slate-200 flex items-center gap-2">
             <Volume2 className="w-4 h-4 text-emerald-400" />
@@ -425,15 +407,12 @@ export const SettingsView: React.FC = () => {
           </div>
         </div>
 
-        {/* Section 6: Database Reset */}
+        {/* Section 7: Database Reset */}
         <div className="bg-slate-900 border border-slate-800 rounded-3xl p-4 sm:p-5 shadow-lg space-y-3">
           <h3 className="font-bold text-sm text-slate-200 flex items-center gap-2">
             <Database className="w-4 h-4 text-rose-400" />
             <span>データベース初期化</span>
           </h3>
-          <p className="text-xs text-slate-400">
-            テストデータをクリアし、JIS規格電気パーツ等の初期サンプルマスターを再構築します。
-          </p>
           <button
             onClick={handleResetDemoData}
             className="flex items-center gap-2 px-4 py-2 bg-rose-950/60 hover:bg-rose-900/80 text-rose-300 border border-rose-800/80 rounded-xl text-xs font-bold transition"
