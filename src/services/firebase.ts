@@ -158,24 +158,24 @@ class CloudSyncService {
 
     if (!config) {
       results.push({
-        step: '1. Firebase Config 設定',
+        step: '1. Firebase 構成設定確認',
         status: 'ERROR',
-        message: '未設定 Firebase Config',
+        message: 'Firebase 構成が未設定です',
       });
       return { success: false, results };
     }
 
     results.push({
-      step: '1. Firebase 專案設定驗證',
+      step: '1. Firebase プロジェクト接続検証',
       status: 'SUCCESS',
-      message: `專案 ID: ${config.projectId}`,
+      message: `プロジェクトID: ${config.projectId}`,
     });
 
     try {
       if (!this.db) {
         this.init(config);
       }
-      if (!this.db) throw new Error('Firestore 初始化失敗');
+      if (!this.db) throw new Error('Firestore の初期化に失敗しました');
 
       // Test Write
       const testDocRef = doc(this.db, 'inventory_items', '_test_connection');
@@ -184,42 +184,42 @@ class CloudSyncService {
         timestamp: new Date().toISOString(),
       });
       results.push({
-        step: '2. 雲端寫入測試 (Write Test)',
+        step: '2. クラウド書込テスト (Write Test)',
         status: 'SUCCESS',
-        message: '成功寫入測試資料至 Firestore',
+        message: 'Firestore へのテストデータ書込に成功しました',
       });
 
       // Test Read
       const snapshot = await getDocs(collection(this.db, 'inventory_items'));
       results.push({
-        step: '3. 雲端讀取測試 (Read Test)',
+        step: '3. クラウド読取テスト (Read Test)',
         status: 'SUCCESS',
-        message: `成功連線並讀取到 ${snapshot.size} 筆品目資料`,
+        message: `接続成功：${snapshot.size} 件の品目データを取得しました`,
       });
 
       // Cleanup
       await deleteDoc(testDocRef);
       results.push({
-        step: '4. 測試資料清理 (Cleanup)',
+        step: '4. テストデータ初期化 (Cleanup)',
         status: 'SUCCESS',
-        message: '測試環境完全正常，可正常出入庫同步！',
+        message: 'クラウド接続環境は正常です。リアルタイム同期可能です',
       });
 
       return { success: true, results };
     } catch (err: any) {
       console.error('Diagnostic error:', err);
-      let advice = '請檢查 Firebase 控制台設定。';
+      let advice = 'Firebase Console の設定を確認してください。';
 
       if (err.message?.includes('permission-denied') || err.code === 'permission-denied') {
-        advice = '【權限被拒絕】請前往 Firebase Console -> Firestore Database -> 規則 (Rules)，將規則改為 allow read, write: if true; 並點擊「發布 (Publish)」！';
+        advice = '【権限エラー】Firebase Console -> Firestore Database -> ルール (Rules) で「allow read, write: if true;」を設定し「公開」をクリックしてください。';
       } else if (err.message?.includes('not-found') || err.code === 'not-found' || err.message?.includes('database') || err.code === 'unavailable') {
-        advice = '【資料庫尚未建立】請前往 Firebase Console 左側點擊「Firestore Database」並點擊「建立資料庫 (Create database)」！';
+        advice = '【データベース未作成】Firebase Console の左メニュー「Firestore Database」で「データベースの作成」を実行してください。';
       }
 
       results.push({
-        step: '連線診斷失敗',
+        step: '接続診断エラー',
         status: 'ERROR',
-        message: err.message || '無法連線至 Firestore',
+        message: err.message || 'Firestore に接続できませんでした',
         details: advice,
       });
 

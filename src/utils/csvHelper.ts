@@ -20,7 +20,7 @@ export class CsvHelper {
       '安全在庫(SafetyStock)',
       '保管棚番(Location)',
       '自作QR(QRCode)',
-      '包裝換算設定(Conversions)',
+      '包装単位換算(Conversions)',
       '備考(Note)',
       '最終更新日時(UpdatedAt)'
     ];

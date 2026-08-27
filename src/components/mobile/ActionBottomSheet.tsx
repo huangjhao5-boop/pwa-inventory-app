@@ -747,7 +747,7 @@ export const ActionBottomSheet: React.FC = () => {
                 {/* 包装単位・換算倍率リスト (箱、袋、パック、束、巻等) */}
                 <div className="p-3.5 bg-slate-900 rounded-2xl border border-slate-800 space-y-2.5">
                   <div className="flex items-center justify-between">
-                    <span className="font-bold text-slate-300 text-xs">包装単位換算 (箱 / 袋 / 盒 / パック / 束 / 巻)</span>
+                    <span className="font-bold text-slate-300 text-xs">包装単位換算 (箱 / パック / 小箱 / 袋 / 束 / 巻)</span>
                     <button type="button" onClick={handleAddConversion} className="text-blue-400 hover:text-blue-300 text-xs font-bold flex items-center gap-1 bg-blue-900/30 px-2 py-1 rounded-lg border border-blue-700/50">
                       <Plus className="w-3.5 h-3.5" /> 単位を追加
                     </button>
