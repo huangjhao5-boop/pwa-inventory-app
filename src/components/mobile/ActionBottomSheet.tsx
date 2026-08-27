@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useInventory } from '../../context/InventoryContext';
-import { ActionType, ItemMaster } from '../../types/inventory';
+import { ActionType, ItemMaster, PRESET_UNITS } from '../../types/inventory';
 import { NumericKeypad } from './NumericKeypad';
 import { StockInquiryCard } from './StockInquiryCard';
+import { OcrHelper } from '../../utils/ocrHelper';
 import {
   ArrowDownCircle,
   ArrowUpCircle,
@@ -12,6 +13,9 @@ import {
   ChevronLeft,
   Camera,
   Zap,
+  Sparkles,
+  Loader2,
+  Box,
 } from 'lucide-react';
 
 export const ActionBottomSheet: React.FC = () => {
@@ -23,6 +27,7 @@ export const ActionBottomSheet: React.FC = () => {
     recordTransaction,
     settings,
     saveItem,
+    addToast,
   } = useInventory();
 
   // Mode: 'MENU' | 'KEYPAD' | 'INQUIRY' | 'NEW_ITEM'
@@ -36,11 +41,15 @@ export const ActionBottomSheet: React.FC = () => {
   const [newItemName, setNewItemName] = useState('');
   const [newItemSpec, setNewItemSpec] = useState('');
   const [newItemSupplier, setNewItemSupplier] = useState('');
-  const [newItemCategory, setNewItemCategory] = useState('一般部品');
+  const [newItemCategory] = useState('一般部品');
   const [newItemBaseUnit, setNewItemBaseUnit] = useState('個');
   const [newItemSafetyStock, setNewItemSafetyStock] = useState(10);
-  const [newItemLocation, setNewItemLocation] = useState('A-01');
+  const [newItemBoxName, setNewItemBoxName] = useState('1號盒');
   const [itemImage, setItemImage] = useState<string | null>(null);
+
+  // OCR state
+  const [isOcrProcessing, setIsOcrProcessing] = useState(false);
+  const [ocrDetectedInfo, setOcrDetectedInfo] = useState<string | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -52,14 +61,17 @@ export const ActionBottomSheet: React.FC = () => {
         setQuantity(1);
         setNote('');
       } else {
-        // 未登録品目: 智能預設填入，消除現場繁瑣輸入
+        // 未登錄品項: 預設填入安全代碼，等待拍照辨識或直接入庫
         setCurrentStep('NEW_ITEM');
         const cleanCode = activeScannedCode || '';
         const shortCode = cleanCode.length > 8 ? cleanCode.slice(-6) : cleanCode;
-        setNewItemName(`新部品-${shortCode}`);
+        setNewItemName(`新商品-${shortCode}`);
         setNewItemSpec('');
         setNewItemSupplier('');
+        setNewItemBaseUnit('個');
+        setNewItemBoxName('1號盒');
         setItemImage(null);
+        setOcrDetectedInfo(null);
       }
     }
   }, [isBottomSheetOpen, activeScannedItem, activeScannedCode]);
@@ -99,24 +111,60 @@ export const ActionBottomSheet: React.FC = () => {
     );
   };
 
-  // 拍照 / 圖片上傳處理
-  const handlePhotoCapture = (e: React.ChangeEvent<HTMLInputElement>) => {
+  // 拍照 / 圖片上傳 + 自動 OCR 文字辨識
+  const handlePhotoCapture = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
     const reader = new FileReader();
-    reader.onload = (event) => {
+    reader.onload = async (event) => {
       const base64 = event.target?.result as string;
       setItemImage(base64);
+
+      // 啟動 OCR 文字識別
+      setIsOcrProcessing(true);
+      setOcrDetectedInfo(null);
+      try {
+        const result = await OcrHelper.recognizeImage(base64);
+        setIsOcrProcessing(false);
+
+        const detectedParts: string[] = [];
+        if (result.suggestedName) {
+          setNewItemName(result.suggestedName);
+          detectedParts.push(`品名: ${result.suggestedName}`);
+        }
+        if (result.suggestedSpec) {
+          setNewItemSpec(result.suggestedSpec);
+          detectedParts.push(`規格: ${result.suggestedSpec}`);
+        }
+        if (result.suggestedSupplier) {
+          setNewItemSupplier(result.suggestedSupplier);
+          detectedParts.push(`廠商: ${result.suggestedSupplier}`);
+        }
+        if (result.suggestedBoxName) {
+          setNewItemBoxName(result.suggestedBoxName);
+          detectedParts.push(`盒子: ${result.suggestedBoxName}`);
+        }
+
+        if (detectedParts.length > 0) {
+          setOcrDetectedInfo(`✨ 照片文字已自動填入：${detectedParts.join(' | ')}`);
+          addToast('success', '已自動辨識照片標籤文字並填入欄位！');
+        } else {
+          setOcrDetectedInfo('已取得照片，請確認下方欄位或直接入庫');
+        }
+      } catch (err) {
+        setIsOcrProcessing(false);
+        console.error('OCR failed:', err);
+      }
     };
     reader.readAsDataURL(file);
   };
 
-  // 一鍵極速登錄 (1-Click Fast Register)
-  const handleFastRegister = async (customName?: string) => {
+  // 儲存商品並直接進入入庫鍵盤
+  const handleSaveAndProceed = async (customName?: string) => {
     if (!activeScannedCode) return;
 
-    const nameToUse = customName || newItemName || `新部品-${activeScannedCode.slice(-6)}`;
+    const nameToUse = customName || newItemName || `新商品-${activeScannedCode.slice(-6)}`;
     const newItem: ItemMaster = {
       id: `item-${activeScannedCode}`,
       code: activeScannedCode,
@@ -128,7 +176,7 @@ export const ActionBottomSheet: React.FC = () => {
       baseUnit: newItemBaseUnit,
       currentStock: 0,
       safetyStock: Number(newItemSafetyStock) || 0,
-      location: newItemLocation.trim() || 'A-01',
+      location: newItemBoxName.trim() || '1號盒',
       qrCode: `INV:v1:${activeScannedCode}`,
       unitConversions: [
         { unit: '箱', multiplier: 50 },
@@ -161,10 +209,10 @@ export const ActionBottomSheet: React.FC = () => {
             )}
             <div>
               <h2 className="font-extrabold text-sm sm:text-base text-white truncate max-w-[260px]">
-                {activeScannedItem ? activeScannedItem.name : '未登録品目の快速登録'}
+                {activeScannedItem ? activeScannedItem.name : '新商品登記與入庫'}
               </h2>
               <p className="text-[11px] text-slate-400 font-mono">
-                {activeScannedItem ? activeScannedItem.code : activeScannedCode}
+                條碼: {activeScannedItem ? activeScannedItem.code : activeScannedCode}
               </p>
             </div>
           </div>
@@ -182,20 +230,20 @@ export const ActionBottomSheet: React.FC = () => {
           {currentStep === 'MENU' && activeScannedItem && (
             <div className="space-y-3">
               {/* Quick Summary Badge */}
-              <div className="bg-slate-950/90 p-3 rounded-2xl border border-slate-800 flex items-center justify-between">
+              <div className="bg-slate-950/90 p-3.5 rounded-2xl border border-slate-800 flex items-center justify-between">
                 <div>
-                  <span className="text-[11px] text-slate-400">現在庫</span>
-                  <div className="text-xl font-black text-emerald-400">
+                  <span className="text-[11px] text-slate-400 font-semibold block">目前庫存</span>
+                  <div className="text-2xl font-black text-emerald-400">
                     {activeScannedItem.currentStock}{' '}
-                    <span className="text-xs text-slate-300">{activeScannedItem.baseUnit}</span>
+                    <span className="text-xs text-slate-300 font-bold">{activeScannedItem.baseUnit}</span>
                   </div>
                 </div>
                 <div className="text-right">
-                  <span className="text-[11px] text-slate-400">棚番 / 廠商</span>
+                  <span className="text-[11px] text-slate-400 font-semibold block">存放盒子 / 廠商</span>
                   <div className="text-sm font-bold text-blue-400">
-                    {activeScannedItem.location}{' '}
+                    {activeScannedItem.location || '未指定盒號'}{' '}
                     {activeScannedItem.supplier && (
-                      <span className="text-xs text-slate-400 font-normal">
+                      <span className="text-xs text-slate-300 font-normal">
                         ({activeScannedItem.supplier})
                       </span>
                     )}
@@ -205,26 +253,26 @@ export const ActionBottomSheet: React.FC = () => {
 
               {/* Action Buttons */}
               <div className="grid grid-cols-2 gap-3">
-                {/* 1. 入荷 */}
+                {/* 1. 入荷 (入庫) */}
                 <button
                   type="button"
                   onClick={() => handleSelectAction('IN')}
                   className="p-4 bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white rounded-2xl shadow-lg shadow-emerald-950/50 flex flex-col items-center justify-center gap-1.5 transition"
                 >
                   <ArrowDownCircle className="w-8 h-8 stroke-[2.5]" />
-                  <span className="text-lg font-black tracking-wide">【入荷】</span>
-                  <span className="text-[11px] opacity-80">在庫を増やす</span>
+                  <span className="text-lg font-black tracking-wide">【 入 庫 】</span>
+                  <span className="text-[11px] opacity-90 font-medium">增加庫存數量</span>
                 </button>
 
-                {/* 2. 払出 */}
+                {/* 2. 払出 (出庫) */}
                 <button
                   type="button"
                   onClick={() => handleSelectAction('OUT')}
                   className="p-4 bg-rose-600 hover:bg-rose-500 active:scale-95 text-white rounded-2xl shadow-lg shadow-rose-950/50 flex flex-col items-center justify-center gap-1.5 transition"
                 >
                   <ArrowUpCircle className="w-8 h-8 stroke-[2.5]" />
-                  <span className="text-lg font-black tracking-wide">【払出】</span>
-                  <span className="text-[11px] opacity-80">出庫・使用</span>
+                  <span className="text-lg font-black tracking-wide">【 出 庫 】</span>
+                  <span className="text-[11px] opacity-90 font-medium">扣減使用數量</span>
                 </button>
               </div>
 
@@ -236,7 +284,7 @@ export const ActionBottomSheet: React.FC = () => {
                   className="p-3 bg-slate-800 hover:bg-slate-700 active:scale-95 text-slate-100 rounded-2xl border border-slate-700 flex items-center justify-center gap-2 transition"
                 >
                   <Search className="w-5 h-5 text-blue-400" />
-                  <span className="font-bold text-sm">【在庫確認】</span>
+                  <span className="font-bold text-sm">【 查庫存明細 】</span>
                 </button>
 
                 <button
@@ -245,7 +293,7 @@ export const ActionBottomSheet: React.FC = () => {
                   className="p-3 bg-amber-500/20 hover:bg-amber-500/30 active:scale-95 text-amber-300 border border-amber-500/40 rounded-2xl flex items-center justify-center gap-2 transition"
                 >
                   <ShoppingCart className="w-5 h-5 text-amber-400" />
-                  <span className="font-bold text-sm">【発注依頼】</span>
+                  <span className="font-bold text-sm">【 請購叫貨 】</span>
                 </button>
               </div>
             </div>
@@ -255,7 +303,7 @@ export const ActionBottomSheet: React.FC = () => {
           {currentStep === 'KEYPAD' && activeScannedItem && (
             <div className="space-y-3">
               <div
-                className={`py-2 px-3 rounded-xl font-bold text-xs flex items-center justify-between ${
+                className={`py-2 px-3.5 rounded-xl font-bold text-xs flex items-center justify-between ${
                   selectedAction === 'IN'
                     ? 'bg-emerald-950/80 text-emerald-300 border border-emerald-800'
                     : selectedAction === 'OUT'
@@ -264,10 +312,10 @@ export const ActionBottomSheet: React.FC = () => {
                 }`}
               >
                 <span>
-                  選択中アクション:{' '}
-                  {selectedAction === 'IN' ? '【入荷 (入庫)】' : selectedAction === 'OUT' ? '【払出 (出庫)】' : '【発注依頼】'}
+                  目前模式:{' '}
+                  {selectedAction === 'IN' ? '【 入庫作業 】' : selectedAction === 'OUT' ? '【 出庫作業 】' : '【 請購登記 】'}
                 </span>
-                <span className="opacity-80">現在庫: {activeScannedItem.currentStock} {activeScannedItem.baseUnit}</span>
+                <span className="opacity-90">現有: {activeScannedItem.currentStock} {activeScannedItem.baseUnit}</span>
               </div>
 
               <NumericKeypad
@@ -285,10 +333,10 @@ export const ActionBottomSheet: React.FC = () => {
                 soundEnabled={settings.soundEnabled}
                 confirmLabel={
                   selectedAction === 'IN'
-                    ? `入荷確定 (+${quantity}${selectedUnit})`
+                    ? `確認入庫 (+${quantity} ${selectedUnit})`
                     : selectedAction === 'OUT'
-                    ? `払出確定 (-${quantity}${selectedUnit})`
-                    : `発注依頼登録 (${quantity}${selectedUnit})`
+                    ? `確認出庫 (-${quantity} ${selectedUnit})`
+                    : `確認請購 (${quantity} ${selectedUnit})`
                 }
                 confirmColor={
                   selectedAction === 'IN'
@@ -308,66 +356,84 @@ export const ActionBottomSheet: React.FC = () => {
             </div>
           )}
 
-          {/* STEP 4: Smart Fast Registration (極速初次登錄) */}
+          {/* STEP 4: Smart Fast Registration & OCR (拍照自動識別 / 快速入庫) */}
           {currentStep === 'NEW_ITEM' && (
             <div className="space-y-4">
-              {/* Fast 1-Click Action Bar */}
-              <div className="bg-gradient-to-r from-blue-950 to-indigo-950 p-4 rounded-3xl border border-blue-500/40 shadow-xl space-y-3">
+              {/* Card 1: Fast Photo OCR & Direct In */}
+              <div className="bg-gradient-to-r from-blue-950/90 to-indigo-950/90 p-4 rounded-3xl border border-blue-500/50 shadow-xl space-y-3">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
-                    <Zap className="w-5 h-5 text-amber-400 animate-bounce" />
-                    <span className="font-extrabold text-sm text-white">現場極速初次登錄</span>
+                    <Sparkles className="w-5 h-5 text-amber-400 animate-spin" style={{ animationDuration: '6s' }} />
+                    <span className="font-extrabold text-sm text-white">新商品辨識與登記</span>
                   </div>
-                  <span className="text-[11px] font-mono text-blue-300 bg-blue-900/60 px-2 py-0.5 rounded-lg">
+                  <span className="text-xs font-mono text-blue-300 bg-blue-900/60 px-2 py-0.5 rounded-lg border border-blue-700/50">
                     {activeScannedCode}
                   </span>
                 </div>
 
                 <p className="text-xs text-slate-300 leading-relaxed">
-                  面倒な手入力をスキップ！写真を撮るか、このまま「1秒登録」ですぐに入荷作業を行えます。
+                  現場不用打字！點擊下方拍照自動辨識標籤文字，或直接點【立即入庫】稍後再補品名。
                 </p>
 
-                {/* Photo Snap & Fast Add Buttons */}
-                <div className="grid grid-cols-2 gap-2 pt-1">
-                  <input
-                    type="file"
-                    ref={fileInputRef}
-                    accept="image/*"
-                    capture="environment"
-                    onChange={handlePhotoCapture}
-                    className="hidden"
-                  />
+                {/* Hidden File Input for Camera */}
+                <input
+                  type="file"
+                  ref={fileInputRef}
+                  accept="image/*"
+                  capture="environment"
+                  onChange={handlePhotoCapture}
+                  className="hidden"
+                />
 
-                  {/* Photo Button */}
+                {/* 2 Primary Actions: Snap Photo OCR vs 1-Click Direct In */}
+                <div className="grid grid-cols-2 gap-2.5 pt-1">
+                  {/* Photo Snap & OCR Button */}
                   <button
                     type="button"
+                    disabled={isOcrProcessing}
                     onClick={() => fileInputRef.current?.click()}
-                    className="py-3 px-3 bg-slate-800 hover:bg-slate-700 active:scale-95 text-slate-100 rounded-2xl border border-slate-700 flex items-center justify-center gap-2 transition"
+                    className="py-3.5 px-3 bg-slate-800 hover:bg-slate-700 active:scale-95 disabled:opacity-50 text-slate-100 rounded-2xl border border-slate-700 flex flex-col items-center justify-center gap-1 transition shadow"
                   >
-                    <Camera className="w-4 h-4 text-emerald-400" />
-                    <span className="font-bold text-xs sm:text-sm">
-                      {itemImage ? '写真撮影済 ✓' : '📸 拍照附圖'}
+                    {isOcrProcessing ? (
+                      <Loader2 className="w-5 h-5 text-amber-400 animate-spin" />
+                    ) : (
+                      <Camera className="w-5 h-5 text-emerald-400" />
+                    )}
+                    <span className="font-extrabold text-xs sm:text-sm">
+                      {isOcrProcessing ? '正在辨識文字...' : itemImage ? '重拍標籤照片' : '📸 拍照自動辨識'}
                     </span>
                   </button>
 
-                  {/* 1-Click Fast Register */}
+                  {/* 1-Click Direct Stock In */}
                   <button
                     type="button"
-                    onClick={() => handleFastRegister()}
-                    className="py-3 px-3 bg-blue-600 hover:bg-blue-500 active:scale-95 text-white font-extrabold rounded-2xl text-xs sm:text-sm shadow-lg shadow-blue-950 transition flex items-center justify-center gap-1.5"
+                    onClick={() => handleSaveAndProceed()}
+                    className="py-3.5 px-3 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 active:scale-95 text-white font-black rounded-2xl text-xs sm:text-sm shadow-lg shadow-blue-950 transition flex flex-col items-center justify-center gap-1"
                   >
-                    <Zap className="w-4 h-4" />
-                    <span>⚡ 1秒極速登錄</span>
+                    <Zap className="w-5 h-5 text-amber-300" />
+                    <span>⚡ 免填寫・直接入庫</span>
                   </button>
                 </div>
 
+                {/* OCR Feedback message */}
+                {ocrDetectedInfo && (
+                  <div className="p-2.5 bg-emerald-950/80 border border-emerald-700/80 rounded-xl text-xs text-emerald-300 font-semibold flex items-center gap-2">
+                    <Sparkles className="w-4 h-4 text-emerald-400 shrink-0" />
+                    <span className="truncate">{ocrDetectedInfo}</span>
+                  </div>
+                )}
+
                 {/* Image Preview Thumbnail */}
                 {itemImage && (
-                  <div className="relative w-full h-28 rounded-2xl overflow-hidden border border-slate-700 mt-2 bg-black">
+                  <div className="relative w-full h-28 rounded-2xl overflow-hidden border border-slate-700 bg-black">
                     <img src={itemImage} alt="Captured preview" className="w-full h-full object-cover" />
                     <button
-                      onClick={() => setItemImage(null)}
-                      className="absolute top-1 right-1 p-1 bg-black/70 rounded-full text-white"
+                      type="button"
+                      onClick={() => {
+                        setItemImage(null);
+                        setOcrDetectedInfo(null);
+                      }}
+                      className="absolute top-1.5 right-1.5 p-1.5 bg-black/80 hover:bg-black text-white rounded-full"
                     >
                       <X className="w-4 h-4" />
                     </button>
@@ -375,104 +441,97 @@ export const ActionBottomSheet: React.FC = () => {
                 )}
               </div>
 
-              {/* Optional Quick Form Fields (修正・補足用) */}
-              <div className="bg-slate-950/60 p-4 rounded-3xl border border-slate-800 space-y-3">
-                <span className="text-xs font-bold text-slate-400 block">
-                  📝 手動修正・補足（任意・後からPCでも編集可能）:
+              {/* Card 2: Manual Fields & Customization */}
+              <div className="bg-slate-950/70 p-4 rounded-3xl border border-slate-800 space-y-3 text-xs">
+                <span className="font-bold text-slate-300 block">
+                  📝 商品詳細資訊（可手動修改或確認）：
                 </span>
 
                 <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1">品名</label>
+                  <label className="block font-semibold text-slate-300 mb-1">品名</label>
                   <input
                     type="text"
                     value={newItemName}
                     onChange={(e) => setNewItemName(e.target.value)}
-                    placeholder="例: 高圧エアーバルブ"
-                    className="w-full px-3.5 py-2 bg-slate-800 border border-slate-700 rounded-xl text-white text-sm focus:outline-none focus:border-blue-500"
+                    placeholder="例: M6六角螺栓"
+                    className="w-full px-3.5 py-2 bg-slate-800 border border-slate-700 rounded-xl text-white text-sm focus:outline-none focus:border-blue-500 font-medium"
                   />
                 </div>
 
                 <div className="grid grid-cols-2 gap-2">
                   <div>
-                    <label className="block text-xs font-semibold text-slate-300 mb-1">
-                      廠商・サプライヤー
-                    </label>
+                    <label className="block font-semibold text-slate-300 mb-1">廠商 / 供應商</label>
                     <input
                       type="text"
                       value={newItemSupplier}
                       onChange={(e) => setNewItemSupplier(e.target.value)}
-                      placeholder="例: ミスミ, SMC..."
+                      placeholder="例: MISUMI, SMC..."
                       className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-white text-xs focus:outline-none focus:border-blue-500"
                     />
                   </div>
 
                   <div>
-                    <label className="block text-xs font-semibold text-slate-300 mb-1">規格・型番</label>
+                    <label className="block font-semibold text-slate-300 mb-1">規格 / 型號</label>
                     <input
                       type="text"
                       value={newItemSpec}
                       onChange={(e) => setNewItemSpec(e.target.value)}
-                      placeholder="例: M6×20mm"
+                      placeholder="例: M6×20mm SUS304"
                       className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-white text-xs focus:outline-none focus:border-blue-500"
                     />
                   </div>
                 </div>
 
-                <div className="grid grid-cols-4 gap-2">
+                <div className="grid grid-cols-3 gap-2">
+                  {/* 基準單位下拉選擇 */}
                   <div>
-                    <label className="block text-xs font-semibold text-slate-300 mb-1">分類</label>
+                    <label className="block font-semibold text-slate-300 mb-1">基準單位</label>
                     <select
-                      value={newItemCategory}
-                      onChange={(e) => setNewItemCategory(e.target.value)}
-                      className="w-full px-2 py-2 bg-slate-800 border border-slate-700 rounded-xl text-white text-xs"
+                      value={newItemBaseUnit}
+                      onChange={(e) => setNewItemBaseUnit(e.target.value)}
+                      className="w-full px-2.5 py-2 bg-slate-800 border border-slate-700 rounded-xl text-white text-xs font-bold"
                     >
-                      <option value="一般部品">一般部品</option>
-                      <option value="ボルト・締結部品">ボルト・締結</option>
-                      <option value="配線・電気資材">配線・電気</option>
-                      <option value="電子パーツ">電子パーツ</option>
-                      <option value="空圧・配管部品">空圧・配管</option>
-                      <option value="消耗品">消耗品</option>
+                      {PRESET_UNITS.map((u) => (
+                        <option key={u} value={u}>
+                          {u}
+                        </option>
+                      ))}
                     </select>
                   </div>
 
+                  {/* 盒子名稱 (改自棚番) */}
                   <div>
-                    <label className="block text-xs font-semibold text-slate-300 mb-1">基準単位</label>
+                    <label className="block font-semibold text-slate-300 mb-1 flex items-center gap-1">
+                      <Box className="w-3 h-3 text-blue-400" />
+                      <span>盒子名稱</span>
+                    </label>
                     <input
                       type="text"
-                      value={newItemBaseUnit}
-                      onChange={(e) => setNewItemBaseUnit(e.target.value)}
-                      className="w-full px-2 py-2 bg-slate-800 border border-slate-700 rounded-xl text-white text-xs"
+                      value={newItemBoxName}
+                      onChange={(e) => setNewItemBoxName(e.target.value)}
+                      placeholder="例: 1號盒 / A-01"
+                      className="w-full px-2.5 py-2 bg-slate-800 border border-slate-700 rounded-xl text-white text-xs font-bold"
                     />
                   </div>
 
                   <div>
-                    <label className="block text-xs font-semibold text-slate-300 mb-1">安全在庫</label>
+                    <label className="block font-semibold text-slate-300 mb-1">安全庫存</label>
                     <input
                       type="number"
                       min="0"
                       value={newItemSafetyStock}
                       onChange={(e) => setNewItemSafetyStock(Number(e.target.value) || 0)}
-                      className="w-full px-2 py-2 bg-slate-800 border border-slate-700 rounded-xl text-white text-xs"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-300 mb-1">棚番</label>
-                    <input
-                      type="text"
-                      value={newItemLocation}
-                      onChange={(e) => setNewItemLocation(e.target.value)}
-                      className="w-full px-2 py-2 bg-slate-800 border border-slate-700 rounded-xl text-white text-xs"
+                      className="w-full px-2.5 py-2 bg-slate-800 border border-slate-700 rounded-xl text-white text-xs"
                     />
                   </div>
                 </div>
 
                 <button
                   type="button"
-                  onClick={() => handleFastRegister()}
-                  className="w-full py-3 bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs rounded-xl border border-slate-700 transition"
+                  onClick={() => handleSaveAndProceed()}
+                  className="w-full py-3 bg-blue-600 hover:bg-blue-500 text-white font-extrabold text-xs rounded-xl shadow transition"
                 >
-                  上記の内容で保存して入荷へ
+                  確認儲存並進行入庫
                 </button>
               </div>
             </div>

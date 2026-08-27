@@ -14,12 +14,15 @@ import {
   Download,
   Upload,
   AlertTriangle,
-  MapPin,
   Building2,
+  Box,
+  PlusCircle,
+  MinusCircle,
 } from 'lucide-react';
 
 export const ItemMasterTable: React.FC = () => {
-  const { items, deleteItem, openQRGenerator, addToast } = useInventory();
+  const { items, deleteItem, openQRGenerator, addToast, settings, recordTransaction } = useInventory();
+  const isFieldMode = settings.viewMode === 'FIELD';
 
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('ALL');
@@ -61,15 +64,20 @@ export const ItemMasterTable: React.FC = () => {
   };
 
   const handleDelete = async (id: string, name: string) => {
-    if (window.confirm(`品目「${name}」をマスターから削除しますか？`)) {
+    if (window.confirm(`確定要從主檔中刪除品目「${name}」嗎？`)) {
       await deleteItem(id);
     }
+  };
+
+  const handleQuickAdjust = async (item: ItemMaster, deltaQty: number) => {
+    const type = deltaQty > 0 ? 'IN' : 'OUT';
+    await recordTransaction(item, type, Math.abs(deltaQty), item.baseUnit, 1, '現場卡片快速微調');
   };
 
   const handleExportCsv = () => {
     const csvStr = CsvHelper.exportItemsToCsv(items);
     CsvHelper.downloadCsv(csvStr, `inventory_master_${new Date().toISOString().slice(0, 10)}.csv`);
-    addToast('success', '品目マスターを UTF-8 BOM 付き CSV でエクスポートしました');
+    addToast('success', '品目主檔已匯出為 UTF-8 BOM CSV！');
   };
 
   return (
@@ -83,10 +91,10 @@ export const ItemMasterTable: React.FC = () => {
             </span>
             <div>
               <h2 className="font-extrabold text-lg sm:text-xl text-white">
-                品目マスター管理 (Item Master)
+                {isFieldMode ? '🔍 現場快速庫存查詢 (Cards)' : '📦 品目主檔管理後台 (Data Grid)'}
               </h2>
               <p className="text-xs text-slate-400">
-                全 {items.length} 品目登録中 / 在庫水位・廠商・包裝単位換算の一括管理
+                共 {items.length} 筆商品 / 盒號、廠商、安全庫存水位監控
               </p>
             </div>
           </div>
@@ -94,28 +102,32 @@ export const ItemMasterTable: React.FC = () => {
 
         {/* Action Buttons */}
         <div className="flex flex-wrap items-center gap-2 w-full md:w-auto">
-          <button
-            onClick={() => setIsCsvModalOpen(true)}
-            className="flex items-center gap-1.5 px-3.5 py-2 bg-slate-800 hover:bg-slate-700 active:scale-95 text-slate-200 border border-slate-700 rounded-xl text-xs font-bold transition"
-          >
-            <Upload className="w-4 h-4 text-emerald-400" />
-            <span>CSV 取込</span>
-          </button>
+          {!isFieldMode && (
+            <>
+              <button
+                onClick={() => setIsCsvModalOpen(true)}
+                className="flex items-center gap-1.5 px-3.5 py-2 bg-slate-800 hover:bg-slate-700 active:scale-95 text-slate-200 border border-slate-700 rounded-xl text-xs font-bold transition"
+              >
+                <Upload className="w-4 h-4 text-emerald-400" />
+                <span>CSV 匯入</span>
+              </button>
 
-          <button
-            onClick={handleExportCsv}
-            className="flex items-center gap-1.5 px-3.5 py-2 bg-slate-800 hover:bg-slate-700 active:scale-95 text-slate-200 border border-slate-700 rounded-xl text-xs font-bold transition"
-          >
-            <Download className="w-4 h-4 text-blue-400" />
-            <span>CSV 出力</span>
-          </button>
+              <button
+                onClick={handleExportCsv}
+                className="flex items-center gap-1.5 px-3.5 py-2 bg-slate-800 hover:bg-slate-700 active:scale-95 text-slate-200 border border-slate-700 rounded-xl text-xs font-bold transition"
+              >
+                <Download className="w-4 h-4 text-blue-400" />
+                <span>CSV 匯出</span>
+              </button>
+            </>
+          )}
 
           <button
             onClick={handleCreateNew}
             className="flex items-center gap-1.5 px-4 py-2 bg-blue-600 hover:bg-blue-500 active:scale-95 text-white rounded-xl text-xs font-extrabold shadow-lg shadow-blue-900/40 transition"
           >
             <Plus className="w-4 h-4 stroke-[3]" />
-            <span>新規品目追加</span>
+            <span>新增品目</span>
           </button>
         </div>
       </div>
@@ -130,8 +142,8 @@ export const ItemMasterTable: React.FC = () => {
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="品号・品名・廠商・型式・棚番で瞬時検索..."
-              className="w-full pl-10 pr-4 py-2.5 bg-slate-950 border border-slate-800 rounded-2xl text-sm text-white focus:outline-none focus:border-blue-500 placeholder-slate-500"
+              placeholder="品號、品名、廠商、盒子名稱、型號快速搜尋..."
+              className="w-full pl-10 pr-4 py-2.5 bg-slate-950 border border-slate-800 rounded-2xl text-sm text-white focus:outline-none focus:border-blue-500 placeholder-slate-500 font-medium"
             />
           </div>
 
@@ -145,7 +157,7 @@ export const ItemMasterTable: React.FC = () => {
             }`}
           >
             <AlertTriangle className={`w-4 h-4 ${onlyLowStock ? 'text-amber-400' : ''}`} />
-            <span>安全在庫割れのみ表示</span>
+            <span>僅顯示缺貨/需叫貨</span>
           </button>
         </div>
 
@@ -163,147 +175,234 @@ export const ItemMasterTable: React.FC = () => {
                     : 'bg-slate-950/60 border-slate-800 text-slate-400 hover:bg-slate-800 hover:text-slate-200'
                 }`}
               >
-                {cat === 'ALL' ? 'すべて' : cat}
+                {cat === 'ALL' ? '全部類別' : cat}
               </button>
             );
           })}
         </div>
       </div>
 
-      {/* Table Data Display */}
-      <div className="bg-slate-900 border border-slate-800 rounded-3xl overflow-hidden shadow-xl">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs sm:text-sm text-slate-300">
-            <thead className="bg-slate-950/80 text-slate-400 font-semibold border-b border-slate-800">
-              <tr>
-                <th className="py-3.5 px-4">品号 / コード</th>
-                <th className="py-3.5 px-4">品名・規格</th>
-                <th className="py-3.5 px-4">廠商 / 分類</th>
-                <th className="py-3.5 px-4 text-right">現在庫数</th>
-                <th className="py-3.5 px-4 text-right">安全在庫</th>
-                <th className="py-3.5 px-4">棚番</th>
-                <th className="py-3.5 px-4">包裝単位換算</th>
-                <th className="py-3.5 px-4 text-center">操作</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-800/80">
-              {filteredItems.length === 0 ? (
-                <tr>
-                  <td colSpan={8} className="py-12 text-center text-slate-500 font-medium">
-                    該当する品目が見つかりませんでした
-                  </td>
-                </tr>
-              ) : (
-                filteredItems.map((item) => {
-                  const isLow = item.currentStock <= item.safetyStock;
-                  return (
-                    <tr key={item.id} className="hover:bg-slate-800/40 transition">
-                      {/* Code */}
-                      <td className="py-3.5 px-4 font-mono font-bold text-white whitespace-nowrap">
+      {/* VIEW A: 現場模式專用大卡片流 (Mobile Field Touch Cards) */}
+      {isFieldMode ? (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+          {filteredItems.length === 0 ? (
+            <div className="col-span-full py-12 text-center text-slate-500 font-bold">
+              查無符合條件之品目
+            </div>
+          ) : (
+            filteredItems.map((item) => {
+              const isLow = item.currentStock <= item.safetyStock;
+              return (
+                <div
+                  key={item.id}
+                  className="bg-slate-900 border border-slate-800 rounded-3xl p-4 shadow-lg flex flex-col justify-between gap-3"
+                >
+                  <div>
+                    {/* Top Row: Code & Box Name */}
+                    <div className="flex items-center justify-between gap-2 mb-1.5">
+                      <span className="font-mono text-xs font-bold text-slate-400 truncate">
                         {item.code}
-                      </td>
+                      </span>
+                      <span className="px-2.5 py-1 bg-blue-950/80 border border-blue-800/80 text-blue-300 rounded-xl text-xs font-extrabold flex items-center gap-1 shrink-0">
+                        <Box className="w-3 h-3 text-blue-400" />
+                        <span>{item.location}</span>
+                      </span>
+                    </div>
 
-                      {/* Name & Spec */}
-                      <td className="py-3.5 px-4 min-w-[200px]">
-                        <div className="font-extrabold text-white leading-tight">{item.name}</div>
-                        {item.spec && (
-                          <div className="text-xs text-slate-400 mt-0.5">{item.spec}</div>
-                        )}
-                      </td>
+                    {/* Name */}
+                    <h3 className="font-black text-base text-white leading-snug">
+                      {item.name}
+                    </h3>
+                    <div className="flex items-center gap-2 mt-1 text-xs text-slate-400">
+                      {item.supplier && (
+                        <span className="text-blue-300 font-bold">🏢 {item.supplier}</span>
+                      )}
+                      {item.spec && <span>{item.spec}</span>}
+                    </div>
+                  </div>
 
-                      {/* Supplier & Category */}
-                      <td className="py-3.5 px-4 whitespace-nowrap">
-                        {item.supplier && (
-                          <div className="flex items-center gap-1 text-xs font-bold text-blue-300 mb-0.5">
-                            <Building2 className="w-3 h-3 text-blue-400" />
-                            <span>{item.supplier}</span>
-                          </div>
-                        )}
-                        <span className="px-2 py-0.5 rounded-md text-[10px] font-semibold bg-slate-800 text-slate-300 border border-slate-700">
-                          {item.category}
+                  {/* Stock Level & Quick Adjust */}
+                  <div className="pt-2 border-t border-slate-800 flex items-center justify-between">
+                    <div>
+                      <span className="text-[10px] text-slate-500 block font-semibold">庫存量</span>
+                      <div className="flex items-baseline gap-1">
+                        <span
+                          className={`text-2xl font-black ${
+                            isLow ? 'text-amber-400' : 'text-emerald-400'
+                          }`}
+                        >
+                          {item.currentStock}
                         </span>
-                      </td>
+                        <span className="text-xs text-slate-400 font-bold">{item.baseUnit}</span>
+                      </div>
+                    </div>
 
-                      {/* Current Stock */}
-                      <td className="py-3.5 px-4 text-right whitespace-nowrap">
-                        <div className="flex items-baseline justify-end gap-1">
-                          <span
-                            className={`font-black text-base ${
-                              isLow ? 'text-amber-400' : 'text-emerald-400'
-                            }`}
-                          >
-                            {item.currentStock}
-                          </span>
-                          <span className="text-xs text-slate-400">{item.baseUnit}</span>
-                        </div>
-                        {isLow && (
-                          <span className="text-[10px] font-bold text-amber-400 bg-amber-500/10 px-1.5 py-0.5 rounded">
-                            要発注
-                          </span>
-                        )}
-                      </td>
-
-                      {/* Safety Stock */}
-                      <td className="py-3.5 px-4 text-right text-slate-400 whitespace-nowrap">
-                        {item.safetyStock} {item.baseUnit}
-                      </td>
-
-                      {/* Location */}
-                      <td className="py-3.5 px-4 whitespace-nowrap">
-                        <div className="flex items-center gap-1 font-semibold text-blue-300">
-                          <MapPin className="w-3 h-3 text-blue-400" />
-                          <span>{item.location}</span>
-                        </div>
-                      </td>
-
-                      {/* Unit conversions */}
-                      <td className="py-3.5 px-4 max-w-[200px]">
-                        <div className="flex flex-wrap gap-1">
-                          {item.unitConversions?.map((c) => (
-                            <span
-                              key={c.unit}
-                              className="text-[11px] px-1.5 py-0.5 rounded bg-slate-950 border border-slate-800 text-slate-300 font-mono"
-                            >
-                              1{c.unit}={c.multiplier}
-                            </span>
-                          ))}
-                        </div>
-                      </td>
-
-                      {/* Actions */}
-                      <td className="py-3.5 px-4 whitespace-nowrap text-center">
-                        <div className="flex items-center justify-center gap-1">
-                          <button
-                            onClick={() => openQRGenerator(item)}
-                            className="p-1.5 text-slate-400 hover:text-blue-400 rounded-lg hover:bg-slate-800 transition"
-                            title="QRコード生成"
-                          >
-                            <QrCode className="w-4 h-4" />
-                          </button>
-                          <button
-                            onClick={() => handleEdit(item)}
-                            className="p-1.5 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition"
-                            title="編集"
-                          >
-                            <Edit2 className="w-4 h-4" />
-                          </button>
-                          <button
-                            onClick={() => handleDelete(item.id, item.name)}
-                            className="p-1.5 text-slate-400 hover:text-rose-400 rounded-lg hover:bg-slate-800 transition"
-                            title="削除"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })
-              )}
-            </tbody>
-          </table>
+                    {/* Quick Stepper + QR button */}
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        onClick={() => handleQuickAdjust(item, -1)}
+                        className="p-2 text-rose-400 hover:bg-rose-950/60 rounded-xl border border-slate-800 active:scale-95"
+                        title="出庫 -1"
+                      >
+                        <MinusCircle className="w-5 h-5" />
+                      </button>
+                      <button
+                        onClick={() => handleQuickAdjust(item, 1)}
+                        className="p-2 text-emerald-400 hover:bg-emerald-950/60 rounded-xl border border-slate-800 active:scale-95"
+                        title="入庫 +1"
+                      >
+                        <PlusCircle className="w-5 h-5" />
+                      </button>
+                      <button
+                        onClick={() => openQRGenerator(item)}
+                        className="p-2 text-slate-400 hover:text-white rounded-xl border border-slate-800 hover:bg-slate-800"
+                        title="查看QR碼"
+                      >
+                        <QrCode className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              );
+            })
+          )}
         </div>
-      </div>
+      ) : (
+        /* VIEW B: PC 管理模式專用表格 (Data Grid) */
+        <div className="bg-slate-900 border border-slate-800 rounded-3xl overflow-hidden shadow-xl">
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs sm:text-sm text-slate-300">
+              <thead className="bg-slate-950/80 text-slate-400 font-semibold border-b border-slate-800">
+                <tr>
+                  <th className="py-3.5 px-4">品號 / 條碼</th>
+                  <th className="py-3.5 px-4">品名・規格</th>
+                  <th className="py-3.5 px-4">廠商 / 分類</th>
+                  <th className="py-3.5 px-4 text-right">目前庫存</th>
+                  <th className="py-3.5 px-4 text-right">安全庫存</th>
+                  <th className="py-3.5 px-4">盒子名稱 / 盒號</th>
+                  <th className="py-3.5 px-4">包裝換算倍率</th>
+                  <th className="py-3.5 px-4 text-center">操作</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-800/80">
+                {filteredItems.length === 0 ? (
+                  <tr>
+                    <td colSpan={8} className="py-12 text-center text-slate-500 font-medium">
+                      查無符合條件之品目
+                    </td>
+                  </tr>
+                ) : (
+                  filteredItems.map((item) => {
+                    const isLow = item.currentStock <= item.safetyStock;
+                    return (
+                      <tr key={item.id} className="hover:bg-slate-800/40 transition">
+                        {/* Code */}
+                        <td className="py-3.5 px-4 font-mono font-bold text-white whitespace-nowrap">
+                          {item.code}
+                        </td>
+
+                        {/* Name & Spec */}
+                        <td className="py-3.5 px-4 min-w-[200px]">
+                          <div className="font-extrabold text-white leading-tight">{item.name}</div>
+                          {item.spec && (
+                            <div className="text-xs text-slate-400 mt-0.5">{item.spec}</div>
+                          )}
+                        </td>
+
+                        {/* Supplier & Category */}
+                        <td className="py-3.5 px-4 whitespace-nowrap">
+                          {item.supplier && (
+                            <div className="flex items-center gap-1 text-xs font-bold text-blue-300 mb-0.5">
+                              <Building2 className="w-3 h-3 text-blue-400" />
+                              <span>{item.supplier}</span>
+                            </div>
+                          )}
+                          <span className="px-2 py-0.5 rounded-md text-[10px] font-semibold bg-slate-800 text-slate-300 border border-slate-700">
+                            {item.category}
+                          </span>
+                        </td>
+
+                        {/* Current Stock */}
+                        <td className="py-3.5 px-4 text-right whitespace-nowrap">
+                          <div className="flex items-baseline justify-end gap-1">
+                            <span
+                              className={`font-black text-base ${
+                                isLow ? 'text-amber-400' : 'text-emerald-400'
+                              }`}
+                            >
+                              {item.currentStock}
+                            </span>
+                            <span className="text-xs text-slate-400">{item.baseUnit}</span>
+                          </div>
+                          {isLow && (
+                            <span className="text-[10px] font-bold text-amber-400 bg-amber-500/10 px-1.5 py-0.5 rounded">
+                              要叫貨
+                            </span>
+                          )}
+                        </td>
+
+                        {/* Safety Stock */}
+                        <td className="py-3.5 px-4 text-right text-slate-400 whitespace-nowrap">
+                          {item.safetyStock} {item.baseUnit}
+                        </td>
+
+                        {/* Box Name (改自棚番) */}
+                        <td className="py-3.5 px-4 whitespace-nowrap">
+                          <div className="flex items-center gap-1 font-bold text-blue-300">
+                            <Box className="w-3.5 h-3.5 text-blue-400" />
+                            <span>{item.location}</span>
+                          </div>
+                        </td>
+
+                        {/* Unit conversions */}
+                        <td className="py-3.5 px-4 max-w-[200px]">
+                          <div className="flex flex-wrap gap-1">
+                            {item.unitConversions?.map((c) => (
+                              <span
+                                key={c.unit}
+                                className="text-[11px] px-1.5 py-0.5 rounded bg-slate-950 border border-slate-800 text-slate-300 font-mono"
+                              >
+                                1{c.unit}={c.multiplier}
+                              </span>
+                            ))}
+                          </div>
+                        </td>
+
+                        {/* Actions */}
+                        <td className="py-3.5 px-4 whitespace-nowrap text-center">
+                          <div className="flex items-center justify-center gap-1">
+                            <button
+                              onClick={() => openQRGenerator(item)}
+                              className="p-1.5 text-slate-400 hover:text-blue-400 rounded-lg hover:bg-slate-800 transition"
+                              title="QR 標籤"
+                            >
+                              <QrCode className="w-4 h-4" />
+                            </button>
+                            <button
+                              onClick={() => handleEdit(item)}
+                              className="p-1.5 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition"
+                              title="編輯"
+                            >
+                              <Edit2 className="w-4 h-4" />
+                            </button>
+                            <button
+                              onClick={() => handleDelete(item.id, item.name)}
+                              className="p-1.5 text-slate-400 hover:text-rose-400 rounded-lg hover:bg-slate-800 transition"
+                              title="刪除"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
 
       {/* Form Modal */}
       <ItemFormModal

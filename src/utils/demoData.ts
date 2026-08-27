@@ -4,14 +4,14 @@ export const INITIAL_DEMO_ITEMS: ItemMaster[] = [
   {
     id: 'item-bolt-m6-20',
     code: '4901480000011',
-    name: '六角穴付ボルト (SUS304)',
-    spec: 'M6 × 20mm ステンレス',
-    category: 'ボルト・締結部品',
-    supplier: 'ミスミ (MISUMI)',
+    name: '六角孔螺栓 (SUS304不鏽鋼)',
+    spec: 'M6 × 20mm 不鏽鋼',
+    category: '螺栓・緊固件',
+    supplier: 'MISUMI (米思米)',
     baseUnit: '個',
     currentStock: 450,
     safetyStock: 100,
-    location: 'A-01-1F',
+    location: '1號盒 (A-01)',
     qrCode: 'INV:v1:4901480000011:LOT2026A',
     unitConversions: [
       { unit: '箱', multiplier: 100 },
@@ -19,104 +19,104 @@ export const INITIAL_DEMO_ITEMS: ItemMaster[] = [
       { unit: '個', multiplier: 1 }
     ],
     updatedAt: new Date().toISOString(),
-    note: '防錆仕様、メインアセンブリ用'
+    note: '防銹規格、主裝配用'
   },
   {
     id: 'item-terminal-r2-4',
     code: '4901480000028',
-    name: '丸形圧着端子 (JIS規格)',
+    name: '圓形壓著端子 (JIS標準)',
     spec: 'R2-4 (0.5~2.0sq用)',
-    category: '配線・電気資材',
-    supplier: 'ニチフ端子工業 (NICHIFU)',
+    category: '配線・電氣資材',
+    supplier: 'NICHIFU (日富端子)',
     baseUnit: '個',
     currentStock: 80,
     safetyStock: 200, // 在庫割れアラート対象
-    location: 'B-03-2F',
+    location: '2號盒 (B-03)',
     qrCode: 'INV:v1:4901480000028',
     unitConversions: [
       { unit: '箱', multiplier: 500 },
-      { unit: 'パック', multiplier: 100 },
+      { unit: '包', multiplier: 100 },
       { unit: '個', multiplier: 1 }
     ],
     updatedAt: new Date().toISOString(),
-    note: '制御盤配線用標準部品'
+    note: '控制盤配線標準零件'
   },
   {
     id: 'item-cable-tie-150',
     code: '4901480000035',
-    name: '耐候性結束バンド (黒)',
-    spec: '長さ150mm 幅3.6mm ナイロン66',
-    category: '配線・電気資材',
-    supplier: 'パンドウイット (Panduit)',
-    baseUnit: '本',
+    name: '耐候束線帶 (黑色束帶)',
+    spec: '長150mm 寬3.6mm 尼龍66',
+    category: '配線・電氣資材',
+    supplier: 'Panduit (泛達)',
+    baseUnit: '條',
     currentStock: 620,
     safetyStock: 150,
-    location: 'B-04-1F',
+    location: '3號盒 (B-04)',
     qrCode: 'INV:v1:4901480000035',
     unitConversions: [
-      { unit: '袋', multiplier: 100 },
+      { unit: '包', multiplier: 100 },
       { unit: '箱', multiplier: 1000 },
-      { unit: '本', multiplier: 1 }
+      { unit: '條', multiplier: 1 }
     ],
     updatedAt: new Date().toISOString(),
-    note: '屋外対応UVカット仕様'
+    note: '戶外抗UV耐候規格'
   },
   {
     id: 'item-fuse-glass-5a',
     code: '4901480000042',
-    name: 'ガラス管ヒューズ (速断型)',
+    name: '玻璃管保險絲 (快斷型)',
     spec: '250V 5A 5.2×20mm',
-    category: '電子パーツ',
-    supplier: '大東通信機 (DAITO)',
+    category: '電子零件',
+    supplier: 'DAITO (大東通信機)',
     baseUnit: '個',
     currentStock: 35,
     safetyStock: 50, // 在庫割れ警告
-    location: 'C-01-3F',
+    location: '4號盒 (C-01)',
     qrCode: 'INV:v1:4901480000042',
     unitConversions: [
-      { unit: '箱', multiplier: 50 },
+      { unit: '盒', multiplier: 50 },
       { unit: '袋', multiplier: 10 },
       { unit: '個', multiplier: 1 }
     ],
     updatedAt: new Date().toISOString(),
-    note: '電源ユニット予備パーツ'
+    note: '電源模組備份零件'
   },
   {
     id: 'item-air-fitting-kq2h06-01s',
     code: '4901480000059',
-    name: 'ワンタッチ管継手 (ハーフユニオン)',
-    spec: 'チューブ外径φ6 / 接続ねじR1/8',
-    category: '空圧・配管部品',
-    supplier: 'SMC株式会社',
+    name: '快速氣壓接頭 (外螺紋直通)',
+    spec: '氣管外徑φ6 / 接頭牙口R1/8',
+    category: '氣動・空壓管路',
+    supplier: 'SMC',
     baseUnit: '個',
     currentStock: 120,
     safetyStock: 30,
-    location: 'D-02-1F',
+    location: '5號盒 (D-02)',
     qrCode: 'INV:v1:4901480000059',
     unitConversions: [
-      { unit: '箱', multiplier: 10 },
+      { unit: '盒', multiplier: 10 },
       { unit: '個', multiplier: 1 }
     ],
     updatedAt: new Date().toISOString(),
-    note: 'SMC同等品 シール剤付'
+    note: 'SMC同等品 附密封膠'
   },
   {
     id: 'item-oring-p10-nbr',
     code: '4901480000066',
-    name: 'Oリング (ニトリルゴム NBR-70)',
-    spec: 'P-10 (内径9.8mm × 太さ1.9mm)',
-    category: 'シール・パッキン',
-    supplier: 'NOK株式会社',
+    name: 'O型環 (耐油丁腈橡膠 NBR-70)',
+    spec: 'P-10 (內徑9.8mm × 線徑1.9mm)',
+    category: '密封件・油封',
+    supplier: 'NOK',
     baseUnit: '個',
     currentStock: 15,
     safetyStock: 40, // 在庫割れ警告
-    location: 'D-03-2F',
+    location: '6號盒 (D-03)',
     qrCode: 'INV:v1:4901480000066',
     unitConversions: [
-      { unit: '袋', multiplier: 50 },
+      { unit: '包', multiplier: 50 },
       { unit: '個', multiplier: 1 }
     ],
     updatedAt: new Date().toISOString(),
-    note: '耐油用・定期交換パーツ'
+    note: '耐油定期更換零件'
   }
 ];

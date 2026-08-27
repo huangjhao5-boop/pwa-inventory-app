@@ -66,7 +66,7 @@ export const LabelSheetPreview: React.FC<LabelSheetPreviewProps> = ({ items, lay
                       {item.code}
                     </span>
                     <span className="text-[9px] font-extrabold px-1 bg-slate-100 rounded text-blue-700">
-                      {item.location}
+                      盒號: {item.location}
                     </span>
                   </div>
 

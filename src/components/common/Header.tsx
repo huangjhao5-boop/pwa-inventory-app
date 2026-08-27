@@ -2,7 +2,6 @@ import React from 'react';
 import { useInventory } from '../../context/InventoryContext';
 import {
   Boxes,
-  Wifi,
   WifiOff,
   Cloud,
   CloudOff,
@@ -26,63 +25,74 @@ export const Header: React.FC = () => {
     setActiveTab,
   } = useInventory();
 
+  const isFieldMode = settings.viewMode === 'FIELD';
+
   return (
-    <header className="sticky top-0 z-30 bg-slate-900/90 backdrop-blur-md border-b border-slate-800 px-3 py-2.5 sm:px-6">
+    <header className={`sticky top-0 z-30 backdrop-blur-md border-b px-3 py-2.5 sm:px-6 transition-colors ${
+      isFieldMode
+        ? 'bg-slate-900/95 border-blue-900/50'
+        : 'bg-slate-950/95 border-indigo-900/50'
+    }`}>
       <div className="max-w-7xl mx-auto flex items-center justify-between gap-2">
-        {/* Left: Brand */}
+        {/* Left: Brand & Mode Title */}
         <div className="flex items-center gap-2.5">
-          <div className="p-2 bg-blue-600/20 text-blue-400 border border-blue-500/30 rounded-xl shadow-inner">
+          <div className={`p-2 rounded-xl border shadow-inner ${
+            isFieldMode
+              ? 'bg-blue-600/20 text-blue-400 border-blue-500/40'
+              : 'bg-indigo-600/20 text-indigo-400 border-indigo-500/40'
+          }`}>
             <Boxes className="w-5 h-5" />
           </div>
           <div>
-            <h1 className="font-bold text-sm sm:text-base text-slate-100 flex items-center gap-1.5 leading-tight">
-              スマート在庫管理
-              <span className="text-[10px] uppercase font-bold tracking-wider px-1.5 py-0.5 rounded bg-blue-500/20 text-blue-300 border border-blue-500/30">
-                PWA
+            <h1 className="font-extrabold text-sm sm:text-base text-slate-100 flex items-center gap-1.5 leading-tight">
+              智慧庫存管理
+              <span className={`text-[10px] uppercase font-black tracking-wider px-2 py-0.5 rounded-full border ${
+                isFieldMode
+                  ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+                  : 'bg-indigo-500/20 text-indigo-300 border-indigo-500/40'
+              }`}>
+                {isFieldMode ? '📱 現場作業模式' : '💻 PC 管理後台'}
               </span>
             </h1>
             <p className="text-[11px] text-slate-400 hidden sm:block">
-              現場優先・オフライン堅牢型システム
+              {isFieldMode
+                ? '大按鈕・單手極速出入庫・實體掃描槍支援'
+                : '品目主檔管理・A4標籤批次列印・CSV匯出匯入'}
             </p>
           </div>
         </div>
 
-        {/* Right: Controls & Status Badges */}
+        {/* Right: Mode Toggle, Cloud Status & Settings */}
         <div className="flex items-center gap-2 sm:gap-3">
           {/* Cloud Connection Badge */}
           <button
             onClick={() => setActiveTab('SETTINGS')}
-            className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold border transition ${
+            className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold border transition ${
               isCloudConnected
-                ? 'bg-blue-950/80 text-blue-300 border-blue-800/60 hover:bg-blue-900/60'
-                : 'bg-slate-950/80 text-slate-400 border-slate-800 hover:bg-slate-800'
+                ? 'bg-emerald-950/80 text-emerald-300 border-emerald-700/60 hover:bg-emerald-900/60 shadow-sm'
+                : 'bg-amber-950/80 text-amber-300 border-amber-700/60 hover:bg-amber-900/60 shadow-sm'
             }`}
-            title={isCloudConnected ? 'Firebase クラウド同期中' : 'ローカル IndexedDB モード (クリックしてFirebase設定)'}
+            title={isCloudConnected ? 'Firebase 雲端即時同步中' : '目前為本地模式，點擊前往設定雲端'}
           >
             {isCloudConnected ? (
               <>
-                <Cloud className="w-3.5 h-3.5 text-blue-400 animate-pulse" />
-                <span className="hidden sm:inline">クラウド連動中</span>
+                <Cloud className="w-3.5 h-3.5 text-emerald-400 animate-pulse" />
+                <span className="hidden sm:inline">🟢 雲端已同步</span>
               </>
             ) : (
               <>
-                <CloudOff className="w-3.5 h-3.5 text-slate-500" />
-                <span className="hidden sm:inline">ローカルモード</span>
+                <CloudOff className="w-3.5 h-3.5 text-amber-400" />
+                <span className="hidden sm:inline">🟡 本地模式</span>
               </>
             )}
           </button>
 
           {/* Online / Offline Sync Badge */}
           <div className="flex items-center gap-1.5">
-            {isOnline ? (
-              <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium bg-emerald-950/80 text-emerald-300 border border-emerald-800/60">
-                <Wifi className="w-3.5 h-3.5 text-emerald-400" />
-                <span className="hidden md:inline">オンライン</span>
-              </span>
-            ) : (
+            {!isOnline && (
               <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium bg-rose-950/80 text-rose-300 border border-rose-800/60">
                 <WifiOff className="w-3.5 h-3.5 text-rose-400" />
-                <span>オフライン</span>
+                <span>離線</span>
               </span>
             )}
 
@@ -92,10 +102,10 @@ export const Header: React.FC = () => {
                 onClick={() => triggerManualSync()}
                 disabled={isSyncing || !isOnline}
                 className="flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40 hover:bg-amber-500/30 active:scale-95 transition"
-                title="未同期ログをアップロード"
+                title="未同步日誌上傳"
               >
                 <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin' : ''}`} />
-                <span>未同期 {pendingSyncCount}件</span>
+                <span>補傳 {pendingSyncCount}件</span>
               </button>
             )}
           </div>
@@ -108,39 +118,43 @@ export const Header: React.FC = () => {
                 ? 'bg-slate-800 text-slate-200 border-slate-700 hover:bg-slate-700'
                 : 'bg-slate-900/50 text-slate-500 border-slate-800 line-through'
             }`}
-            title={settings.soundEnabled ? '音声をミュート' : '音声を有効化'}
+            title={settings.soundEnabled ? '音效開啟' : '靜音'}
           >
             {settings.soundEnabled ? <Volume2 className="w-4 h-4" /> : <VolumeX className="w-4 h-4" />}
           </button>
 
           {/* Operator Badge */}
-          <div className="hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-800/80 border border-slate-700 text-xs text-slate-300">
+          <div className="hidden md:flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-800/80 border border-slate-700 text-xs text-slate-300">
             <User className="w-3.5 h-3.5 text-blue-400" />
             <span className="font-medium">{settings.activeOperator}</span>
           </div>
 
-          {/* Mode Switcher: 現場 ⇄ PC管理 */}
+          {/* Prominent Mode Switcher: 現場 ⇄ PC管理 */}
           <button
-            onClick={() =>
-              updateSettings({
-                viewMode: settings.viewMode === 'FIELD' ? 'PC_ADMIN' : 'FIELD',
-              })
-            }
-            className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold border transition shadow-sm ${
-              settings.viewMode === 'FIELD'
-                ? 'bg-blue-600 hover:bg-blue-500 text-white border-blue-400/30'
-                : 'bg-indigo-600 hover:bg-indigo-500 text-white border-indigo-400/30'
+            onClick={() => {
+              const nextMode = isFieldMode ? 'PC_ADMIN' : 'FIELD';
+              updateSettings({ viewMode: nextMode });
+              if (nextMode === 'PC_ADMIN') {
+                setActiveTab('ITEMS');
+              } else {
+                setActiveTab('SCAN');
+              }
+            }}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-black border transition shadow-md active:scale-95 ${
+              isFieldMode
+                ? 'bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white border-blue-400/40'
+                : 'bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white border-emerald-400/40'
             }`}
           >
-            {settings.viewMode === 'FIELD' ? (
+            {isFieldMode ? (
               <>
-                <Smartphone className="w-3.5 h-3.5" />
-                <span>現場モード</span>
+                <Monitor className="w-4 h-4" />
+                <span>切換為 PC 管理模式</span>
               </>
             ) : (
               <>
-                <Monitor className="w-3.5 h-3.5" />
-                <span>PC管理</span>
+                <Smartphone className="w-4 h-4" />
+                <span>切換為 現場掃描模式</span>
               </>
             )}
           </button>
