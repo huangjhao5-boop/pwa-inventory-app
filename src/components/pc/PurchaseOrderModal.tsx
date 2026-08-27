@@ -137,19 +137,6 @@ export const PurchaseOrderModal: React.FC<PurchaseOrderModalProps> = ({
     window.print();
   };
 
-  // Export 4: Open all order URLs
-  const handleOpenAllUrls = () => {
-    const urls = orderItems.map((o) => o.item.orderUrl).filter(Boolean) as string[];
-    if (urls.length === 0) {
-      addToast('warning', '選択された品目に発注リンクが登録されていません');
-      return;
-    }
-    urls.forEach((url) => {
-      window.open(url, '_blank', 'noopener,noreferrer');
-    });
-    addToast('success', `${urls.length}件の発注先Webサイトを開きました`);
-  };
-
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md animate-in fade-in duration-200">
       <div className="bg-slate-900 border border-slate-700 rounded-3xl w-full max-w-4xl max-h-[90vh] shadow-2xl flex flex-col overflow-hidden">
@@ -167,7 +154,7 @@ export const PurchaseOrderModal: React.FC<PurchaseOrderModalProps> = ({
                 </span>
               </div>
               <p className="text-xs text-slate-400">
-                発注品目と数量を選択し、CSV出力・LINE依頼文コピー・ECサイト一括リンクを開くことができます
+                発注品目と数量を選択し、CSV出力・LINE依頼文コピー・発注伝票印刷を行えます
               </p>
             </div>
           </div>
@@ -193,20 +180,6 @@ export const PurchaseOrderModal: React.FC<PurchaseOrderModalProps> = ({
               <AlertTriangle className="w-3.5 h-3.5 text-amber-400" />
               <span>要発注品（安全在庫割れ）を全件追加</span>
             </button>
-          </div>
-
-          <div className="flex items-center gap-2">
-            {orderItems.some((o) => !!o.item.orderUrl) && (
-              <button
-                type="button"
-                onClick={handleOpenAllUrls}
-                className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-950/80 hover:bg-blue-900/80 text-blue-300 border border-blue-800 rounded-xl text-xs font-bold transition"
-                title="登録された発注ECリンクを一括で開く"
-              >
-                <ExternalLink className="w-3.5 h-3.5" />
-                <span>仕入先リンクを一括表示</span>
-              </button>
-            )}
           </div>
         </div>
 
