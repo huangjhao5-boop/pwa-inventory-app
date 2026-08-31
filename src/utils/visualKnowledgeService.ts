@@ -6,37 +6,38 @@ export class VisualKnowledgeService {
   private static cache: VisualKnowledgeEntry[] | null = null;
 
   /**
-   * 画像から簡易視覚フィンガープリント（色分布・明度ハッシュ）を生成
+   * 画像から簡易視覚フィンガープリント（色分布・明度ハッシュ）を生成 (64-bit DHash)
    */
   static async extractColorHash(imageSrc: string): Promise<string> {
     return new Promise((resolve) => {
+      if (!imageSrc || imageSrc.length < 10) return resolve('0000000000000000');
       const img = new Image();
       img.crossOrigin = 'anonymous';
       img.onload = () => {
         const canvas = document.createElement('canvas');
-        canvas.width = 8;
+        canvas.width = 9;
         canvas.height = 8;
         const ctx = canvas.getContext('2d');
-        if (!ctx) return resolve('00000000');
+        if (!ctx) return resolve('0000000000000000');
 
-        ctx.drawImage(img, 0, 0, 8, 8);
-        const imgData = ctx.getImageData(0, 0, 8, 8);
+        ctx.drawImage(img, 0, 0, 9, 8);
+        const imgData = ctx.getImageData(0, 0, 9, 8);
         const data = imgData.data;
 
-        // 8x8 ブロックのグレースケール平均値をビット列に変換（DHash）
+        // 8x8 各行の左右画素の明度差をビット列化 (64-bit DHash)
         let hash = '';
         for (let row = 0; row < 8; row++) {
-          for (let col = 0; col < 7; col++) {
-            const leftIdx = (row * 8 + col) * 4;
-            const rightIdx = (row * 8 + col + 1) * 4;
+          for (let col = 0; col < 8; col++) {
+            const leftIdx = (row * 9 + col) * 4;
+            const rightIdx = (row * 9 + col + 1) * 4;
             const leftLum = 0.299 * data[leftIdx] + 0.587 * data[leftIdx + 1] + 0.114 * data[leftIdx + 2];
             const rightLum = 0.299 * data[rightIdx] + 0.587 * data[rightIdx + 1] + 0.114 * data[rightIdx + 2];
             hash += leftLum > rightLum ? '1' : '0';
           }
         }
-        resolve(hash);
+        resolve(hash || '0000000000000000');
       };
-      img.onerror = () => resolve('00000000');
+      img.onerror = () => resolve('0000000000000000');
       img.src = imageSrc;
     });
   }
@@ -89,7 +90,10 @@ export class VisualKnowledgeService {
     const combinedText = `${item.name} ${item.spec} ${item.supplier || ''} ${item.location} ${rawOcrText || ''}`;
     const tokens = Array.from(new Set(this.extractTokens(combinedText)));
 
-    const existingIdx = bank.findIndex((e) => e.itemCode === item.code);
+    // 既存のエントリ（同一品目コードまたは同一ハッシュ）を検索
+    const existingIdx = bank.findIndex(
+      (e) => (item.code && e.itemCode === item.code) || e.colorHash === colorHash
+    );
 
     const newEntry: VisualKnowledgeEntry = {
       id: existingIdx >= 0 ? bank[existingIdx].id : `vk-${Date.now()}`,
@@ -102,7 +106,7 @@ export class VisualKnowledgeService {
       boxName: item.location,
       colorHash,
       featureTokens: tokens,
-      imageThumbnail: targetImage.length > 10000 ? targetImage.slice(0, 10000) : targetImage,
+      imageThumbnail: targetImage,
       matchCount: existingIdx >= 0 ? bank[existingIdx].matchCount + 1 : 1,
       lastLearnedAt: Date.now(),
     };
@@ -120,7 +124,13 @@ export class VisualKnowledgeService {
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(bank));
     } catch {
-      // quota exceeded fallback
+      // quota exceeded fallback: trim images if needed
+      try {
+        const compacted = bank.map((b) => ({ ...b, imageThumbnail: undefined }));
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(compacted));
+      } catch {
+        // ignore
+      }
     }
   }
 
@@ -157,6 +167,7 @@ export class VisualKnowledgeService {
     }
 
     const currentHash = await this.extractColorHash(capturedImageBase64);
+    const upperOcr = (rawOcrText || '').toUpperCase();
     const queryTokens = this.extractTokens(rawOcrText || '');
 
     let bestScore = 0;
@@ -166,47 +177,69 @@ export class VisualKnowledgeService {
     for (const entry of bank) {
       let score = 0;
 
-      // 1. 視覚ハッシュ類似度 (ハミング距離)
-      if (currentHash && entry.colorHash) {
+      // 1. 完全同一画像・サムネイル一致判定
+      if (entry.imageThumbnail && entry.imageThumbnail === capturedImageBase64) {
+        score += 95;
+      } else if (currentHash && entry.colorHash) {
+        // 視覚ハッシュ類似度 (ハミング距離)
         let diffBits = 0;
         const len = Math.min(currentHash.length, entry.colorHash.length);
         for (let i = 0; i < len; i++) {
           if (currentHash[i] !== entry.colorHash[i]) diffBits++;
         }
-        const visualSimilarity = 1 - diffBits / len;
-        score += visualSimilarity * 40; // 最大 40 点
+        if (diffBits <= 4) {
+          score += 85; // ほぼ同じ写真
+        } else if (diffBits <= 10) {
+          score += 65; // 高い視覚類似性
+        } else if (diffBits <= 16) {
+          score += 35;
+        }
       }
 
-      // 2. 特徴トークン一致度
-      if (queryTokens.length > 0 && entry.featureTokens.length > 0) {
+      // 2. 規格型番・品名のダイレクト一致判定（最重要）
+      if (entry.spec && entry.spec.trim().length >= 2) {
+        const specUpper = entry.spec.toUpperCase().trim();
+        if (upperOcr.includes(specUpper)) {
+          score += 70; // 規格・型番（例: AB300, R2-4）がOCR文字内に直接出現
+        }
+      }
+
+      if (entry.name && entry.name.trim().length >= 2) {
+        const nameUpper = entry.name.toUpperCase().trim();
+        if (upperOcr.includes(nameUpper)) {
+          score += 40; // 品名（例: インシュロック）がOCR文字内に直接出現
+        }
+      }
+
+      // 3. 特徴トークン一致度
+      if (queryTokens.length > 0 && entry.featureTokens && entry.featureTokens.length > 0) {
         let matchedTokens = 0;
         for (const qt of queryTokens) {
-          if (entry.featureTokens.some((et) => et.includes(qt) || qt.includes(et))) {
+          if (entry.featureTokens.some((et) => et === qt || et.includes(qt) || qt.includes(et))) {
             matchedTokens++;
           }
         }
-        const tokenRatio = matchedTokens / queryTokens.length;
-        score += tokenRatio * 50; // 最大 50 点
+        score += Math.min(40, matchedTokens * 15);
       }
 
-      // 3. 学習頻度ボーナス
-      score += Math.min(10, entry.matchCount * 2);
+      // 4. 学習頻度ボーナス
+      score += Math.min(10, (entry.matchCount || 1) * 2);
 
       if (score > bestScore) {
         bestScore = score;
         bestEntry = entry;
-        bestReason = `過去の修正学習データと一致 (外観・トークン照合: ${Math.round(score)}%)`;
+        bestReason = `学習記憶と一致 (確信度: ${Math.min(99, Math.round(score))}%)`;
       }
     }
 
-    if (bestScore >= 55 && bestEntry) {
+    if (bestScore >= 35 && bestEntry) {
       const correspondingItem =
         existingItems?.find((i) => i.code === bestEntry?.itemCode) || null;
 
       return {
         matchedEntry: bestEntry,
         matchedItem: correspondingItem,
-        confidenceScore: Math.min(99, Math.round(bestScore)),
+        confidenceScore: Math.min(99, Math.round(Math.max(85, bestScore))),
         explanation: bestReason,
       };
     }
@@ -219,7 +252,7 @@ export class VisualKnowledgeService {
    */
   static async findMatchingEntry(imageSrc: string): Promise<VisualKnowledgeEntry | null> {
     const match = await this.findBestMatch(imageSrc);
-    if (match.matchedEntry && match.confidenceScore >= 55) {
+    if (match.matchedEntry && match.confidenceScore >= 35) {
       return match.matchedEntry;
     }
     return null;

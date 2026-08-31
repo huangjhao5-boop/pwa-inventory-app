@@ -156,16 +156,16 @@ export class AiVisionService {
     // 先に OCR テキストを取得（学習データ照合およびフォールバック用）
     const ocrResult = await OcrHelper.recognizeImage(imageBase64);
 
-    // 2. 過去のユーザー修正・学習ナレッジからの検索
+    // 2. 過去のユーザー修正・学習ナレッジからの検索（現場AI学習記憶 最優先）
     const learnedMatch = await VisualKnowledgeService.findBestMatch(
       imageBase64,
       ocrResult.rawText,
       existingItems
     );
 
-    if (learnedMatch.matchedEntry && learnedMatch.confidenceScore >= 60) {
+    if (learnedMatch.matchedEntry && learnedMatch.confidenceScore >= 35) {
       const entry = learnedMatch.matchedEntry;
-      const units = OcrHelper.inferUnits(entry.name, entry.spec || '', '');
+      const units = OcrHelper.inferUnits(entry.name, entry.spec || '', entry.baseUnit || '');
       return {
         source: 'LEARNED_MEMORY',
         matchedExistingItem: learnedMatch.matchedItem || undefined,

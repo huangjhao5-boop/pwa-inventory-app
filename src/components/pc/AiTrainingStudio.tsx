@@ -37,7 +37,7 @@ const PRESET_SUPPLIERS = [
 ];
 
 export const AiTrainingStudio: React.FC = () => {
-  const { items, settings, addToast } = useInventory();
+  const { items, settings, addToast, saveItem } = useInventory();
 
   // Selected Photo for training bench
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
@@ -193,12 +193,26 @@ export const AiTrainingStudio: React.FC = () => {
       updatedAt: new Date().toISOString(),
     };
 
-    // 1. 現場AI知識庫に即時学習・記憶
+    // 1. 現場AI知識庫に即時学習・記憶（品名、規格型番、メーカー、OCR読取文字をすべて特徴結合）
+    const combinedOcr = [
+      aiResult?.rawAnalysis || '',
+      aiResult?.suggestedName || '',
+      aiResult?.suggestedSpec || '',
+      correctName,
+      correctSpec,
+      correctSupplier,
+    ].join(' ');
+
     await VisualKnowledgeService.learnFromItem(
       groundTruthItem,
       selectedImage,
-      aiResult?.rawAnalysis || correctName
+      combinedOcr
     );
+
+    // 既存品目の場合はマスタ側も同時に更新
+    if (selectedItemSource) {
+      await saveItem(groundTruthItem);
+    }
 
     refreshKnowledgeBank();
     setIsLearnedJustNow(true);
@@ -214,7 +228,10 @@ export const AiTrainingStudio: React.FC = () => {
     addToast('success', `🎓 正解を現場AIに記憶させました！次回以降 99% 精密一致します。`);
 
     // 2. 自動で再テストを実行し、学習成果を確認
-    const retest = await AiVisionService.smartRecognize(selectedImage, items, settings.geminiApiKey);
+    const updatedItems = selectedItemSource
+      ? items.map((i) => (i.id === groundTruthItem.id ? groundTruthItem : i))
+      : items;
+    const retest = await AiVisionService.smartRecognize(selectedImage, updatedItems, settings.geminiApiKey);
     setAiResult(retest);
   };
 
