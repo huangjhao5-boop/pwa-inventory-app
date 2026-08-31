@@ -224,4 +224,16 @@ export class VisualKnowledgeService {
     }
     return null;
   }
+
+  /**
+   * 学習ナレッジを全消去・初期化
+   */
+  static clearKnowledgeBank(): void {
+    this.cache = [];
+    try {
+      localStorage.removeItem(STORAGE_KEY);
+    } catch {
+      // ignore
+    }
+  }
 }

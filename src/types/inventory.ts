@@ -155,4 +155,4 @@ export interface AppSettings {
 
 export type LabelLayout = 'A-ONE-24' | 'A-ONE-44' | 'SINGLE-THERMAL';
 
-export type TabKey = 'SCAN' | 'BATCH' | 'APPROVAL' | 'ITEMS' | 'LOGS' | 'PRINT' | 'SETTINGS';
+export type TabKey = 'SCAN' | 'BATCH' | 'APPROVAL' | 'ITEMS' | 'AI_STUDIO' | 'LOGS' | 'PRINT' | 'SETTINGS';

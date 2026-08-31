@@ -10,6 +10,7 @@ import { ActionBottomSheet } from './components/mobile/ActionBottomSheet';
 import { QRGeneratorModal } from './components/scanner/QRGeneratorModal';
 import { ItemMasterTable } from './components/pc/ItemMasterTable';
 import { PendingApprovalView } from './components/pc/PendingApprovalView';
+import { AiTrainingStudio } from './components/pc/AiTrainingStudio';
 import { LabelPrinter } from './components/pc/LabelPrinter';
 import { TransactionHistory } from './components/pc/TransactionHistory';
 import { SettingsView } from './components/common/SettingsView';
@@ -99,6 +100,9 @@ const MainContent: React.FC = () => {
 
         {/* Tab 3: Item Master Management */}
         {activeTab === 'ITEMS' && <ItemMasterTable />}
+
+        {/* Tab: AI Training Studio (現場AI学習・対答案スタジオ) */}
+        {activeTab === 'AI_STUDIO' && <AiTrainingStudio />}
 
         {/* Tab 4: Transaction Logs */}
         {activeTab === 'LOGS' && <TransactionHistory />}

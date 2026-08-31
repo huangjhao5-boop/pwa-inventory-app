@@ -10,6 +10,7 @@ import {
   Settings,
   Search,
   Inbox,
+  GraduationCap,
 } from 'lucide-react';
 
 export const NavigationTabs: React.FC = () => {
@@ -30,6 +31,7 @@ export const NavigationTabs: React.FC = () => {
   const adminTabs: { key: TabKey; label: string; icon: React.FC<{ className?: string }>; badge?: number }[] = [
     { key: 'APPROVAL', label: '📥 入荷承認待ち', icon: Inbox, badge: pendingCount },
     { key: 'ITEMS', label: '📦 品目マスタ管理', icon: Layers },
+    { key: 'AI_STUDIO', label: '🎓 AI学習指導', icon: GraduationCap },
     { key: 'PRINT', label: '🖨️ ラベル一括印刷', icon: Printer },
     { key: 'LOGS', label: '📜 入出庫履歴ログ', icon: History },
     { key: 'SCAN', label: '📷 スキャン検品', icon: ScanLine },

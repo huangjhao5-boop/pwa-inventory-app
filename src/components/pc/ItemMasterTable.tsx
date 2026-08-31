@@ -23,10 +23,11 @@ import {
   CheckSquare,
   Square,
   ExternalLink,
+  GraduationCap,
 } from 'lucide-react';
 
 export const ItemMasterTable: React.FC = () => {
-  const { items, deleteItem, openQRGenerator, addToast, settings, recordTransaction } = useInventory();
+  const { items, deleteItem, openQRGenerator, addToast, settings, recordTransaction, setActiveTab } = useInventory();
   const isFieldMode = settings.viewMode === 'FIELD';
 
   // Filters
@@ -181,6 +182,15 @@ export const ItemMasterTable: React.FC = () => {
               >
                 <Download className="w-4 h-4 text-blue-400" />
                 <span>CSV 抽出エクスポート</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setActiveTab('AI_STUDIO')}
+                className="flex items-center gap-1.5 px-3.5 py-2 bg-gradient-to-r from-indigo-950 to-blue-950 hover:from-indigo-900 hover:to-blue-900 active:scale-95 text-indigo-300 border border-indigo-500/50 rounded-xl text-xs font-extrabold shadow transition"
+              >
+                <GraduationCap className="w-4 h-4 text-indigo-400" />
+                <span>🎓 AI学習・対答案</span>
               </button>
             </>
           )}
