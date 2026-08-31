@@ -26,8 +26,12 @@ export function formatReiwaDate(date: Date = new Date()): string {
 
 /**
  * 中西電機工業株式会社向け 正式注文書 Excel (.xlsx) 生成ユーティリティ
- * お客様の「注文見積り書_中西電機」のオリジナルデザイン（二重枠線・罫線・フォント・アイペック社ロゴ画像・結合セル）を
- * 100% 完全に維持し、全セルに「文字の自動縮小表示（shrinkToFit: true）」を設定して文字が枠外にはみ出さないよう完全制御します。
+ * お客様の「注文見積り書_中西電機」のオリジナルデザイン（二重枠線・罫線・アイペック社ロゴ画像・結合セル）を
+ * 100% 完全に維持し、以下のフォーマット問題を完璧に解消して出力します：
+ * 1. 【統一フォント】表内の全データを「ＭＳ Ｐ明朝」に統一し、フォントの混在や不自然なジャンプを解消
+ * 2. 【完全中央揃え】NO・工番・メーカー・数量・単位・希望納期・納品場所を水平・垂直（上下）中央揃えに配置
+ * 3. 【はみ出し防止】列幅を最適化（型番36、メーカー16等）し、全セルに自動縮小 (shrinkToFit: true) を適用
+ * 4. 【行の高さ統一】データ行（Row 13~27）の高さを24ptに揃え、視認性と美しさを最大化
  */
 export class NakanishiOrderExcelExporter {
   static async exportNakanishiOrder(
@@ -58,104 +62,127 @@ export class NakanishiOrderExcelExporter {
       throw new Error('テンプレート内に「部品注文書」シートが見つかりません');
     }
 
-    // 1. ヘッダー情報の書き換え & アライメント設定（自動縮小付き）
+    // 列幅の最適化（文字のはみ出し・極端な縮小を根本防止）
+    sheet.getColumn('A').width = 11;
+    sheet.getColumn('B').width = 6;
+    sheet.getColumn('C').width = 12;
+    sheet.getColumn('D').width = 16;
+    sheet.getColumn('E').width = 36;
+    sheet.getColumn('F').width = 8;
+    sheet.getColumn('G').width = 6;
+    sheet.getColumn('H').width = 10;
+    sheet.getColumn('I').width = 10;
+    sheet.getColumn('J').width = 12;
+    sheet.getColumn('K').width = 10;
+    sheet.getColumn('L').width = 8;
+    sheet.getColumn('M').width = 8;
+
+    // 1. ヘッダー情報の書き換え & フォント・配置設定
     const cellE3 = sheet.getCell('E3');
     cellE3.value = recipientCompany;
     cellE3.alignment = { horizontal: 'center', vertical: 'middle', shrinkToFit: true };
+    cellE3.font = { name: 'ＭＳ Ｐ明朝', size: 14, underline: true };
 
     const cellL3 = sheet.getCell('L3');
     cellL3.value = todayReiwa;
     cellL3.alignment = { horizontal: 'center', vertical: 'middle', shrinkToFit: true };
+    cellL3.font = { name: 'ＭＳ Ｐ明朝', size: 12 };
 
     const cellE5 = sheet.getCell('E5');
     cellE5.value = recipientPerson;
     cellE5.alignment = { horizontal: 'right', vertical: 'middle', shrinkToFit: true };
+    cellE5.font = { name: 'ＭＳ Ｐ明朝', size: 14 };
 
     const cellF5 = sheet.getCell('F5');
     cellF5.value = '様';
     cellF5.alignment = { horizontal: 'left', vertical: 'middle', shrinkToFit: true };
+    cellF5.font = { name: 'ＭＳ Ｐ明朝', size: 14 };
 
     const cellJ10 = sheet.getCell('J10');
     cellJ10.value = '担当';
     cellJ10.alignment = { horizontal: 'center', vertical: 'middle', shrinkToFit: true };
+    cellJ10.font = { name: 'ＭＳ Ｐ明朝', size: 11 };
 
     const cellK10 = sheet.getCell('K10');
     cellK10.value = operator;
     cellK10.alignment = { horizontal: 'left', vertical: 'middle', shrinkToFit: true };
+    cellK10.font = { name: 'ＭＳ Ｐ明朝', size: 11, bold: true };
 
-    // 2. 明細行 (Row 13 ~ Row 27) の書き換えと「文字のはみ出し防止（自動縮小）」設定
+    // 2. 明細行 (Row 13 ~ Row 27) の書き換えと完璧な位置合わせ設定
     const chunkSize = 15;
     for (let i = 0; i < chunkSize; i++) {
       const rowNum = 13 + i;
       const row = sheet.getRow(rowNum);
+      row.height = 24; // 行の高さを揃えて美しく表示
+
       const orderItem = orderItems[i];
 
-      // B: 通番 NO. 1 ~ 15 (中央揃え)
+      // B: 通番 NO. 1 ~ 15 (中央揃え / 12pt)
       const cellB = row.getCell('B');
       cellB.value = i + 1;
       cellB.alignment = { horizontal: 'center', vertical: 'middle', shrinkToFit: true };
-      cellB.font = { name: 'ＭＳ Ｐ明朝', size: 14 };
+      cellB.font = { name: 'ＭＳ Ｐ明朝', size: 12 };
 
       if (orderItem) {
-        // C: 工番 (中央揃え / 自動縮小)
+        // C: 工番 (中央揃え / 12pt)
         const cellC = row.getCell('C');
         cellC.value = defaultJobCode || null;
         cellC.alignment = { horizontal: 'center', vertical: 'middle', shrinkToFit: true };
         cellC.font = { name: 'ＭＳ Ｐ明朝', size: 12 };
 
-        // D: メーカー (中央揃え / 自動縮小)
+        // D: メーカー (中央揃え / 11pt)
         const cellD = row.getCell('D');
         cellD.value = orderItem.item.supplier || null;
         cellD.alignment = { horizontal: 'center', vertical: 'middle', shrinkToFit: true };
         cellD.font = { name: 'ＭＳ Ｐ明朝', size: 11 };
 
-        // E: 型番 (左揃え / 自動縮小: 長い文字でも枠内に自動収縮)
+        // E: 型番 (左揃え / 12pt / 自動縮小)
         const cellE = row.getCell('E');
         const modelVal = orderItem.note || (orderItem.item.spec ? `${orderItem.item.name} ${orderItem.item.spec}` : orderItem.item.name);
         cellE.value = modelVal;
         cellE.alignment = { horizontal: 'left', vertical: 'middle', shrinkToFit: true };
         cellE.font = { name: 'ＭＳ Ｐ明朝', size: 12 };
 
-        // F: 数量 (中央揃え / 自動縮小)
+        // F: 数量 (中央揃え / 12pt)
         const cellF = row.getCell('F');
         cellF.value = orderItem.orderQuantity;
         cellF.alignment = { horizontal: 'center', vertical: 'middle', shrinkToFit: true };
-        cellF.font = { name: 'ＭＳ Ｐゴシック', size: 13 };
+        cellF.font = { name: 'ＭＳ Ｐ明朝', size: 12 };
 
-        // G: 単位 (中央揃え / 自動縮小)
+        // G: 単位 (中央揃え / 12pt)
         const cellG = row.getCell('G');
         cellG.value = orderItem.orderUnit || orderItem.item.baseUnit;
         cellG.alignment = { horizontal: 'center', vertical: 'middle', shrinkToFit: true };
-        cellG.font = { name: 'ＭＳ Ｐゴシック', size: 13 };
+        cellG.font = { name: 'ＭＳ Ｐ明朝', size: 12 };
 
-        // H: 仕入単価 (空欄 / 自動縮小)
+        // H: 仕入単価 (空欄)
         const cellH = row.getCell('H');
         cellH.value = null;
         cellH.alignment = { horizontal: 'center', vertical: 'middle', shrinkToFit: true };
 
-        // I: 仕入金額 (空欄 / 自動縮小)
+        // I: 仕入金額 (空欄)
         const cellI = row.getCell('I');
         cellI.value = null;
         cellI.alignment = { horizontal: 'center', vertical: 'middle', shrinkToFit: true };
 
-        // J: 希望納期 (中央揃え / 自動縮小)
+        // J: 希望納期 (中央揃え / 12pt)
         const cellJ = row.getCell('J');
         cellJ.value = defaultDesiredDelivery;
         cellJ.alignment = { horizontal: 'center', vertical: 'middle', shrinkToFit: true };
         cellJ.font = { name: 'ＭＳ Ｐ明朝', size: 12 };
 
-        // K: 納期回答 (空欄 / 自動縮小)
+        // K: 納期回答 (空欄)
         const cellK = row.getCell('K');
         cellK.value = null;
         cellK.alignment = { horizontal: 'center', vertical: 'middle', shrinkToFit: true };
 
-        // L: 納品場所 (結合セルL:M / 中央揃え / 自動縮小)
+        // L: 納品場所 (結合セルL:M / 中央揃え / 12pt)
         const cellL = row.getCell('L');
         cellL.value = defaultDeliveryLocation;
         cellL.alignment = { horizontal: 'center', vertical: 'middle', shrinkToFit: true };
         cellL.font = { name: 'ＭＳ Ｐ明朝', size: 12 };
       } else {
-        // 残りのサンプル行をクリア（書式と自動縮小は維持）
+        // 未使用行のデータをクリア
         ['C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L'].forEach((col) => {
           const c = row.getCell(col);
           c.value = null;
@@ -164,9 +191,23 @@ export class NakanishiOrderExcelExporter {
       }
     }
 
-    // 見積書シートのヘッダーも同期
+    // 見積書シートも同期
     const estimateSheet = workbook.getWorksheet('部品見積書');
     if (estimateSheet) {
+      estimateSheet.getColumn('A').width = 11;
+      estimateSheet.getColumn('B').width = 6;
+      estimateSheet.getColumn('C').width = 12;
+      estimateSheet.getColumn('D').width = 16;
+      estimateSheet.getColumn('E').width = 36;
+      estimateSheet.getColumn('F').width = 8;
+      estimateSheet.getColumn('G').width = 6;
+      estimateSheet.getColumn('H').width = 10;
+      estimateSheet.getColumn('I').width = 10;
+      estimateSheet.getColumn('J').width = 12;
+      estimateSheet.getColumn('K').width = 10;
+      estimateSheet.getColumn('L').width = 8;
+      estimateSheet.getColumn('M').width = 8;
+
       estimateSheet.getCell('E3').value = recipientCompany;
       estimateSheet.getCell('E3').alignment = { horizontal: 'center', vertical: 'middle', shrinkToFit: true };
       estimateSheet.getCell('L3').value = todayReiwa;
