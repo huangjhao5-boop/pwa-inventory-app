@@ -542,18 +542,39 @@ export const ItemMasterTable: React.FC = () => {
 
                         {/* Current Stock */}
                         <td className="py-3.5 px-4 text-right whitespace-nowrap">
-                          <div className="flex items-baseline justify-end gap-1">
-                            <span
-                              className={`font-black text-base ${
-                                isLow ? 'text-amber-400' : 'text-emerald-400'
-                              }`}
-                            >
-                              {item.currentStock}
-                            </span>
-                            <span className="text-xs text-slate-400">{item.baseUnit}</span>
+                          <div className="flex items-center justify-end gap-1.5">
+                            <div className="flex items-baseline gap-1">
+                              <span
+                                className={`font-black text-base ${
+                                  isLow ? 'text-amber-400' : 'text-emerald-400'
+                                }`}
+                              >
+                                {item.currentStock}
+                              </span>
+                              <span className="text-xs text-slate-400">{item.baseUnit}</span>
+                            </div>
+                            <div className="flex items-center gap-0.5 ml-1">
+                              <button
+                                type="button"
+                                onClick={() => handleQuickAdjust(item, 1)}
+                                className="p-1 text-emerald-400 hover:bg-emerald-950/80 rounded border border-slate-800 text-xs active:scale-95 transition"
+                                title="在庫 +1 加算"
+                              >
+                                <PlusCircle className="w-4 h-4" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleQuickAdjust(item, -1)}
+                                disabled={item.currentStock <= 0}
+                                className="p-1 text-rose-400 hover:bg-rose-950/80 rounded border border-slate-800 text-xs disabled:opacity-20 active:scale-95 transition"
+                                title="在庫 -1 減算"
+                              >
+                                <MinusCircle className="w-4 h-4" />
+                              </button>
+                            </div>
                           </div>
                           {isLow && (
-                            <span className="text-[10px] font-bold text-amber-400 bg-amber-500/10 px-1.5 py-0.5 rounded">
+                            <span className="text-[10px] font-bold text-amber-400 bg-amber-500/10 px-1.5 py-0.5 rounded inline-block mt-0.5">
                               要発注
                             </span>
                           )}
