@@ -25,6 +25,7 @@ export const BatchScanView: React.FC = () => {
     clearBatchList,
     commitBatchList,
     addToast,
+    openBottomSheet,
   } = useInventory();
 
   const [showScanner, setShowScanner] = useState(true);
@@ -35,7 +36,7 @@ export const BatchScanView: React.FC = () => {
     0
   );
 
-  // 連続スキャンハンドラー（カメラを止めずに連続でリストへ追加）
+  // 連続スキャンハンドラー（未登録時は自動で登録画面へ移行）
   const handleContinuousScan = (code: string) => {
     const found = items.find((i) => i.code === code || i.qrCode === code);
     if (found) {
@@ -51,7 +52,9 @@ export const BatchScanView: React.FC = () => {
         addToast('success', `✅ ${found.name}${specTag} をリストに追加 (+1)`);
       }
     } else {
-      addToast('warning', `⚠️ 未登録コード: ${code}`);
+      // 未登録品目の場合：即座に新規登録・AI認識シートを自動展開！
+      addToast('info', `🔍 未登録品目 (${code}) を検出しました。新規登録画面を開きます`);
+      openBottomSheet(code);
     }
   };
 
