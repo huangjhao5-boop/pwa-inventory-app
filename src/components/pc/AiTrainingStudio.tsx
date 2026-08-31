@@ -14,6 +14,8 @@ import {
   Trash2,
   Zap,
   BookOpen,
+  ZoomIn,
+  X,
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 
@@ -61,6 +63,9 @@ export const AiTrainingStudio: React.FC = () => {
 
   // Learned Memory List
   const [learnedEntries, setLearnedEntries] = useState<VisualKnowledgeEntry[]>([]);
+
+  // Zoom Lightbox State
+  const [zoomedImage, setZoomedImage] = useState<string | null>(null);
 
   // Dropdown states
   const [showSupplierDropdown, setShowSupplierDropdown] = useState(false);
@@ -397,9 +402,17 @@ export const AiTrainingStudio: React.FC = () => {
                     )}
                   </div>
 
-                  {/* Photo Thumbnail */}
-                  <div className="relative aspect-video max-h-36 bg-black rounded-xl overflow-hidden border border-slate-800 flex items-center justify-center">
-                    <img src={selectedImage} alt="テスト写真" className="w-full h-full object-contain" />
+                  {/* Photo Thumbnail (Click to zoom) */}
+                  <div
+                    onClick={() => setZoomedImage(selectedImage)}
+                    className="relative aspect-video max-h-36 bg-black rounded-xl overflow-hidden border border-slate-800 flex items-center justify-center cursor-pointer group hover:border-indigo-500 transition"
+                    title="クリックして拡大表示"
+                  >
+                    <img src={selectedImage} alt="テスト写真" className="w-full h-full object-contain group-hover:scale-105 transition duration-200" />
+                    <div className="absolute top-2 right-2 p-1.5 bg-slate-900/80 hover:bg-indigo-600 rounded-lg text-slate-300 hover:text-white border border-slate-700 shadow transition opacity-80 group-hover:opacity-100 flex items-center gap-1 text-[10px] font-bold">
+                      <ZoomIn className="w-3.5 h-3.5" />
+                      <span>拡大</span>
+                    </div>
                     {isAnalyzing && (
                       <div className="absolute inset-0 bg-slate-950/80 backdrop-blur-sm flex flex-col items-center justify-center text-amber-400 gap-2">
                         <RefreshCw className="w-6 h-6 animate-spin" />
@@ -612,7 +625,12 @@ export const AiTrainingStudio: React.FC = () => {
                             <img
                               src={entry.imageThumbnail}
                               alt={entry.name}
-                              className="w-9 h-9 object-cover rounded-lg border border-slate-700 bg-black"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setZoomedImage(entry.imageThumbnail || null);
+                              }}
+                              className="w-9 h-9 object-cover rounded-lg border border-slate-700 bg-black cursor-pointer hover:scale-125 hover:border-indigo-400 transition shadow"
+                              title="クリックで拡大表示"
                             />
                           ) : (
                             <div className="w-9 h-9 rounded-lg bg-slate-800 flex items-center justify-center text-[10px] text-slate-500">
@@ -654,6 +672,39 @@ export const AiTrainingStudio: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {/* High-Resolution Photo Lightbox Modal */}
+      {zoomedImage && (
+        <div
+          onClick={() => setZoomedImage(null)}
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-8 bg-slate-950/90 backdrop-blur-md animate-in fade-in duration-150"
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="relative max-w-4xl max-h-[90vh] bg-slate-900 border border-slate-700 rounded-3xl p-3 sm:p-4 shadow-2xl flex flex-col items-center"
+          >
+            <button
+              type="button"
+              onClick={() => setZoomedImage(null)}
+              className="absolute -top-3 -right-3 p-2 bg-slate-800 hover:bg-rose-600 text-white rounded-full border border-slate-600 shadow-xl transition active:scale-95"
+              title="閉じる"
+            >
+              <X className="w-5 h-5" />
+            </button>
+
+            <div className="overflow-auto max-h-[82vh] rounded-2xl border border-slate-800 bg-black flex items-center justify-center">
+              <img
+                src={zoomedImage}
+                alt="高解像度プレビュー"
+                className="max-w-full max-h-[80vh] object-contain rounded-xl select-none"
+              />
+            </div>
+            <div className="pt-2 text-center text-xs text-slate-400 font-medium">
+              🔍 高解像度拡大表示（枠外クリックまたは右上の ✕ で閉じます）
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
