@@ -29,37 +29,42 @@ import {
 
 // ─── 電工向けプリセット（日本語） ───────────────────
 const PRESET_SUPPLIERS = [
-  'ニチフ (NICHIFU)',
-  'パンドウイット (Panduit)',
-  'フエニックス・コンタクト',
-  'WAGO (ワゴ)',
-  'オムロン (OMRON)',
-  'IDEC (和泉電気)',
-  '富士電機',
-  '横河電機',
+  'ヘラマンタイトン',
+  'ニチフ',
+  'TOHO',
+  '日東電工',
+  'パナソニック',
+  'パンドウイット',
+  '未来工業',
+  'ネグロス電工',
   '三菱電機',
-  '日東電工 (Nitto)',
+  '富士電機',
+  'オムロン',
+  'WAGO',
+  'フエニックス・コンタクト',
+  'ミスミ',
   'SMC',
-  'ミスミ (MISUMI)',
+  'キーエンス',
 ];
 
 const PRESET_NAMES = [
+  // 結束バンド・配線資材
+  'インシュロック 屋内用',
+  'インシュロック 耐候性',
+  'マークチューブ',
+  'コルゲートチューブ (難燃)',
+  'スパイラルチューブ',
+  'ビニル絶縁テープ',
   // 端子類
   '丸形圧着端子 (R型)',
   'Y形圧着端子 (先開形)',
   '棒形圧着端子 (TC型)',
   'フェルール端子 (AI型)',
   '絶縁被覆付圧着スリーブ',
-  // 配線資材
-  '耐候性結束バンド (黒)',
-  'コルゲートチューブ (難燃)',
-  'スパイラルチューブ',
-  '配線固定具 (タイマウント)',
   // 盤材・パーツ
   'ガラス管ヒューズ (速断)',
   'DINレール (35mm)',
   '中継端子台 (ネジ式)',
-  'ワンタッチ管継手 (SMC同等)',
   // ネジ締結
   '六角穴付ボルト (SUS)',
   '六角ナット (SUS)',
@@ -401,7 +406,7 @@ export const ActionBottomSheet: React.FC = () => {
     closeBottomSheet();
   };
 
-  // 新規登録品の入庫確定
+  // 新規登録品の入庫確定（二重加算を完全防止し、正確に入荷数量のみを加算）
   const handleConfirmNewItemInbound = async () => {
     if (!activeScannedCode) return;
     const allConversions: UnitConversion[] = [
@@ -418,7 +423,7 @@ export const ActionBottomSheet: React.FC = () => {
       supplier: newItemSupplier.trim() || undefined,
       imageUrl: itemImage || undefined,
       baseUnit: newItemBaseUnit,
-      currentStock: quantity,
+      currentStock: 0, // 0からスタートし、下のrecordTransactionで指定数量のみを加算（+1が+2になる不具合を完全解消）
       safetyStock: Number(newItemSafetyStock) || 0,
       location: newItemBoxName.trim() || '端子ボックス (A-01)',
       qrCode: `INV:v1:${activeScannedCode}`,
@@ -426,7 +431,9 @@ export const ActionBottomSheet: React.FC = () => {
       updatedAt: new Date().toISOString(),
     };
     await saveItem(item);
-    await recordTransaction(item, 'IN', quantity, selectedUnit, 1, '新規登録初回入荷', false);
+    const conv = allConversions.find((c) => c.unit === selectedUnit) || { multiplier: 1 };
+    await recordTransaction(item, 'IN', quantity, selectedUnit, conv.multiplier, '新規登録初回入荷', false);
+    closeBottomSheet();
   };
 
   return (
