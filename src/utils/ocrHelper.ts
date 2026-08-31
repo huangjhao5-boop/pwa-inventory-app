@@ -226,8 +226,10 @@ export class OcrHelper {
       // 電工向け主要メーカーリスト（国内・海外メーカー完全網羅）
       const knownSuppliers: [string, string, string?][] = [
         ['HELLERMANNTYTON', 'ヘラマンタイトン', '配線・電気資材'],
+        ['HELLERMANN', 'ヘラマンタイトン', '配線・電気資材'],
         ['ヘラマンタイトン', 'ヘラマンタイトン', '配線・電気資材'],
         ['インシュロック', 'ヘラマンタイトン', '配線・電気資材'],
+        ['INSULOK', 'ヘラマンタイトン', '配線・電気資材'],
         ['NICHIFU', 'ニチフ', '配線・電気資材'],
         ['ニチフ', 'ニチフ', '配線・電気資材'],
         ['PANDUIT', 'パンドウイット', '配線・電気資材'],
@@ -259,8 +261,9 @@ export class OcrHelper {
 
       // 型番パターン
       const specPatterns = [
-        /[A-Z0-9]{1,6}[-][A-Z0-9\.\-]+/,      // AB150-W, R2-4, 1.25Y-3.5
-        /\d+(\.\d+)?\s*(mm|mm²|AWG|V|A|W|kΩ|MΩ)/i,
+        /AB[-_]?\d+[A-Z0-9\-]*/i,              // AB300, AB-150-W
+        /[A-Z0-9]{1,6}[-][A-Z0-9\.\-]+/,      // AB150-W, R2-4, 1.25Y-3.5, TC-1.25
+        /\d+(\.\d+)?\s*(mm|mm²|sq|AWG|V|A|W|kΩ|MΩ)/i,
         /M\d+\s*[xX×]\s*\d+/,                  // M6x20
         /\d+\s*[xX×]\s*\d+\s*[xX×]\s*\d+/,    // 3x5x10
         /SUS\d+|SS\d+/,
@@ -284,8 +287,9 @@ export class OcrHelper {
         // 2. 規格型番比対
         if (!suggestedSpec) {
           for (const pattern of specPatterns) {
-            if (pattern.test(line)) {
-              suggestedSpec = line.replace(/\s+/g, ' ').trim();
+            const match = line.match(pattern);
+            if (match) {
+              suggestedSpec = match[0].trim();
               break;
             }
           }
@@ -305,6 +309,11 @@ export class OcrHelper {
         ) {
           suggestedName = line.replace(/\s+/g, ' ').trim();
         }
+      }
+
+      // インシュロック系の場合はメーカーを「ヘラマンタイトン」に補正
+      if (!suggestedSupplier && (/インシュロック|AB\d+/i.test(rawText) || /インシュロック|AB\d+/i.test(suggestedSpec))) {
+        suggestedSupplier = 'ヘラマンタイトン';
       }
 
       if (!suggestedName && lines.length > 0) {

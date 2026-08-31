@@ -92,7 +92,7 @@ export class VisualKnowledgeService {
 
     // 既存のエントリ（同一品目コードまたは同一ハッシュ）を検索
     const existingIdx = bank.findIndex(
-      (e) => (item.code && e.itemCode === item.code) || e.colorHash === colorHash
+      (e) => (item.code && e.itemCode === item.code) || (e.spec && item.spec && e.spec === item.spec)
     );
 
     const newEntry: VisualKnowledgeEntry = {
@@ -124,7 +124,6 @@ export class VisualKnowledgeService {
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(bank));
     } catch {
-      // quota exceeded fallback: trim images if needed
       try {
         const compacted = bank.map((b) => ({ ...b, imageThumbnail: undefined }));
         localStorage.setItem(STORAGE_KEY, JSON.stringify(compacted));
@@ -150,6 +149,7 @@ export class VisualKnowledgeService {
 
   /**
    * 撮影画像とOCRテキストから、過去の学習データをもとに最適品目を予測照合
+   * （視覚ハッシュ単体での誤一致を防止し、型番・文字情報と複合判定）
    */
   static async findBestMatch(
     capturedImageBase64: string,
@@ -178,40 +178,40 @@ export class VisualKnowledgeService {
       let score = 0;
 
       // 1. 完全同一画像・サムネイル一致判定
-      if (entry.imageThumbnail && entry.imageThumbnail === capturedImageBase64) {
+      const isExactImage = Boolean(entry.imageThumbnail && entry.imageThumbnail === capturedImageBase64);
+      if (isExactImage) {
         score += 95;
-      } else if (currentHash && entry.colorHash) {
-        // 視覚ハッシュ類似度 (ハミング距離)
-        let diffBits = 0;
-        const len = Math.min(currentHash.length, entry.colorHash.length);
-        for (let i = 0; i < len; i++) {
-          if (currentHash[i] !== entry.colorHash[i]) diffBits++;
-        }
-        if (diffBits <= 4) {
-          score += 85; // ほぼ同じ写真
-        } else if (diffBits <= 10) {
-          score += 65; // 高い視覚類似性
-        } else if (diffBits <= 16) {
-          score += 35;
-        }
       }
 
-      // 2. 規格型番・品名のダイレクト一致判定（最重要）
+      // 2. 規格型番の一致判定（最重要！）
+      let hasSpecMatch = false;
       if (entry.spec && entry.spec.trim().length >= 2) {
-        const specUpper = entry.spec.toUpperCase().trim();
-        if (upperOcr.includes(specUpper)) {
-          score += 70; // 規格・型番（例: AB300, R2-4）がOCR文字内に直接出現
+        const specClean = entry.spec.toUpperCase().replace(/[\s\-_]/g, '');
+        const ocrClean = upperOcr.replace(/[\s\-_]/g, '');
+        if (ocrClean.includes(specClean) || (queryTokens.length > 0 && queryTokens.some(qt => qt.includes(specClean) || specClean.includes(qt)))) {
+          score += 65;
+          hasSpecMatch = true;
         }
       }
 
+      // 3. 品名・メーカーの一致判定
+      let hasNameOrSupplierMatch = false;
       if (entry.name && entry.name.trim().length >= 2) {
         const nameUpper = entry.name.toUpperCase().trim();
         if (upperOcr.includes(nameUpper)) {
-          score += 40; // 品名（例: インシュロック）がOCR文字内に直接出現
+          score += 30;
+          hasNameOrSupplierMatch = true;
+        }
+      }
+      if (entry.supplier && entry.supplier.trim().length >= 2) {
+        const supUpper = entry.supplier.toUpperCase().trim();
+        if (upperOcr.includes(supUpper)) {
+          score += 25;
+          hasNameOrSupplierMatch = true;
         }
       }
 
-      // 3. 特徴トークン一致度
+      // 4. 特徴トークン一致
       if (queryTokens.length > 0 && entry.featureTokens && entry.featureTokens.length > 0) {
         let matchedTokens = 0;
         for (const qt of queryTokens) {
@@ -219,10 +219,26 @@ export class VisualKnowledgeService {
             matchedTokens++;
           }
         }
-        score += Math.min(40, matchedTokens * 15);
+        score += Math.min(30, matchedTokens * 10);
       }
 
-      // 4. 学習頻度ボーナス
+      // 5. 視覚ハッシュ類似度 (写真の背景色・明度)
+      // 重要：文字・型番が一致している場合のみ視覚類似度をフル加算。文字が一致しない場合は上限15点に制限
+      if (currentHash && entry.colorHash) {
+        let diffBits = 0;
+        const len = Math.min(currentHash.length, entry.colorHash.length);
+        for (let i = 0; i < len; i++) {
+          if (currentHash[i] !== entry.colorHash[i]) diffBits++;
+        }
+        const visualSimilarity = 1 - diffBits / len;
+        if (isExactImage || hasSpecMatch || hasNameOrSupplierMatch) {
+          score += visualSimilarity * 30;
+        } else {
+          score += Math.min(15, visualSimilarity * 15);
+        }
+      }
+
+      // 6. 学習頻度ボーナス
       score += Math.min(10, (entry.matchCount || 1) * 2);
 
       if (score > bestScore) {
@@ -232,14 +248,15 @@ export class VisualKnowledgeService {
       }
     }
 
-    if (bestScore >= 35 && bestEntry) {
+    // 文字または画像が実質的に一致した場合のみ（最低55点以上）
+    if (bestScore >= 55 && bestEntry) {
       const correspondingItem =
         existingItems?.find((i) => i.code === bestEntry?.itemCode) || null;
 
       return {
         matchedEntry: bestEntry,
         matchedItem: correspondingItem,
-        confidenceScore: Math.min(99, Math.round(Math.max(85, bestScore))),
+        confidenceScore: Math.min(99, Math.round(Math.max(90, bestScore))),
         explanation: bestReason,
       };
     }
@@ -252,7 +269,7 @@ export class VisualKnowledgeService {
    */
   static async findMatchingEntry(imageSrc: string): Promise<VisualKnowledgeEntry | null> {
     const match = await this.findBestMatch(imageSrc);
-    if (match.matchedEntry && match.confidenceScore >= 35) {
+    if (match.matchedEntry && match.confidenceScore >= 55) {
       return match.matchedEntry;
     }
     return null;
