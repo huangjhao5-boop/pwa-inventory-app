@@ -1,16 +1,63 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { ItemMaster, UnitConversion, PRESET_UNITS } from '../../types/inventory';
 import { useInventory } from '../../context/InventoryContext';
 import { AiVisionService } from '../../utils/geminiAiVision';
 import { VisualKnowledgeService } from '../../utils/visualKnowledgeService';
 import { ImageCompressor } from '../../utils/imageCompressor';
-import { X, Plus, Trash2, Layers, Building2, Box, Loader2, Sparkles, Image as ImageIcon, ExternalLink } from 'lucide-react';
+import {
+  X,
+  Plus,
+  Trash2,
+  Layers,
+  Building2,
+  Box,
+  Loader2,
+  Sparkles,
+  Image as ImageIcon,
+  ExternalLink,
+  Tag,
+  Check,
+} from 'lucide-react';
 
 interface ItemFormModalProps {
   isOpen: boolean;
   onClose: () => void;
   initialItem?: ItemMaster | null;
 }
+
+// 電工現場の主要メーカー既定プリセット
+const PRESET_SUPPLIERS = [
+  'ヘラマンタイトン',
+  'ニチフ',
+  'TOHO',
+  '日東電工',
+  'パナソニック',
+  'パンドウイット',
+  '未来工業',
+  'ネグロス電工',
+  '三菱電機',
+  '富士電機',
+  'オムロン',
+  'WAGO',
+  'フエニックス・コンタクト',
+  'ミスミ',
+  'SMC',
+  'キーエンス',
+  'テンパール',
+  '河村電器',
+];
+
+// 商品カテゴリプリセット
+const PRESET_CATEGORIES = [
+  '配線・電気資材',
+  '制御盤パーツ',
+  '端子・圧着具',
+  '結束バンド・チューブ',
+  '機構・締結部品',
+  '空圧・流体機器',
+  '測定器・工具',
+  '消耗品・その他',
+];
 
 export const ItemFormModal: React.FC<ItemFormModalProps> = ({
   isOpen,
@@ -33,6 +80,11 @@ export const ItemFormModal: React.FC<ItemFormModalProps> = ({
   const [orderUrl, setOrderUrl] = useState('');
   const [note, setNote] = useState('');
 
+  // Dropdown open states for autocomplete
+  const [showSupplierDropdown, setShowSupplierDropdown] = useState(false);
+  const [showNameDropdown, setShowNameDropdown] = useState(false);
+  const [showLocationDropdown, setShowLocationDropdown] = useState(false);
+
   // Dynamic packaging unit conversions
   const [conversions, setConversions] = useState<UnitConversion[]>([
     { unit: '箱', multiplier: 50 },
@@ -43,6 +95,38 @@ export const ItemFormModal: React.FC<ItemFormModalProps> = ({
   const [isAiProcessing, setIsAiProcessing] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Collect unique existing values for fast autocomplete
+  const uniqueSuppliers = useMemo(() => {
+    const fromItems = items.map((i) => i.supplier).filter(Boolean) as string[];
+    return Array.from(new Set([...fromItems, ...PRESET_SUPPLIERS]));
+  }, [items]);
+
+  const uniqueLocations = useMemo(() => {
+    const fromItems = items.map((i) => i.location).filter(Boolean) as string[];
+    const defaults = ['端子ボックス (A-01)', '結束バンドボックス (B-01)', 'マークチューブ棚 (C-01)', '盤内資材 (D-01)'];
+    return Array.from(new Set([...fromItems, ...defaults]));
+  }, [items]);
+
+  const filteredSuppliers = useMemo(() => {
+    if (!supplier.trim()) return uniqueSuppliers.slice(0, 8);
+    const q = supplier.toLowerCase().trim();
+    return uniqueSuppliers.filter((s) => s.toLowerCase().includes(q)).slice(0, 8);
+  }, [supplier, uniqueSuppliers]);
+
+  const filteredItemNames = useMemo(() => {
+    if (!name.trim()) return [];
+    const q = name.toLowerCase().trim();
+    return items
+      .filter((i) => i.name.toLowerCase().includes(q) || (i.spec && i.spec.toLowerCase().includes(q)))
+      .slice(0, 6);
+  }, [name, items]);
+
+  const filteredLocations = useMemo(() => {
+    if (!location.trim()) return uniqueLocations.slice(0, 6);
+    const q = location.toLowerCase().trim();
+    return uniqueLocations.filter((l) => l.toLowerCase().includes(q)).slice(0, 6);
+  }, [location, uniqueLocations]);
 
   useEffect(() => {
     if (initialItem) {
@@ -125,14 +209,29 @@ export const ItemFormModal: React.FC<ItemFormModalProps> = ({
           settings.geminiApiKey
         );
         setIsAiProcessing(false);
+
         if (result.suggestedName && !name) setName(result.suggestedName);
         if (result.suggestedSpec && !spec) setSpec(result.suggestedSpec);
         if (result.suggestedSupplier && !supplier) setSupplier(result.suggestedSupplier);
         if (result.suggestedCategory) setCategory(result.suggestedCategory);
         if (result.suggestedBoxName && location === '端子ボックス (A-01)') setLocation(result.suggestedBoxName);
-        if (result.suggestedBaseUnit) setBaseUnit(result.suggestedBaseUnit);
+        
+        // 最小単位・包装倍率の自動反映
+        if (result.suggestedBaseUnit) {
+          setBaseUnit(result.suggestedBaseUnit);
+        }
+        if (result.suggestedConversions && result.suggestedConversions.length > 0) {
+          setConversions(result.suggestedConversions.filter((c) => c.unit !== result.suggestedBaseUnit));
+        }
 
-        addToast('success', '写真から品名・型番・メーカー情報を自動認識しました！');
+        const sourceLabel =
+          result.source === 'LEARNED_MEMORY'
+            ? '🧠 現場AI学習記憶'
+            : result.source === 'GEMINI_AI'
+            ? '✨ Gemini Multimodal AI'
+            : '⚡ 電工高精度OCR';
+
+        addToast('success', `${sourceLabel}: 最小単位「${result.suggestedBaseUnit || '個'}」・品名・型番・メーカーを自動認識しました！`);
       } catch {
         setIsAiProcessing(false);
       }
@@ -168,11 +267,13 @@ export const ItemFormModal: React.FC<ItemFormModalProps> = ({
       note: note.trim() || undefined,
     };
 
+    // AIの能動学習：写真や品目情報を記憶バンクへ学習保存
     if (imageUrl) {
       VisualKnowledgeService.learnFromItem(item, imageUrl);
     }
 
     await saveItem(item);
+    addToast('success', `品目「${item.name}」をマスタに保存しました（AI学習更新済）`);
     onClose();
   };
 
@@ -182,11 +283,14 @@ export const ItemFormModal: React.FC<ItemFormModalProps> = ({
         {/* Header */}
         <div className="px-5 py-4 border-b border-slate-800 flex items-center justify-between bg-slate-900/90">
           <div>
-            <h3 className="font-extrabold text-base sm:text-lg text-white">
-              {initialItem ? '品目マスタ編集' : '新規品目マスタ登録'}
+            <h3 className="font-extrabold text-base sm:text-lg text-white flex items-center gap-2">
+              <span>{initialItem ? '品目マスタ編集' : '新規品目マスタ登録'}</span>
+              <span className="px-2 py-0.5 rounded-full bg-blue-600/20 text-blue-400 border border-blue-500/30 text-[11px] font-bold">
+                AI自動学習 & 快速検索対応
+              </span>
             </h3>
             <p className="text-xs text-slate-400">
-              品目情報、メーカー、保管ボックス名、基準画像、包装換算倍率の設定
+              品目情報、メーカー候補検索、最小基準単位、保管ボックス名、包装換算倍率の設定
             </p>
           </div>
           <button
@@ -215,89 +319,224 @@ export const ItemFormModal: React.FC<ItemFormModalProps> = ({
               />
             </div>
 
-            {/* Name */}
-            <div>
+            {/* Name with Autocomplete */}
+            <div className="relative">
               <label className="block font-bold text-slate-300 mb-1">
-                品名 (必須)
+                品名 (必須・候補から検索可)
               </label>
               <input
                 type="text"
                 required
                 value={name}
-                onChange={(e) => setName(e.target.value)}
+                onFocus={() => setShowNameDropdown(true)}
+                onChange={(e) => {
+                  setName(e.target.value);
+                  setShowNameDropdown(true);
+                }}
                 placeholder="例: 丸形圧着端子 (JIS規格)"
                 className="w-full px-3.5 py-2.5 bg-slate-800 border border-slate-700 rounded-xl text-white focus:outline-none focus:border-blue-500"
               />
+              {showNameDropdown && filteredItemNames.length > 0 && (
+                <div className="absolute top-full left-0 right-0 mt-1 bg-slate-800 border border-slate-700 rounded-xl shadow-2xl z-30 max-h-48 overflow-y-auto p-1.5 space-y-1">
+                  <div className="px-2 py-1 text-[10px] font-bold text-slate-400 border-b border-slate-700/60 flex items-center justify-between">
+                    <span>既存の登録品目から引用</span>
+                    <button
+                      type="button"
+                      onClick={() => setShowNameDropdown(false)}
+                      className="text-slate-400 hover:text-white"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                  {filteredItemNames.map((item) => (
+                    <button
+                      key={item.id}
+                      type="button"
+                      onClick={() => {
+                        setName(item.name);
+                        if (item.spec && !spec) setSpec(item.spec);
+                        if (item.supplier && !supplier) setSupplier(item.supplier);
+                        if (item.category) setCategory(item.category);
+                        if (item.baseUnit) setBaseUnit(item.baseUnit);
+                        setShowNameDropdown(false);
+                      }}
+                      className="w-full text-left px-2.5 py-1.5 rounded-lg hover:bg-blue-900/60 text-white flex items-center justify-between gap-2 text-xs transition"
+                    >
+                      <span className="font-bold truncate">{item.name}</span>
+                      {item.spec && (
+                        <span className="px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 text-[10px] font-mono shrink-0">
+                          {item.spec}
+                        </span>
+                      )}
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
 
-            {/* Supplier */}
-            <div>
-              <label className="block font-bold text-slate-300 mb-1 flex items-center gap-1">
-                <Building2 className="w-3.5 h-3.5 text-blue-400" />
-                <span>メーカー / 仕入先</span>
+            {/* Supplier with Smart Autocomplete & Quick Search */}
+            <div className="relative">
+              <label className="block font-bold text-slate-300 mb-1 flex items-center justify-between">
+                <span className="flex items-center gap-1">
+                  <Building2 className="w-3.5 h-3.5 text-blue-400" />
+                  <span>メーカー / 仕入先 (快速検索)</span>
+                </span>
+                <span className="text-[10px] text-blue-400 font-normal">候補タップで即入力</span>
               </label>
               <input
                 type="text"
                 value={supplier}
-                onChange={(e) => setSupplier(e.target.value)}
-                placeholder="例: ニチフ (NICHIFU), パンドウイット..."
-                className="w-full px-3.5 py-2.5 bg-slate-800 border border-slate-700 rounded-xl text-white focus:outline-none focus:border-blue-500"
+                onFocus={() => setShowSupplierDropdown(true)}
+                onChange={(e) => {
+                  setSupplier(e.target.value);
+                  setShowSupplierDropdown(true);
+                }}
+                placeholder="例: ニチフ, ヘラマンタイトン, TOHO..."
+                className="w-full px-3.5 py-2.5 bg-slate-800 border border-slate-700 rounded-xl text-white focus:outline-none focus:border-blue-500 font-medium"
               />
+              {showSupplierDropdown && filteredSuppliers.length > 0 && (
+                <div className="absolute top-full left-0 right-0 mt-1 bg-slate-800 border border-slate-700 rounded-xl shadow-2xl z-30 max-h-48 overflow-y-auto p-1.5 space-y-1">
+                  <div className="px-2 py-1 text-[10px] font-bold text-slate-400 border-b border-slate-700/60 flex items-center justify-between">
+                    <span>主要電工メーカー・登録済仕入先</span>
+                    <button
+                      type="button"
+                      onClick={() => setShowSupplierDropdown(false)}
+                      className="text-slate-400 hover:text-white"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                  <div className="grid grid-cols-2 gap-1 p-1">
+                    {filteredSuppliers.map((sup) => (
+                      <button
+                        key={sup}
+                        type="button"
+                        onClick={() => {
+                          setSupplier(sup);
+                          setShowSupplierDropdown(false);
+                        }}
+                        className={`text-left px-2 py-1.5 rounded-lg text-xs font-bold transition flex items-center justify-between ${
+                          supplier === sup
+                            ? 'bg-blue-600 text-white'
+                            : 'bg-slate-900/80 hover:bg-blue-900/60 text-slate-200'
+                        }`}
+                      >
+                        <span className="truncate">{sup}</span>
+                        {supplier === sup && <Check className="w-3 h-3" />}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Spec */}
             <div>
-              <label className="block font-bold text-slate-300 mb-1">規格 / 型番</label>
+              <label className="block font-bold text-slate-300 mb-1">規格 / 型番 (重要)</label>
               <input
                 type="text"
                 value={spec}
                 onChange={(e) => setSpec(e.target.value)}
-                placeholder="例: R2-4 (0.5~2.0sq用)"
-                className="w-full px-3.5 py-2.5 bg-slate-800 border border-slate-700 rounded-xl text-white focus:outline-none focus:border-blue-500"
+                placeholder="例: R2-4 (0.5~2.0sq用), AB150-W..."
+                className="w-full px-3.5 py-2.5 bg-slate-800 border border-slate-700 rounded-xl text-white font-mono focus:outline-none focus:border-blue-500"
               />
             </div>
 
-            {/* Category */}
-            <div>
-              <label className="block font-bold text-slate-300 mb-1">商品カテゴリ</label>
-              <input
-                type="text"
-                value={category}
-                onChange={(e) => setCategory(e.target.value)}
-                placeholder="例: 配線・電気資材 / 制御盤パーツ / 締結部品"
-                className="w-full px-3.5 py-2.5 bg-slate-800 border border-slate-700 rounded-xl text-white focus:outline-none focus:border-blue-500"
-              />
-            </div>
-
-            {/* Box Name */}
+            {/* Category with Quick Presets */}
             <div>
               <label className="block font-bold text-slate-300 mb-1 flex items-center gap-1">
-                <Box className="w-3.5 h-3.5 text-blue-400" />
-                <span>保管ボックス名 / 棚番</span>
+                <Tag className="w-3.5 h-3.5 text-blue-400" />
+                <span>商品カテゴリ</span>
+              </label>
+              <select
+                value={category}
+                onChange={(e) => setCategory(e.target.value)}
+                className="w-full px-3.5 py-2.5 bg-slate-800 border border-slate-700 rounded-xl text-white font-bold focus:outline-none focus:border-blue-500"
+              >
+                {PRESET_CATEGORIES.map((cat) => (
+                  <option key={cat} value={cat}>
+                    {cat}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* Location / Storage Box with Smart Autocomplete */}
+            <div className="relative">
+              <label className="block font-bold text-slate-300 mb-1 flex items-center justify-between">
+                <span className="flex items-center gap-1">
+                  <Box className="w-3.5 h-3.5 text-blue-400" />
+                  <span>保管ボックス名 / 棚番</span>
+                </span>
+                <span className="text-[10px] text-blue-400 font-normal">既存棚番から選択可</span>
               </label>
               <input
                 type="text"
                 value={location}
-                onChange={(e) => setLocation(e.target.value)}
+                onFocus={() => setShowLocationDropdown(true)}
+                onChange={(e) => {
+                  setLocation(e.target.value);
+                  setShowLocationDropdown(true);
+                }}
                 placeholder="例: 端子ボックス (A-01)"
                 className="w-full px-3.5 py-2.5 bg-slate-800 border border-slate-700 rounded-xl text-white font-bold focus:outline-none focus:border-blue-500"
               />
+              {showLocationDropdown && filteredLocations.length > 0 && (
+                <div className="absolute top-full left-0 right-0 mt-1 bg-slate-800 border border-slate-700 rounded-xl shadow-2xl z-30 max-h-44 overflow-y-auto p-1.5 space-y-1">
+                  <div className="px-2 py-1 text-[10px] font-bold text-slate-400 border-b border-slate-700/60 flex items-center justify-between">
+                    <span>倉庫・作業場の棚番候補</span>
+                    <button
+                      type="button"
+                      onClick={() => setShowLocationDropdown(false)}
+                      className="text-slate-400 hover:text-white"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                  {filteredLocations.map((loc) => (
+                    <button
+                      key={loc}
+                      type="button"
+                      onClick={() => {
+                        setLocation(loc);
+                        setShowLocationDropdown(false);
+                      }}
+                      className="w-full text-left px-2.5 py-1.5 rounded-lg hover:bg-blue-900/60 text-slate-200 text-xs font-bold transition flex items-center gap-1.5"
+                    >
+                      <Box className="w-3 h-3 text-blue-400 shrink-0" />
+                      <span className="truncate">{loc}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
 
-            {/* Base Unit */}
-            <div>
-              <label className="block font-bold text-slate-300 mb-1">基準単位 (最小管理単位)</label>
-              <select
-                value={baseUnit}
-                onChange={(e) => setBaseUnit(e.target.value)}
-                className="w-full px-3.5 py-2.5 bg-slate-800 border border-slate-700 rounded-xl text-white font-bold focus:outline-none focus:border-blue-500"
-              >
+            {/* Base Unit (最小管理単位) with Quick Buttons */}
+            <div className="col-span-full bg-slate-950/60 p-3 rounded-2xl border border-slate-800">
+              <div className="flex items-center justify-between mb-1.5">
+                <label className="font-bold text-slate-200 text-xs">
+                  基準単位 (在庫を数える最小管理単位)
+                </label>
+                <span className="text-[11px] text-amber-400 font-bold">
+                  現在の最小単位: 【 {baseUnit} 】
+                </span>
+              </div>
+              <div className="flex flex-wrap gap-1.5">
                 {PRESET_UNITS.map((u) => (
-                  <option key={u} value={u}>
+                  <button
+                    key={u}
+                    type="button"
+                    onClick={() => setBaseUnit(u)}
+                    className={`px-3 py-1.5 rounded-xl font-black text-xs transition active:scale-95 ${
+                      baseUnit === u
+                        ? 'bg-amber-500 text-slate-950 shadow-md shadow-amber-500/30'
+                        : 'bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700'
+                    }`}
+                  >
                     {u}
-                  </option>
+                  </button>
                 ))}
-              </select>
+              </div>
             </div>
 
             {/* Current Stock */}
@@ -324,7 +563,7 @@ export const ItemFormModal: React.FC<ItemFormModalProps> = ({
               />
             </div>
 
-            {/* Photo Attachment & AI/OCR */}
+            {/* Photo Attachment & AI/OCR Self-Learning */}
             <div>
               <label className="block font-bold text-slate-300 mb-1">基準画像・商品写真 (AI照合対象)</label>
               <input
@@ -363,7 +602,7 @@ export const ItemFormModal: React.FC<ItemFormModalProps> = ({
                   <img src={imageUrl} alt="基準写真" className="w-12 h-12 object-cover rounded-lg border border-slate-700 bg-black" />
                   <span className="text-[11px] text-emerald-400 flex items-center gap-1">
                     <ImageIcon className="w-3 h-3" />
-                    <span>基準写真登録済（撮影時自動照合）</span>
+                    <span>基準写真登録済（保存時にAI学習記憶）</span>
                   </span>
                 </div>
               )}
@@ -426,7 +665,7 @@ export const ItemFormModal: React.FC<ItemFormModalProps> = ({
               <div className="flex items-center gap-2">
                 <Layers className="w-4 h-4 text-blue-400" />
                 <span className="font-bold text-slate-200 text-xs sm:text-sm">
-                  包装単位・換算倍率設定
+                  包装単位・換算倍率設定 (AI自動推理対応)
                 </span>
               </div>
               <button
@@ -439,7 +678,7 @@ export const ItemFormModal: React.FC<ItemFormModalProps> = ({
               </button>
             </div>
             <p className="text-[11px] text-slate-400">
-              現場で「1箱」または「1袋」でスキャンした際、この倍率を掛けて基準単位（{baseUnit}）に自動換算します。
+              現場で「1箱」または「1袋」でスキャンした際、この倍率を掛けて最小基準単位（<strong className="text-amber-400">{baseUnit}</strong>）に自動換算します。
             </p>
 
             <div className="space-y-2">
@@ -485,16 +724,9 @@ export const ItemFormModal: React.FC<ItemFormModalProps> = ({
                   />
 
                   {/* 右：換算先の基準単位 */}
-                  <select
-                    value={baseUnit}
-                    onChange={(e) => setBaseUnit(e.target.value)}
-                    className="px-2.5 py-1.5 bg-slate-800 border border-slate-700 rounded-lg text-white font-bold text-xs"
-                    title="基準単位を変更"
-                  >
-                    {PRESET_UNITS.map((u) => (
-                      <option key={u} value={u}>{u}</option>
-                    ))}
-                  </select>
+                  <span className="px-2.5 py-1.5 bg-slate-800 border border-slate-700 rounded-lg text-amber-300 font-bold text-xs">
+                    {baseUnit}
+                  </span>
 
                   <button
                     type="button"
@@ -522,7 +754,7 @@ export const ItemFormModal: React.FC<ItemFormModalProps> = ({
               type="submit"
               className="px-6 py-2.5 bg-blue-600 hover:bg-blue-500 text-white font-extrabold rounded-xl shadow-lg shadow-blue-900/40 transition"
             >
-              マスタを保存
+              マスタを保存 (AI学習)
             </button>
           </div>
         </form>

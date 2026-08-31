@@ -1,4 +1,4 @@
-import { ItemMaster } from '../types/inventory';
+import { ItemMaster, UnitConversion } from '../types/inventory';
 import { OcrHelper } from './ocrHelper';
 import { VisualKnowledgeService } from './visualKnowledgeService';
 
@@ -10,6 +10,7 @@ export interface AiVisionResult {
   suggestedSupplier?: string;
   suggestedCategory?: string;
   suggestedBaseUnit?: string;
+  suggestedConversions?: UnitConversion[];
   suggestedBoxName?: string;
   suggestedQuantity?: number;
   confidenceScore?: number; // 0 ~ 100
@@ -145,6 +146,7 @@ export class AiVisionService {
         suggestedSupplier: matchedItem.supplier,
         suggestedCategory: matchedItem.category,
         suggestedBaseUnit: matchedItem.baseUnit,
+        suggestedConversions: matchedItem.unitConversions,
         suggestedBoxName: matchedItem.location,
         confidenceScore: 99,
         rawAnalysis: `登録済み基準画像と一致: ${matchedItem.name}`,
@@ -163,6 +165,7 @@ export class AiVisionService {
 
     if (learnedMatch.matchedEntry && learnedMatch.confidenceScore >= 60) {
       const entry = learnedMatch.matchedEntry;
+      const units = OcrHelper.inferUnits(entry.name, entry.spec || '', '');
       return {
         source: 'LEARNED_MEMORY',
         matchedExistingItem: learnedMatch.matchedItem || undefined,
@@ -170,7 +173,8 @@ export class AiVisionService {
         suggestedSpec: entry.spec,
         suggestedSupplier: entry.supplier,
         suggestedCategory: entry.category || '配線・電気資材',
-        suggestedBaseUnit: entry.baseUnit || '個',
+        suggestedBaseUnit: entry.baseUnit || units.baseUnit,
+        suggestedConversions: units.conversions,
         suggestedBoxName: entry.boxName || '端子ボックス (A-01)',
         confidenceScore: learnedMatch.confidenceScore,
         rawAnalysis: `🧠 ${learnedMatch.explanation}`,
@@ -185,7 +189,16 @@ export class AiVisionService {
     if (effectiveKey && effectiveKey.length > 5) {
       const aiResult = await this.analyzeWithGemini(imageBase64, effectiveKey);
       if (aiResult) {
-        return aiResult;
+        const units = OcrHelper.inferUnits(
+          aiResult.suggestedName || '',
+          aiResult.suggestedSpec || '',
+          aiResult.rawAnalysis || ''
+        );
+        return {
+          ...aiResult,
+          suggestedBaseUnit: aiResult.suggestedBaseUnit || units.baseUnit,
+          suggestedConversions: units.conversions,
+        };
       }
     }
 
@@ -195,6 +208,9 @@ export class AiVisionService {
       suggestedName: ocrResult.suggestedName,
       suggestedSpec: ocrResult.suggestedSpec,
       suggestedSupplier: ocrResult.suggestedSupplier,
+      suggestedCategory: ocrResult.suggestedCategory,
+      suggestedBaseUnit: ocrResult.suggestedBaseUnit,
+      suggestedConversions: ocrResult.suggestedConversions,
       suggestedBoxName: ocrResult.suggestedBoxName,
       confidenceScore: ocrResult.suggestedName ? 75 : 40,
       rawAnalysis: ocrResult.rawText,

@@ -213,4 +213,15 @@ export class VisualKnowledgeService {
 
     return { matchedEntry: null, matchedItem: null, confidenceScore: 0, explanation: '' };
   }
+
+  /**
+   * 簡易照合ヘルパー
+   */
+  static async findMatchingEntry(imageSrc: string): Promise<VisualKnowledgeEntry | null> {
+    const match = await this.findBestMatch(imageSrc);
+    if (match.matchedEntry && match.confidenceScore >= 55) {
+      return match.matchedEntry;
+    }
+    return null;
+  }
 }
