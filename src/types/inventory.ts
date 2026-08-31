@@ -43,9 +43,16 @@ export const PRESET_FRACTIONS: FractionalRatio[] = [
   { label: '僅か (10%)', ratio: 0.1, description: '残り少・要補充' },
 ];
 
+export interface LinkedBarcode {
+  code: string;               // 紐付けバーコード / ITFコード / 箱コード / 別名JAN
+  unit?: string;              // 紐づく包装単位 (例: 箱, 箱(大), 袋, パック, 個)
+  multiplier?: number;        // 入数・換算倍率 (例: 100, 1000)
+  label?: string;             // 用途ラベル (例: 外箱ITFコード, 仕入先発注コード, ケースコード)
+}
+
 export interface ItemMaster {
   id: string;
-  code: string;               // 品目コード / JAN・EAN / QRコード
+  code: string;               // 品目コード / メインJAN / QRコード
   name: string;               // 品名 (例: 絶縁被覆付圧着端子 R2-4)
   spec: string;               // 規格・型番 (例: R2-4 / 0.5~2.0sq)
   category: string;           // カテゴリ (例: 配線・電気資材, 制御盤パーツ)
@@ -58,6 +65,8 @@ export interface ItemMaster {
   qrCode?: string;            // 自社QRコード文字列 (例: INV:v1:4901480000011)
   orderUrl?: string;          // 発注先Webリンク (モノタロウ、Amazon、ミスミ、電材商社EC等)
   unitConversions: UnitConversion[]; // 包装単位換算設定 (箱, 袋, パックなど複数)
+  linkedBarcodes?: LinkedBarcode[];  // 紐付けバーコード設定 (外箱コード・仕入先コード・別名コード)
+  aliasCodes?: string[];             // 互換用エイリアスコード一覧
   updatedAt: string;          // 最終更新日時 ISO
   note?: string;              // 備考・メモ
 }

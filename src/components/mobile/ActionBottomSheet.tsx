@@ -25,6 +25,7 @@ import {
   Image as ImageIcon,
   Plus,
   Trash2,
+  Link2,
 } from 'lucide-react';
 
 // ─── 電工向けプリセット（日本語） ───────────────────
@@ -87,6 +88,8 @@ export const ActionBottomSheet: React.FC = () => {
     closeBottomSheet,
     activeScannedItem,
     activeScannedCode,
+    activeMatchedBarcode,
+    linkBarcodeToItem,
     recordTransaction,
     settings,
     saveItem,
@@ -101,6 +104,14 @@ export const ActionBottomSheet: React.FC = () => {
   const [selectedUnit, setSelectedUnit] = useState<string>('個');
   const [note, setNote] = useState<string>('');
   const [isConfirmModalOpen, setIsConfirmModalOpen] = useState<boolean>(false);
+
+  // Unregistered Barcode Mode (新規登録 or 既存品目への紐付け)
+  const [unregisteredMode, setUnregisteredMode] = useState<'CREATE_NEW' | 'LINK_EXISTING'>('CREATE_NEW');
+  const [linkSearchQuery, setLinkSearchQuery] = useState('');
+  const [linkTargetItem, setLinkTargetItem] = useState<ItemMaster | null>(null);
+  const [linkUnit, setLinkUnit] = useState('箱');
+  const [linkMultiplier, setLinkMultiplier] = useState(100);
+  const [linkLabel, setLinkLabel] = useState('外箱コード');
 
   // New Item form
   const [newItemName, setNewItemName] = useState('');
@@ -128,6 +139,18 @@ export const ActionBottomSheet: React.FC = () => {
   const [visionSource, setVisionSource] = useState<'LEARNED_MEMORY' | 'GEMINI_AI' | 'IMAGE_MATCH' | 'LOCAL_OCR' | null>(null);
   const [rawOcrText, setRawOcrText] = useState<string>('');
 
+  const filteredExistingItemsForLink = items.filter((item) => {
+    if (!linkSearchQuery.trim()) return true;
+    const q = linkSearchQuery.toLowerCase().trim();
+    return (
+      item.name.toLowerCase().includes(q) ||
+      item.code.toLowerCase().includes(q) ||
+      (item.spec && item.spec.toLowerCase().includes(q)) ||
+      (item.supplier && item.supplier.toLowerCase().includes(q)) ||
+      (item.location && item.location.toLowerCase().includes(q))
+    );
+  });
+
   const fileInputRef = useRef<HTMLInputElement>(null);
   const updatePhotoRef = useRef<HTMLInputElement>(null);
 
@@ -154,11 +177,18 @@ export const ActionBottomSheet: React.FC = () => {
     if (isBottomSheetOpen) {
       if (activeScannedItem) {
         setCurrentStep('MENU');
-        setSelectedUnit(activeScannedItem.baseUnit || '個');
+        const defaultUnit = activeMatchedBarcode?.unit || activeScannedItem.baseUnit || '個';
+        setSelectedUnit(defaultUnit);
         setQuantity(1);
-        setNote('');
+        setNote(activeMatchedBarcode?.label ? `[${activeMatchedBarcode.label}]` : '');
       } else {
         setCurrentStep('NEW_ITEM');
+        setUnregisteredMode('CREATE_NEW');
+        setLinkSearchQuery('');
+        setLinkTargetItem(null);
+        setLinkUnit('箱');
+        setLinkMultiplier(100);
+        setLinkLabel('外箱コード');
         const cleanCode = activeScannedCode || '';
         const shortCode = cleanCode.length > 8 ? cleanCode.slice(-6) : cleanCode;
         setNewItemName(`新商品-${shortCode}`);
@@ -179,7 +209,20 @@ export const ActionBottomSheet: React.FC = () => {
         ]);
       }
     }
-  }, [isBottomSheetOpen, activeScannedItem, activeScannedCode]);
+  }, [isBottomSheetOpen, activeScannedItem, activeScannedCode, activeMatchedBarcode]);
+
+  const handleConfirmLinkToExisting = async () => {
+    if (!linkTargetItem || !activeScannedCode) return;
+    const ok = await linkBarcodeToItem(linkTargetItem.id, {
+      code: activeScannedCode,
+      unit: linkUnit,
+      multiplier: linkMultiplier,
+      label: linkLabel.trim() || undefined,
+    });
+    if (ok) {
+      closeBottomSheet();
+    }
+  };
 
   if (!isBottomSheetOpen) return null;
 
@@ -672,11 +715,196 @@ export const ActionBottomSheet: React.FC = () => {
             </div>
           )}
 
-          {/* ── STEP 4: 新規品目登録（AI視覚認識 & 自己学習フィードバック） ── */}
+          {/* ── STEP 4: 未登録バーコードの処理（新規品目登録 or 既存品目への箱コード紐付け） ── */}
           {currentStep === 'NEW_ITEM' && (
             <div className="space-y-4">
-              {/* AI 視覚認識 & 写真撮影カード */}
-              <div className="bg-gradient-to-r from-blue-950/90 to-indigo-950/90 p-4 rounded-3xl border border-blue-500/50 shadow-xl space-y-3">
+              {/* Top Mode Segmented Selector */}
+              <div className="flex items-center bg-slate-950 p-1.5 rounded-2xl border border-slate-800 gap-1.5 shadow-inner">
+                <button
+                  type="button"
+                  onClick={() => setUnregisteredMode('CREATE_NEW')}
+                  className={`flex-1 py-2.5 px-2 rounded-xl text-xs font-black transition flex items-center justify-center gap-1.5 ${
+                    unregisteredMode === 'CREATE_NEW'
+                      ? 'bg-blue-600 text-white shadow-md shadow-blue-950'
+                      : 'text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  <Sparkles className="w-4 h-4 text-amber-400" />
+                  <span>✨ 新規品目として登録</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setUnregisteredMode('LINK_EXISTING')}
+                  className={`flex-1 py-2.5 px-2 rounded-xl text-xs font-black transition flex items-center justify-center gap-1.5 ${
+                    unregisteredMode === 'LINK_EXISTING'
+                      ? 'bg-indigo-600 text-white shadow-md shadow-indigo-950'
+                      : 'text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  <Link2 className="w-4 h-4 text-indigo-300" />
+                  <span>🔗 既存品目に箱コード紐付け</span>
+                </button>
+              </div>
+
+              {/* ── MODE B: 既存品目に「箱コード・別名バーコード」として紐付け ── */}
+              {unregisteredMode === 'LINK_EXISTING' && (
+                <div className="bg-gradient-to-r from-indigo-950/90 to-slate-900/90 p-4 rounded-3xl border border-indigo-500/50 shadow-xl space-y-3.5">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Link2 className="w-5 h-5 text-indigo-400" />
+                      <span className="font-extrabold text-sm text-white">
+                        外箱コード・別名コード紐付け
+                      </span>
+                    </div>
+                    <span className="text-xs font-mono text-amber-300 bg-slate-950 px-2 py-0.5 rounded-lg border border-slate-700 font-bold">
+                      {activeScannedCode}
+                    </span>
+                  </div>
+
+                  <p className="text-xs text-slate-300 leading-relaxed">
+                    スキャンしたバーコード（{activeScannedCode}）を、既存の品目の「外箱コード・仕入先コード」として紐付けます。次回以降スキャン時に自動で対象品目・箱単位として認識されます。
+                  </p>
+
+                  {/* Search Existing Item */}
+                  <div className="space-y-1.5">
+                    <label className="block text-xs font-bold text-slate-300">
+                      紐付ける対象品目を検索・選択：
+                    </label>
+                    <div className="relative">
+                      <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
+                      <input
+                        type="text"
+                        value={linkSearchQuery}
+                        onChange={(e) => setLinkSearchQuery(e.target.value)}
+                        placeholder="品名・規格・メーカーで検索..."
+                        className="w-full pl-9 pr-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white text-xs font-bold focus:outline-none focus:border-indigo-500"
+                      />
+                    </div>
+
+                    {/* Filtered Item Candidates */}
+                    <div className="max-h-44 overflow-y-auto space-y-1.5 pt-1 pr-1">
+                      {filteredExistingItemsForLink.length > 0 ? (
+                        filteredExistingItemsForLink.slice(0, 6).map((item) => {
+                          const isSelected = linkTargetItem?.id === item.id;
+                          return (
+                            <button
+                              key={item.id}
+                              type="button"
+                              onClick={() => {
+                                setLinkTargetItem(item);
+                                const firstBox = item.unitConversions?.find((c) => c.unit.includes('箱')) || item.unitConversions?.[0];
+                                if (firstBox) {
+                                  setLinkUnit(firstBox.unit);
+                                  setLinkMultiplier(firstBox.multiplier);
+                                } else {
+                                  setLinkUnit('箱');
+                                  setLinkMultiplier(100);
+                                }
+                              }}
+                              className={`w-full text-left p-2.5 rounded-xl border transition flex items-center justify-between gap-2 ${
+                                isSelected
+                                  ? 'bg-indigo-950 border-indigo-400 shadow-md'
+                                  : 'bg-slate-950/70 border-slate-800 hover:bg-slate-800'
+                              }`}
+                            >
+                              <div className="min-w-0 flex-1">
+                                <div className="font-bold text-xs text-white truncate">{item.name}</div>
+                                <div className="text-[11px] text-amber-300 font-mono truncate">
+                                  {item.spec ? `[${item.spec}] ` : ''}{item.supplier ? `(${item.supplier})` : ''}
+                                </div>
+                              </div>
+                              <span className="text-[11px] font-bold text-emerald-400 shrink-0">
+                                在庫: {item.currentStock} {item.baseUnit}
+                              </span>
+                            </button>
+                          );
+                        })
+                      ) : (
+                        <div className="p-4 text-center text-xs text-slate-500">
+                          一致する品目がありません
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Selected Item Confirmation & Packaging Unit */}
+                  {linkTargetItem && (
+                    <div className="bg-slate-950 p-3 rounded-2xl border border-indigo-500/40 space-y-2.5 animate-in fade-in duration-150">
+                      <div className="text-xs border-b border-slate-800 pb-2">
+                        <span className="text-slate-400 block text-[10px]">選択された対象品目:</span>
+                        <strong className="text-white text-sm">{linkTargetItem.name}</strong>
+                        {linkTargetItem.spec && (
+                          <span className="text-amber-300 font-mono ml-2 font-bold">[{linkTargetItem.spec}]</span>
+                        )}
+                        {linkTargetItem.supplier && (
+                          <span className="text-slate-400 ml-1">({linkTargetItem.supplier})</span>
+                        )}
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-2 text-xs">
+                        <div>
+                          <label className="block text-[11px] font-bold text-slate-300 mb-1">
+                            スキャン時の単位
+                          </label>
+                          <select
+                            value={linkUnit}
+                            onChange={(e) => {
+                              setLinkUnit(e.target.value);
+                              const conv = linkTargetItem.unitConversions?.find((c) => c.unit === e.target.value);
+                              if (conv) setLinkMultiplier(conv.multiplier);
+                            }}
+                            className="w-full px-2.5 py-1.5 bg-slate-800 border border-slate-700 rounded-xl text-white font-bold text-xs"
+                          >
+                            {PRESET_UNITS.map((u) => (
+                              <option key={u} value={u}>{u}</option>
+                            ))}
+                          </select>
+                        </div>
+                        <div>
+                          <label className="block text-[11px] font-bold text-slate-300 mb-1">
+                            換算倍率 ({linkTargetItem.baseUnit})
+                          </label>
+                          <input
+                            type="number"
+                            min="1"
+                            value={linkMultiplier}
+                            onChange={(e) => setLinkMultiplier(Math.max(1, Number(e.target.value) || 1))}
+                            className="w-full px-2.5 py-1.5 bg-slate-800 border border-slate-700 rounded-xl text-white font-black text-xs text-center text-emerald-400"
+                          />
+                        </div>
+                      </div>
+
+                      <div>
+                        <label className="block text-[11px] font-bold text-slate-300 mb-1">
+                          用途・メモ (任意)
+                        </label>
+                        <input
+                          type="text"
+                          value={linkLabel}
+                          onChange={(e) => setLinkLabel(e.target.value)}
+                          placeholder="例: 外箱コード (1000本入), 仕入先発注JAN"
+                          className="w-full px-2.5 py-1.5 bg-slate-800 border border-slate-700 rounded-xl text-white text-xs"
+                        />
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={handleConfirmLinkToExisting}
+                        className="w-full py-3 bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-500 hover:to-blue-500 active:scale-95 text-white font-black text-xs rounded-xl shadow-lg shadow-indigo-950 transition flex items-center justify-center gap-1.5 mt-2"
+                      >
+                        <Link2 className="w-4 h-4" />
+                        <span>🔗 このバーコードを「{linkTargetItem.name}」に紐付けて保存</span>
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* ── MODE A: 新規品目登録 ── */}
+              {unregisteredMode === 'CREATE_NEW' && (
+                <>
+                  {/* AI 視覚認識 & 写真撮影カード */}
+                  <div className="bg-gradient-to-r from-blue-950/90 to-indigo-950/90 p-4 rounded-3xl border border-blue-500/50 shadow-xl space-y-3">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <Sparkles className="w-5 h-5 text-amber-400" />
@@ -925,8 +1153,10 @@ export const ActionBottomSheet: React.FC = () => {
                   </button>
                 </div>
               </div>
-            </div>
+            </>
           )}
+        </div>
+      )}
 
           {/* ── STEP 5: 初回入荷数量の確認（フル数字キーパッドで自由な数量を入力） ── */}
           {currentStep === 'NEW_ITEM_INBOUND' && (() => {

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { ItemMaster, UnitConversion, PRESET_UNITS } from '../../types/inventory';
+import { ItemMaster, UnitConversion, PRESET_UNITS, LinkedBarcode } from '../../types/inventory';
 import { useInventory } from '../../context/InventoryContext';
 import { AiVisionService } from '../../utils/geminiAiVision';
 import { VisualKnowledgeService } from '../../utils/visualKnowledgeService';
@@ -17,6 +17,7 @@ import {
   ExternalLink,
   Tag,
   Check,
+  Link2,
 } from 'lucide-react';
 
 interface ItemFormModalProps {
@@ -91,6 +92,13 @@ export const ItemFormModal: React.FC<ItemFormModalProps> = ({
     { unit: '袋', multiplier: 10 },
   ]);
 
+  // Linked Barcodes state (外箱コード・仕入先コード・別名バーコード)
+  const [linkedBarcodes, setLinkedBarcodes] = useState<LinkedBarcode[]>([]);
+  const [newLinkedCode, setNewLinkedCode] = useState('');
+  const [newLinkedUnit, setNewLinkedUnit] = useState('箱');
+  const [newLinkedMultiplier, setNewLinkedMultiplier] = useState(100);
+  const [newLinkLabel, setNewLinkLabel] = useState('外箱コード');
+
   // AI & OCR state
   const [isAiProcessing, setIsAiProcessing] = useState(false);
 
@@ -146,6 +154,7 @@ export const ItemFormModal: React.FC<ItemFormModalProps> = ({
       setConversions(
         initialItem.unitConversions?.filter((c) => c.unit !== initialItem.baseUnit) || []
       );
+      setLinkedBarcodes(initialItem.linkedBarcodes || []);
     } else {
       setCode('');
       setName('');
@@ -164,10 +173,33 @@ export const ItemFormModal: React.FC<ItemFormModalProps> = ({
         { unit: '箱', multiplier: 50 },
         { unit: '袋', multiplier: 10 },
       ]);
+      setLinkedBarcodes([]);
     }
   }, [initialItem, isOpen]);
 
   if (!isOpen) return null;
+
+  const handleAddLinkedBarcode = () => {
+    if (!newLinkedCode.trim()) return;
+    if (linkedBarcodes.some((l) => l.code === newLinkedCode.trim())) {
+      addToast('warning', 'このバーコードは既に追加されています');
+      return;
+    }
+    setLinkedBarcodes([
+      ...linkedBarcodes,
+      {
+        code: newLinkedCode.trim(),
+        unit: newLinkedUnit,
+        multiplier: newLinkedMultiplier,
+        label: newLinkLabel.trim() || undefined,
+      },
+    ]);
+    setNewLinkedCode('');
+  };
+
+  const handleRemoveLinkedBarcode = (index: number) => {
+    setLinkedBarcodes(linkedBarcodes.filter((_, i) => i !== index));
+  };
 
   const handleAddConversion = () => {
     setConversions([...conversions, { unit: '箱', multiplier: 20 }]);
@@ -248,6 +280,9 @@ export const ItemFormModal: React.FC<ItemFormModalProps> = ({
       { unit: baseUnit, multiplier: 1 },
     ];
 
+    const validLinkedBarcodes = linkedBarcodes.filter((b) => b.code.trim());
+    const aliasCodes = Array.from(new Set(validLinkedBarcodes.map((b) => b.code.trim())));
+
     const item: ItemMaster = {
       id: initialItem?.id || `item-${Date.now()}`,
       code: code.trim(),
@@ -263,6 +298,8 @@ export const ItemFormModal: React.FC<ItemFormModalProps> = ({
       qrCode: qrCode.trim() || `INV:v1:${code.trim()}`,
       orderUrl: orderUrl.trim() || undefined,
       unitConversions: allConversions,
+      linkedBarcodes: validLinkedBarcodes.length > 0 ? validLinkedBarcodes : undefined,
+      aliasCodes: aliasCodes.length > 0 ? aliasCodes : undefined,
       updatedAt: new Date().toISOString(),
       note: note.trim() || undefined,
     };
@@ -738,6 +775,103 @@ export const ItemFormModal: React.FC<ItemFormModalProps> = ({
                   </button>
                 </div>
               ))}
+            </div>
+          </div>
+
+          {/* 🔗 紐付けバーコード設定 (外箱コード・仕入先コード・別名JAN) */}
+          <div className="bg-indigo-950/40 p-4 rounded-2xl border border-indigo-500/40 space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Link2 className="w-4 h-4 text-indigo-400" />
+                <span className="font-extrabold text-slate-100 text-xs sm:text-sm">
+                  🔗 紐付けバーコード設定 (外箱コード・仕入先コード)
+                </span>
+              </div>
+              <span className="text-[11px] text-indigo-300 font-mono font-bold">
+                {linkedBarcodes.length} 件登録済
+              </span>
+            </div>
+            <p className="text-[11px] text-slate-400 leading-relaxed">
+              発注時や箱単位のバーコード（ITFコード・仕入先JAN）を登録すると、スキャン時に自動でこの品目および指定包装単位（箱・袋など）に切り替わります。
+            </p>
+
+            {/* Existing Linked Barcodes List */}
+            {linkedBarcodes.length > 0 && (
+              <div className="space-y-1.5">
+                {linkedBarcodes.map((lb, idx) => (
+                  <div
+                    key={idx}
+                    className="flex items-center justify-between gap-2 bg-slate-900/90 p-2.5 rounded-xl border border-slate-800 text-xs"
+                  >
+                    <div className="flex items-center gap-2 flex-1 min-w-0">
+                      <span className="font-mono font-black text-amber-300 bg-slate-950 px-2 py-0.5 rounded border border-slate-700">
+                        {lb.code}
+                      </span>
+                      <span className="px-2 py-0.5 rounded bg-blue-500/20 text-blue-300 font-bold border border-blue-500/30 shrink-0">
+                        {lb.unit || baseUnit} {lb.multiplier && lb.multiplier > 1 ? `(×${lb.multiplier})` : ''}
+                      </span>
+                      {lb.label && (
+                        <span className="text-[11px] text-slate-400 truncate">
+                          {lb.label}
+                        </span>
+                      )}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => handleRemoveLinkedBarcode(idx)}
+                      className="p-1 text-slate-500 hover:text-rose-400 rounded-lg hover:bg-slate-800 transition shrink-0"
+                      title="紐付け解除"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Add New Linked Barcode Row */}
+            <div className="bg-slate-900/80 p-2.5 rounded-xl border border-indigo-500/30 space-y-2">
+              <span className="text-[11px] font-bold text-indigo-300 block">
+                ＋ 新しい箱コード・別名コードを追加
+              </span>
+              <div className="grid grid-cols-1 sm:grid-cols-12 gap-2">
+                <input
+                  type="text"
+                  value={newLinkedCode}
+                  onChange={(e) => setNewLinkedCode(e.target.value)}
+                  placeholder="バーコード / ITFコード (例: 14944387...)"
+                  className="sm:col-span-5 px-2.5 py-1.5 bg-slate-800 border border-slate-700 rounded-lg text-white font-mono text-xs focus:outline-none focus:border-indigo-500"
+                />
+                <select
+                  value={newLinkedUnit}
+                  onChange={(e) => {
+                    setNewLinkedUnit(e.target.value);
+                    const conv = conversions.find((c) => c.unit === e.target.value);
+                    if (conv) setNewLinkedMultiplier(conv.multiplier);
+                  }}
+                  className="sm:col-span-3 px-2 py-1.5 bg-slate-800 border border-slate-700 rounded-lg text-white font-bold text-xs"
+                >
+                  {PRESET_UNITS.map((u) => (
+                    <option key={u} value={u}>{u}</option>
+                  ))}
+                </select>
+                <input
+                  type="text"
+                  value={newLinkLabel}
+                  onChange={(e) => setNewLinkLabel(e.target.value)}
+                  placeholder="用途 (例: 外箱コード)"
+                  className="sm:col-span-3 px-2 py-1.5 bg-slate-800 border border-slate-700 rounded-lg text-white text-xs"
+                />
+                <button
+                  type="button"
+                  onClick={handleAddLinkedBarcode}
+                  disabled={!newLinkedCode.trim()}
+                  className="sm:col-span-1 py-1.5 px-2 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 text-white font-bold text-xs rounded-lg transition flex items-center justify-center"
+                  title="追加"
+                >
+                  <Plus className="w-4 h-4" />
+                </button>
+              </div>
             </div>
           </div>
 

@@ -16,7 +16,6 @@ import confetti from 'canvas-confetti';
 
 export const BatchScanView: React.FC = () => {
   const {
-    items,
     batchScanList,
     addToBatch,
     updateBatchItem,
@@ -26,6 +25,7 @@ export const BatchScanView: React.FC = () => {
     commitBatchList,
     addToast,
     openBottomSheet,
+    findItemByCode,
   } = useInventory();
 
   const [showScanner, setShowScanner] = useState(true);
@@ -36,24 +36,27 @@ export const BatchScanView: React.FC = () => {
     0
   );
 
-  // 連続スキャンハンドラー（未登録時は自動で登録画面へ移行）
+  // 連続スキャンハンドラー（紐付け箱コード対応・未登録時は自動で登録画面へ移行）
   const handleContinuousScan = (code: string) => {
-    const found = items.find((i) => i.code === code || i.qrCode === code);
-    if (found) {
+    const { item, matchedBarcode } = findItemByCode(code);
+    if (item) {
+      const targetUnit = matchedBarcode?.unit || item.baseUnit;
+      const targetMultiplier = matchedBarcode?.multiplier || 1;
       const existing = batchScanList.find(
-        (bi) => bi.item.code === code && bi.actionType === defaultAction
+        (bi) => bi.item.id === item.id && bi.actionType === defaultAction && bi.selectedUnit === targetUnit
       );
-      const specTag = found.spec ? ` [${found.spec}]` : '';
+      const specTag = item.spec ? ` [${item.spec}]` : '';
+      const unitTag = targetMultiplier > 1 ? ` (${targetUnit})` : '';
       if (existing) {
         updateBatchItemQty(existing.id, existing.enteredQuantity + 1);
-        addToast('success', `⚡ ${found.name}${specTag} (+1 数量加算)`);
+        addToast('success', `⚡ ${item.name}${specTag}${unitTag} (+1 数量加算)`);
       } else {
-        addToBatch(found, defaultAction, found.baseUnit, 1, 1);
-        addToast('success', `✅ ${found.name}${specTag} をリストに追加 (+1)`);
+        addToBatch(item, defaultAction, targetUnit, targetMultiplier, 1);
+        addToast('success', `✅ ${item.name}${specTag}${unitTag} をリストに追加 (+1)`);
       }
     } else {
-      // 未登録品目の場合：即座に新規登録・AI認識シートを自動展開！
-      addToast('info', `🔍 未登録品目 (${code}) を検出しました。新規登録画面を開きます`);
+      // 未登録品目の場合：即座に新規登録・AI認識・紐付けシートを自動展開！
+      addToast('info', `🔍 未登録品目 (${code}) を検出しました。登録・紐付け画面を開きます`);
       openBottomSheet(code);
     }
   };

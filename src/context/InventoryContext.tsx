@@ -7,6 +7,7 @@ import {
   BatchScanItem,
   TabKey,
   PendingInbound,
+  LinkedBarcode,
 } from '../types/inventory';
 import { LocalDatabaseService } from '../services/db';
 import { cloudSync, FirebaseConfigOptions } from '../services/firebase';
@@ -47,6 +48,9 @@ export interface InventoryContextType {
   isBottomSheetOpen: boolean;
   activeScannedItem: ItemMaster | null;
   activeScannedCode: string | null;
+  activeMatchedBarcode?: LinkedBarcode;
+  findItemByCode: (code: string) => { item: ItemMaster | null; matchedBarcode?: LinkedBarcode };
+  linkBarcodeToItem: (itemId: string, linked: LinkedBarcode) => Promise<boolean>;
   openBottomSheet: (code: string) => Promise<void>;
   closeBottomSheet: () => void;
 
@@ -122,6 +126,7 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
   const [isBottomSheetOpen, setIsBottomSheetOpen] = useState(false);
   const [activeScannedItem, setActiveScannedItem] = useState<ItemMaster | null>(null);
   const [activeScannedCode, setActiveScannedCode] = useState<string | null>(null);
+  const [activeMatchedBarcode, setActiveMatchedBarcode] = useState<LinkedBarcode | undefined>(undefined);
 
   // Batch state
   const [batchScanList, setBatchScanList] = useState<BatchScanItem[]>([]);
@@ -368,18 +373,40 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
     addToast('info', 'ローカル単機モードに切り替えました');
   }, [addToast]);
 
+  // ─── Barcode Resolution & Linking ───
+  const findItemByCode = useCallback((code: string): { item: ItemMaster | null; matchedBarcode?: LinkedBarcode } => {
+    if (!code) return { item: null };
+    const cleanCode = code.trim();
+
+    for (const item of itemsRef.current) {
+      if (item.code === cleanCode || item.qrCode === cleanCode) {
+        return { item };
+      }
+      if (item.aliasCodes?.includes(cleanCode)) {
+        return { item };
+      }
+      const matchedLinked = item.linkedBarcodes?.find((b) => b.code === cleanCode);
+      if (matchedLinked) {
+        return { item, matchedBarcode: matchedLinked };
+      }
+    }
+    return { item: null };
+  }, []);
+
   // ─── Bottom Sheet ───
   const openBottomSheet = useCallback(async (code: string) => {
-    const found = itemsRef.current.find((i) => i.code === code || i.qrCode === code);
+    const { item, matchedBarcode } = findItemByCode(code);
     setActiveScannedCode(code);
-    setActiveScannedItem(found || null);
+    setActiveScannedItem(item || null);
+    setActiveMatchedBarcode(matchedBarcode);
     setIsBottomSheetOpen(true);
-  }, []);
+  }, [findItemByCode]);
 
   const closeBottomSheet = useCallback(() => {
     setIsBottomSheetOpen(false);
     setActiveScannedItem(null);
     setActiveScannedCode(null);
+    setActiveMatchedBarcode(undefined);
     setActiveTab(settings.viewMode === 'PC_ADMIN' ? 'ITEMS' : 'SCAN');
   }, [settings.viewMode]);
 
@@ -454,6 +481,47 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
       addToast('error', '削除に失敗しました');
     }
   }, [addToast]);
+
+  const linkBarcodeToItem = useCallback(async (itemId: string, linked: LinkedBarcode): Promise<boolean> => {
+    try {
+      const target = itemsRef.current.find((i) => i.id === itemId);
+      if (!target) {
+        addToast('error', '紐付け対象の品目が見つかりませんでした');
+        return false;
+      }
+
+      const currentLinks = target.linkedBarcodes || [];
+      const currentAliases = target.aliasCodes || [];
+      const cleanCode = linked.code.trim();
+
+      if (
+        target.code === cleanCode ||
+        target.qrCode === cleanCode ||
+        currentLinks.some((l) => l.code === cleanCode)
+      ) {
+        addToast('info', `バーコード「${cleanCode}」は既に登録・紐付け済みです`);
+        return true;
+      }
+
+      const updatedLinks = [...currentLinks, { ...linked, code: cleanCode }];
+      const updatedAliases = Array.from(new Set([...currentAliases, cleanCode]));
+
+      const updatedItem: ItemMaster = {
+        ...target,
+        linkedBarcodes: updatedLinks,
+        aliasCodes: updatedAliases,
+        updatedAt: new Date().toISOString(),
+      };
+
+      await saveItem(updatedItem);
+      addToast('success', `🔗 バーコード「${cleanCode}」を「${target.name}」(${linked.unit || target.baseUnit}) に紐付けました`);
+      return true;
+    } catch (err) {
+      console.error('Failed to link barcode:', err);
+      addToast('error', 'バーコードの紐付けに失敗しました');
+      return false;
+    }
+  }, [saveItem, addToast]);
 
   // ─── Transaction Recording ───
   const recordTransaction = useCallback(async (
@@ -777,7 +845,8 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
       pendingSyncCount: pendingCount, pendingCount, isSyncing,
       triggerManualSync: triggerSync, triggerSync, refreshPendingCount,
       saveFirebaseConfig, clearFirebaseConfig,
-      isBottomSheetOpen, activeScannedItem, activeScannedCode,
+      isBottomSheetOpen, activeScannedItem, activeScannedCode, activeMatchedBarcode,
+      findItemByCode, linkBarcodeToItem,
       openBottomSheet, closeBottomSheet,
       batchScanList, addToBatch, updateBatchItem, updateBatchItemQty,
       removeFromBatch, removeBatchItem: removeFromBatch,
