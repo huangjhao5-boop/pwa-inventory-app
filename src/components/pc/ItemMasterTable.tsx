@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useInventory } from '../../context/InventoryContext';
 import { ItemMaster } from '../../types/inventory';
 import { ItemFormModal } from './ItemFormModal';
@@ -15,20 +15,27 @@ import {
   Download,
   Upload,
   AlertTriangle,
-  Building2,
   Box,
-  PlusCircle,
-  MinusCircle,
   ShoppingCart,
   CheckSquare,
   Square,
-  ExternalLink,
   GraduationCap,
+  LayoutGrid,
+  Table,
+  Layers,
+  ChevronRight,
+  ZoomIn,
+  X,
+  ArrowRight,
 } from 'lucide-react';
 
 export const ItemMasterTable: React.FC = () => {
   const { items, deleteItem, openQRGenerator, addToast, settings, recordTransaction, setActiveTab } = useInventory();
   const isFieldMode = settings.viewMode === 'FIELD';
+
+  // View mode switcher: BOX_EXPLORER (保管箱ビジュアル), GRID (データテーブル), CARDS (部品カード)
+  const [viewMode, setViewMode] = useState<'BOX_EXPLORER' | 'GRID' | 'CARDS'>('BOX_EXPLORER');
+  const [activeBoxFilter, setActiveBoxFilter] = useState<string | null>(null);
 
   // Filters
   const [searchQuery, setSearchQuery] = useState('');
@@ -47,10 +54,60 @@ export const ItemMasterTable: React.FC = () => {
   const [isCsvExportOpen, setIsCsvExportOpen] = useState(false);
   const [isPurchaseOrderOpen, setIsPurchaseOrderOpen] = useState(false);
 
+  // Photo Zoom Lightbox
+  const [zoomedImage, setZoomedImage] = useState<string | null>(null);
+
   // Extract unique filter options
   const categories = ['ALL', ...Array.from(new Set(items.map((i) => i.category || '未分類')))];
   const suppliers = ['ALL', ...Array.from(new Set(items.map((i) => i.supplier).filter(Boolean) as string[]))];
   const locations = ['ALL', ...Array.from(new Set(items.map((i) => i.location).filter(Boolean)))];
+
+  // Group items by storage box for the Visual Box Map
+  const boxGroups = useMemo(() => {
+    const map = new Map<string, ItemMaster[]>();
+    items.forEach((item) => {
+      const loc = item.location || '未分類保管箱';
+      if (!map.has(loc)) map.set(loc, []);
+      map.get(loc)!.push(item);
+    });
+
+    return Array.from(map.entries()).map(([boxName, boxItems]) => {
+      const lowStockInBox = boxItems.filter((i) => i.currentStock <= i.safetyStock).length;
+      const totalUnits = boxItems.reduce((acc, curr) => acc + curr.currentStock, 0);
+      const sampleImages = boxItems.map((i) => i.imageUrl).filter(Boolean) as string[];
+
+      // Determine theme color based on box name
+      let themeColor = 'from-blue-600/20 to-indigo-950/40 border-blue-500/40 text-blue-400';
+      let iconColor = 'text-blue-400 bg-blue-500/20 border-blue-500/30';
+      if (boxName.includes('端子')) {
+        themeColor = 'from-emerald-600/20 to-teal-950/40 border-emerald-500/40 text-emerald-400';
+        iconColor = 'text-emerald-400 bg-emerald-500/20 border-emerald-500/30';
+      } else if (boxName.includes('結束バンド') || boxName.includes('インシュロック')) {
+        themeColor = 'from-amber-600/20 to-yellow-950/40 border-amber-500/40 text-amber-400';
+        iconColor = 'text-amber-400 bg-amber-500/20 border-amber-500/30';
+      } else if (boxName.includes('ネジ') || boxName.includes('ボルト') || boxName.includes('締結')) {
+        themeColor = 'from-cyan-600/20 to-blue-950/40 border-cyan-500/40 text-cyan-400';
+        iconColor = 'text-cyan-400 bg-cyan-500/20 border-cyan-500/30';
+      } else if (boxName.includes('ヒューズ')) {
+        themeColor = 'from-rose-600/20 to-red-950/40 border-rose-500/40 text-rose-400';
+        iconColor = 'text-rose-400 bg-rose-500/20 border-rose-500/30';
+      } else if (boxName.includes('盤') || boxName.includes('制御')) {
+        themeColor = 'from-purple-600/20 to-violet-950/40 border-purple-500/40 text-purple-400';
+        iconColor = 'text-purple-400 bg-purple-500/20 border-purple-500/30';
+      }
+
+      return {
+        boxName,
+        boxItems,
+        itemCount: boxItems.length,
+        lowStockCount: lowStockInBox,
+        totalUnits,
+        sampleImages,
+        themeColor,
+        iconColor,
+      };
+    });
+  }, [items]);
 
   // Filter items
   const filteredItems = items.filter((item) => {
@@ -61,11 +118,15 @@ export const ItemMasterTable: React.FC = () => {
       item.name.toLowerCase().includes(q) ||
       (item.supplier && item.supplier.toLowerCase().includes(q)) ||
       (item.spec && item.spec.toLowerCase().includes(q)) ||
-      (item.location && item.location.toLowerCase().includes(q));
+      (item.location && item.location.toLowerCase().includes(q)) ||
+      (item.aliasCodes && item.aliasCodes.some((ac) => ac.toLowerCase().includes(q)));
 
     const matchCat = selectedCategory === 'ALL' || item.category === selectedCategory;
     const matchSup = selectedSupplier === 'ALL' || item.supplier === selectedSupplier;
-    const matchLoc = selectedLocation === 'ALL' || item.location === selectedLocation;
+    const matchLoc =
+      activeBoxFilter !== null
+        ? item.location === activeBoxFilter
+        : selectedLocation === 'ALL' || item.location === selectedLocation;
 
     let matchStock = true;
     if (stockStatusFilter === 'LOW') {
@@ -138,7 +199,11 @@ export const ItemMasterTable: React.FC = () => {
             </span>
             <div>
               <h2 className="font-extrabold text-lg sm:text-xl text-white">
-                {isFieldMode ? '🔍 現場在庫検索・確認 (Cards)' : '📦 品目マスタ管理 (Data Grid)'}
+                {viewMode === 'BOX_EXPLORER'
+                  ? '📦 保管ボックス・棚番ビジュアルマップ'
+                  : viewMode === 'GRID'
+                  ? '📋 品目マスタ管理 (データグリッド)'
+                  : '🎴 部品カード表示'}
               </h2>
               <p className="text-xs text-slate-400">
                 登録数: {items.length} 件 (表示中: {filteredItems.length} 件) / 要発注: <strong className="text-amber-400 font-bold">{lowStockCount}</strong> 件
@@ -205,47 +270,109 @@ export const ItemMasterTable: React.FC = () => {
         </div>
       </div>
 
-      {/* Filter & Search Bar with Multi-Column Selectors */}
+      {/* Filter & View Switcher Bar */}
       <div className="bg-slate-900/90 border border-slate-800 rounded-3xl p-4 shadow-lg space-y-3">
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5">
+        <div className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-3">
           {/* Search Input */}
-          <div className="relative col-span-1 sm:col-span-2">
+          <div className="relative flex-1">
             <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
             <input
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="品目コード、品名、メーカー、ボックス名、型番で検索..."
-              className="w-full pl-10 pr-4 py-2 bg-slate-950 border border-slate-800 rounded-2xl text-xs sm:text-sm text-white focus:outline-none focus:border-blue-500 placeholder-slate-500 font-medium"
+              placeholder="品目コード、品名、型番、メーカー、保管ボックス名でクイック検索..."
+              className="w-full pl-10 pr-4 py-2.5 bg-slate-950 border border-slate-800 rounded-2xl text-xs sm:text-sm text-white focus:outline-none focus:border-blue-500 placeholder-slate-500 font-medium"
             />
           </div>
 
-          {/* Supplier Filter */}
-          <div className="flex items-center gap-1 bg-slate-950 px-2.5 py-1.5 rounded-2xl border border-slate-800">
-            <Building2 className="w-3.5 h-3.5 text-blue-400 shrink-0" />
-            <select
-              value={selectedSupplier}
-              onChange={(e) => setSelectedSupplier(e.target.value)}
-              className="w-full bg-transparent text-xs font-bold text-slate-300 focus:outline-none"
+          {/* View Mode Switcher (Box View vs Data Grid vs Cards) */}
+          <div className="flex items-center bg-slate-950 p-1 rounded-2xl border border-slate-800 shrink-0 gap-1">
+            <button
+              onClick={() => {
+                setViewMode('BOX_EXPLORER');
+              }}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition ${
+                viewMode === 'BOX_EXPLORER'
+                  ? 'bg-indigo-600 text-white shadow-md shadow-indigo-950'
+                  : 'text-slate-400 hover:text-slate-200'
+              }`}
             >
-              <option value="ALL" className="bg-slate-900 text-white">全メーカー・仕入先</option>
-              {suppliers.filter((s) => s !== 'ALL').map((s) => (
-                <option key={s} value={s} className="bg-slate-900 text-white">{s}</option>
+              <Layers className="w-3.5 h-3.5" />
+              <span>📦 保管箱ビジュアル</span>
+            </button>
+            <button
+              onClick={() => {
+                setViewMode('GRID');
+                setActiveBoxFilter(null);
+              }}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition ${
+                viewMode === 'GRID'
+                  ? 'bg-blue-600 text-white shadow-md shadow-blue-950'
+                  : 'text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              <Table className="w-3.5 h-3.5" />
+              <span>📋 全品目テーブル</span>
+            </button>
+            <button
+              onClick={() => {
+                setViewMode('CARDS');
+                setActiveBoxFilter(null);
+              }}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition ${
+                viewMode === 'CARDS'
+                  ? 'bg-emerald-600 text-white shadow-md shadow-emerald-950'
+                  : 'text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              <LayoutGrid className="w-3.5 h-3.5" />
+              <span>🎴 部品カード</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Dropdown Filters */}
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 pt-1 border-t border-slate-800/80">
+          <div>
+            <select
+              value={selectedCategory}
+              onChange={(e) => setSelectedCategory(e.target.value)}
+              className="w-full px-3 py-1.5 bg-slate-950 border border-slate-800 rounded-xl text-xs text-slate-300 font-semibold focus:outline-none focus:border-blue-500"
+            >
+              {categories.map((c) => (
+                <option key={c} value={c}>
+                  カテゴリ: {c === 'ALL' ? 'すべて' : c}
+                </option>
               ))}
             </select>
           </div>
-
-          {/* Location / Box Filter */}
-          <div className="flex items-center gap-1 bg-slate-950 px-2.5 py-1.5 rounded-2xl border border-slate-800">
-            <Box className="w-3.5 h-3.5 text-blue-400 shrink-0" />
+          <div>
+            <select
+              value={selectedSupplier}
+              onChange={(e) => setSelectedSupplier(e.target.value)}
+              className="w-full px-3 py-1.5 bg-slate-950 border border-slate-800 rounded-xl text-xs text-slate-300 font-semibold focus:outline-none focus:border-blue-500"
+            >
+              {suppliers.map((s) => (
+                <option key={s} value={s}>
+                  メーカー: {s === 'ALL' ? 'すべて' : s}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
             <select
               value={selectedLocation}
-              onChange={(e) => setSelectedLocation(e.target.value)}
-              className="w-full bg-transparent text-xs font-bold text-slate-300 focus:outline-none"
+              onChange={(e) => {
+                setSelectedLocation(e.target.value);
+                if (e.target.value !== 'ALL') setActiveBoxFilter(e.target.value);
+                else setActiveBoxFilter(null);
+              }}
+              className="w-full px-3 py-1.5 bg-slate-950 border border-slate-800 rounded-xl text-xs text-slate-300 font-semibold focus:outline-none focus:border-blue-500"
             >
-              <option value="ALL" className="bg-slate-900 text-white">全保管ボックス</option>
-              {locations.filter((l) => l !== 'ALL').map((l) => (
-                <option key={l} value={l} className="bg-slate-900 text-white">{l}</option>
+              {locations.map((l) => (
+                <option key={l} value={l}>
+                  保管場所: {l === 'ALL' ? 'すべての保管箱' : l}
+                </option>
               ))}
             </select>
           </div>
@@ -253,7 +380,6 @@ export const ItemMasterTable: React.FC = () => {
 
         {/* Status Filters & Category Pills */}
         <div className="flex flex-wrap items-center justify-between gap-2 pt-1 border-t border-slate-800/80">
-          {/* Category Pills */}
           <div className="flex items-center gap-1.5 overflow-x-auto pb-1 max-w-2xl scrollbar-none">
             {categories.map((cat) => {
               const isSelected = selectedCategory === cat;
@@ -273,7 +399,6 @@ export const ItemMasterTable: React.FC = () => {
             })}
           </div>
 
-          {/* Stock Status Buttons */}
           <div className="flex items-center gap-1 bg-slate-950 p-1 rounded-xl border border-slate-800">
             <button
               onClick={() => setStockStatusFilter('ALL')}
@@ -308,7 +433,7 @@ export const ItemMasterTable: React.FC = () => {
         </div>
       </div>
 
-      {/* Floating Order Bar (When items selected) */}
+      {/* Floating Order Bar */}
       {selectedOrderIds.length > 0 && (
         <div className="sticky top-20 z-20 bg-amber-950/90 backdrop-blur-md p-3 rounded-2xl border border-amber-700/60 shadow-xl flex items-center justify-between gap-3 animate-in fade-in slide-in-from-top-2">
           <div className="flex items-center gap-2">
@@ -319,348 +444,388 @@ export const ItemMasterTable: React.FC = () => {
           </div>
           <div className="flex items-center gap-2">
             <button
-              onClick={() => setSelectedOrderIds([])}
-              className="px-3 py-1.5 bg-slate-900/80 hover:bg-slate-900 text-slate-300 text-xs font-bold rounded-xl transition"
-            >
-              選択解除
-            </button>
-            <button
               onClick={() => setIsPurchaseOrderOpen(true)}
               className="px-4 py-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs rounded-xl shadow transition"
             >
-              発注書を開く →
+              発注見積書を生成
+            </button>
+            <button
+              onClick={() => setSelectedOrderIds([])}
+              className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs rounded-xl font-bold transition"
+            >
+              選択解除
             </button>
           </div>
         </div>
       )}
 
-      {/* VIEW A: 現場モード（タッチカード） */}
-      {isFieldMode ? (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-          {filteredItems.length === 0 ? (
-            <div className="col-span-full py-12 text-center text-slate-500 font-bold">
-              該当する品目はありません
-            </div>
-          ) : (
-            filteredItems.map((item) => {
-              const isLow = item.currentStock <= item.safetyStock;
-              const isSelectedForOrder = selectedOrderIds.includes(item.id);
-              return (
-                <div
-                  key={item.id}
-                  className={`bg-slate-900 border rounded-3xl p-4 shadow-lg flex flex-col justify-between gap-3 transition ${
-                    isSelectedForOrder ? 'border-amber-500/80 ring-1 ring-amber-500/50' : 'border-slate-800'
-                  }`}
+      {/* ───────────────────────────────────────────────────────────── */}
+      {/* 📦 VIEW 1: 保管ボックス・棚番ビジュアルマップ (Visual Box Explorer) */}
+      {/* ───────────────────────────────────────────────────────────── */}
+      {viewMode === 'BOX_EXPLORER' && (
+        <div className="space-y-4">
+          {/* Breadcrumb Navigation when a box is opened */}
+          {activeBoxFilter && (
+            <div className="bg-slate-900 border border-indigo-500/40 rounded-2xl p-3 flex items-center justify-between gap-3 shadow-md animate-in fade-in">
+              <div className="flex items-center gap-2 text-xs sm:text-sm">
+                <button
+                  onClick={() => setActiveBoxFilter(null)}
+                  className="font-bold text-indigo-400 hover:underline flex items-center gap-1"
                 >
-                  <div>
-                    {/* Top Row: Code & Box Name */}
-                    <div className="flex items-center justify-between gap-2 mb-1.5">
-                      <div className="flex items-center gap-2">
+                  <Box className="w-4 h-4" />
+                  <span>すべての保管箱</span>
+                </button>
+                <ChevronRight className="w-4 h-4 text-slate-600" />
+                <span className="font-black text-white bg-indigo-950 px-2.5 py-1 rounded-xl border border-indigo-700">
+                  {activeBoxFilter} ({filteredItems.length} 品目)
+                </span>
+              </div>
+              <button
+                onClick={() => setActiveBoxFilter(null)}
+                className="flex items-center gap-1 px-3 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold rounded-xl border border-slate-700 transition"
+              >
+                <X className="w-3.5 h-3.5" />
+                <span>すべての箱を表示</span>
+              </button>
+            </div>
+          )}
+
+          {/* Box Overview Grid (Shown when no specific box is locked, or as quick drawer) */}
+          {!activeBoxFilter && (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+              {boxGroups.map((box) => (
+                <div
+                  key={box.boxName}
+                  onClick={() => setActiveBoxFilter(box.boxName)}
+                  className={`bg-gradient-to-br ${box.themeColor} rounded-3xl p-5 border shadow-xl hover:scale-[1.02] hover:shadow-2xl transition cursor-pointer flex flex-col justify-between space-y-4 group`}
+                >
+                  {/* Top: Icon & Box Title */}
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex items-center gap-3">
+                      <div className={`p-3 rounded-2xl border shadow-inner ${box.iconColor} group-hover:scale-110 transition duration-200`}>
+                        <Box className="w-6 h-6 stroke-[2.5]" />
+                      </div>
+                      <div>
+                        <h3 className="font-black text-base sm:text-lg text-white group-hover:text-amber-300 transition">
+                          {box.boxName}
+                        </h3>
+                        <p className="text-xs text-slate-400 font-medium mt-0.5">
+                          {box.itemCount} 品目格納 / 総計: <strong className="text-emerald-400">{box.totalUnits}</strong>
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Stock status badge */}
+                    {box.lowStockCount > 0 ? (
+                      <span className="px-2.5 py-1 rounded-full text-[10px] font-black bg-rose-500/20 text-rose-300 border border-rose-500/40 animate-pulse shrink-0">
+                        ⚠️ 要発注: {box.lowStockCount}
+                      </span>
+                    ) : (
+                      <span className="px-2.5 py-1 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 shrink-0">
+                        ✅ 健全
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Middle: Visual Sample Images Mosaic */}
+                  <div className="bg-slate-950/70 p-2.5 rounded-2xl border border-slate-800/80 flex items-center gap-2 overflow-x-auto scrollbar-none min-h-[58px]">
+                    {box.sampleImages.length > 0 ? (
+                      box.sampleImages.slice(0, 4).map((imgUrl, i) => (
+                        <img
+                          key={i}
+                          src={imgUrl}
+                          alt="部品写真"
+                          className="w-11 h-11 object-cover rounded-xl border border-slate-700 bg-black shrink-0"
+                        />
+                      ))
+                    ) : (
+                      <span className="text-[11px] text-slate-500 px-2 py-1">
+                        写真未登録の品目が格納されています
+                      </span>
+                    )}
+                    {box.sampleImages.length > 4 && (
+                      <span className="text-[10px] font-bold text-slate-400 bg-slate-800 px-2 py-1 rounded-lg shrink-0">
+                        +{box.sampleImages.length - 4}
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Bottom: Open Action Button */}
+                  <div className="flex items-center justify-between pt-1 border-t border-slate-800/60 text-xs font-extrabold text-indigo-300 group-hover:text-white transition">
+                    <span>この保管箱を開いて確認</span>
+                    <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition" />
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Items inside the selected box or search filter */}
+          {activeBoxFilter && (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5">
+              {filteredItems.length > 0 ? (
+                filteredItems.map((item) => {
+                  const isLow = item.currentStock <= item.safetyStock;
+                  const isSelectedForOrder = selectedOrderIds.includes(item.id);
+
+                  return (
+                    <div
+                      key={item.id}
+                      className={`bg-slate-900 border rounded-3xl p-4 shadow-lg flex flex-col justify-between space-y-3 transition hover:border-slate-600 ${
+                        isLow ? 'border-amber-500/50 bg-amber-950/10' : 'border-slate-800'
+                      }`}
+                    >
+                      <div className="flex items-start gap-3">
+                        {item.imageUrl ? (
+                          <div
+                            onClick={() => setZoomedImage(item.imageUrl || null)}
+                            className="relative w-14 h-14 rounded-2xl overflow-hidden border border-slate-700 bg-black shrink-0 cursor-pointer group/img"
+                            title="クリックで拡大表示"
+                          >
+                            <img src={item.imageUrl} alt={item.name} className="w-full h-full object-cover group-hover/img:scale-110 transition" />
+                            <div className="absolute inset-0 bg-black/40 opacity-0 group-hover/img:opacity-100 flex items-center justify-center transition">
+                              <ZoomIn className="w-4 h-4 text-white" />
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="w-14 h-14 rounded-2xl bg-slate-800 border border-slate-700 flex items-center justify-center text-slate-500 text-xs font-bold shrink-0">
+                            No Photo
+                          </div>
+                        )}
+
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-1.5">
+                            <span className="font-black text-sm text-white truncate">{item.name}</span>
+                          </div>
+                          {item.spec && (
+                            <span className="px-2 py-0.5 rounded-lg bg-amber-500/20 text-amber-300 font-mono font-bold text-xs inline-block mt-0.5 truncate max-w-full">
+                              規格: {item.spec}
+                            </span>
+                          )}
+                          <div className="text-[11px] text-slate-400 mt-1 truncate">
+                            {item.supplier || 'メーカー未設定'} | <span className="text-blue-300">{item.location}</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Stock Info & Stepper */}
+                      <div className="bg-slate-950 p-2.5 rounded-2xl border border-slate-800 flex items-center justify-between">
+                        <div>
+                          <span className="text-[10px] text-slate-500 font-semibold block">現在庫数</span>
+                          <span className={`text-xl font-black ${isLow ? 'text-rose-400' : 'text-emerald-400'}`}>
+                            {item.currentStock}
+                            <span className="text-xs font-bold text-slate-300 ml-1">{item.baseUnit}</span>
+                          </span>
+                        </div>
+
+                        {/* Quick Stepper Buttons */}
+                        <div className="flex items-center gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => handleQuickAdjust(item, -1)}
+                            disabled={item.currentStock <= 0}
+                            className="w-8 h-8 rounded-xl bg-slate-800 hover:bg-rose-600 disabled:opacity-40 text-white font-black text-sm flex items-center justify-center transition active:scale-95 shadow"
+                            title="-1 減算"
+                          >
+                            −
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleQuickAdjust(item, 1)}
+                            className="w-8 h-8 rounded-xl bg-slate-800 hover:bg-emerald-600 text-white font-black text-sm flex items-center justify-center transition active:scale-95 shadow"
+                            title="+1 加算"
+                          >
+                            ＋
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Card Footer Actions */}
+                      <div className="flex items-center justify-between pt-1 border-t border-slate-800/80 text-xs">
                         <button
                           type="button"
                           onClick={() => toggleSelectOneOrder(item.id)}
-                          className="text-slate-400 hover:text-white"
-                        >
-                          {isSelectedForOrder ? (
-                            <CheckSquare className="w-4 h-4 text-amber-400" />
-                          ) : (
-                            <Square className="w-4 h-4 text-slate-500" />
-                          )}
-                        </button>
-                        <span className="font-mono text-xs font-bold text-slate-400 truncate">
-                          {item.code}
-                        </span>
-                      </div>
-                      <span className="px-2.5 py-1 bg-blue-950/80 border border-blue-800/80 text-blue-300 rounded-xl text-xs font-extrabold flex items-center gap-1 shrink-0">
-                        <Box className="w-3 h-3 text-blue-400" />
-                        <span>{item.location}</span>
-                      </span>
-                    </div>
-
-                    {/* Name */}
-                    <h3 className="font-black text-base text-white leading-snug">
-                      {item.name}
-                    </h3>
-                    <div className="flex flex-wrap items-center gap-2 mt-1 text-xs text-slate-400">
-                      {item.supplier && (
-                        <span className="text-blue-300 font-bold">🏢 {item.supplier}</span>
-                      )}
-                      {item.spec && <span>{item.spec}</span>}
-                      {item.orderUrl && (
-                        <a
-                          href={item.orderUrl}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-[11px] font-bold text-cyan-400 hover:underline flex items-center gap-0.5 bg-cyan-950/60 px-1.5 py-0.5 rounded border border-cyan-800"
-                        >
-                          <ExternalLink className="w-2.5 h-2.5" />
-                          <span>発注先</span>
-                        </a>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Stock Level & Quick Adjust */}
-                  <div className="pt-2 border-t border-slate-800 flex items-center justify-between">
-                    <div>
-                      <span className="text-[10px] text-slate-500 block font-semibold">現在庫</span>
-                      <div className="flex items-baseline gap-1">
-                        <span
-                          className={`text-2xl font-black ${
-                            isLow ? 'text-amber-400' : 'text-emerald-400'
+                          className={`flex items-center gap-1 px-2.5 py-1 rounded-lg font-bold transition ${
+                            isSelectedForOrder
+                              ? 'bg-amber-500 text-slate-950'
+                              : 'text-slate-400 hover:text-amber-400 bg-slate-800'
                           }`}
                         >
-                          {item.currentStock}
-                        </span>
-                        <span className="text-xs text-slate-400 font-bold">{item.baseUnit}</span>
+                          <ShoppingCart className="w-3.5 h-3.5" />
+                          <span>{isSelectedForOrder ? '発注対象中' : '発注に追加'}</span>
+                        </button>
+
+                        <div className="flex items-center gap-1">
+                          <button
+                            type="button"
+                            onClick={() => openQRGenerator(item)}
+                            className="p-1.5 text-slate-400 hover:text-blue-400 hover:bg-slate-800 rounded-lg transition"
+                            title="QRコード表示"
+                          >
+                            <QrCode className="w-4 h-4" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleEdit(item)}
+                            className="p-1.5 text-slate-400 hover:text-indigo-400 hover:bg-slate-800 rounded-lg transition"
+                            title="編集"
+                          >
+                            <Edit2 className="w-4 h-4" />
+                          </button>
+                        </div>
                       </div>
                     </div>
-
-                    {/* Quick Stepper + QR button */}
-                    <div className="flex items-center gap-1.5">
-                      <button
-                        onClick={() => handleQuickAdjust(item, -1)}
-                        className="p-2 text-rose-400 hover:bg-rose-950/60 rounded-xl border border-slate-800 active:scale-95"
-                        title="出庫 -1"
-                      >
-                        <MinusCircle className="w-5 h-5" />
-                      </button>
-                      <button
-                        onClick={() => handleQuickAdjust(item, 1)}
-                        className="p-2 text-emerald-400 hover:bg-emerald-950/60 rounded-xl border border-slate-800 active:scale-95"
-                        title="入荷 +1"
-                      >
-                        <PlusCircle className="w-5 h-5" />
-                      </button>
-                      <button
-                        onClick={() => openQRGenerator(item)}
-                        className="p-2 text-slate-400 hover:text-white rounded-xl border border-slate-800 hover:bg-slate-800"
-                        title="QRコード表示"
-                      >
-                        <QrCode className="w-4 h-4" />
-                      </button>
-                    </div>
-                  </div>
+                  );
+                })
+              ) : (
+                <div className="col-span-full py-12 text-center text-slate-500 text-xs bg-slate-900/50 rounded-3xl border border-slate-800">
+                  この保管箱には一致する品目がありません。
                 </div>
-              );
-            })
+              )}
+            </div>
           )}
         </div>
-      ) : (
-        /* VIEW B: PC管理モード（データグリッド） */
+      )}
+
+      {/* ───────────────────────────────────────────────────────────── */}
+      {/* 📋 VIEW 2: 全品目一覧データテーブル (Dense Data Grid) */}
+      {/* ───────────────────────────────────────────────────────────── */}
+      {viewMode === 'GRID' && (
         <div className="bg-slate-900 border border-slate-800 rounded-3xl overflow-hidden shadow-xl">
           <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs sm:text-sm text-slate-300">
-              <thead className="bg-slate-950/80 text-slate-400 font-semibold border-b border-slate-800">
-                <tr>
-                  <th className="py-3.5 px-3 text-center w-10">
-                    <button
-                      type="button"
-                      onClick={toggleSelectAllOrders}
-                      className="text-slate-400 hover:text-white"
-                      title="全選択/解除"
-                    >
-                      {selectedOrderIds.length > 0 && selectedOrderIds.length === filteredItems.length ? (
+            <table className="w-full text-left text-xs border-collapse">
+              <thead>
+                <tr className="border-b border-slate-800 bg-slate-950/80 text-slate-400 font-bold uppercase tracking-wider">
+                  <th className="py-3 px-3 w-10 text-center">
+                    <button onClick={toggleSelectAllOrders} title="全選択/解除">
+                      {selectedOrderIds.length === filteredItems.length && filteredItems.length > 0 ? (
                         <CheckSquare className="w-4 h-4 text-amber-400" />
                       ) : (
                         <Square className="w-4 h-4 text-slate-500" />
                       )}
                     </button>
                   </th>
-                  <th className="py-3.5 px-4">品目コード / 写真</th>
-                  <th className="py-3.5 px-4">品名・規格型番</th>
-                  <th className="py-3.5 px-4">メーカー / 分類</th>
-                  <th className="py-3.5 px-4 text-right">現在庫数</th>
-                  <th className="py-3.5 px-4 text-right">安全在庫</th>
-                  <th className="py-3.5 px-4">保管ボックス名</th>
-                  <th className="py-3.5 px-4">包装換算単位</th>
-                  <th className="py-3.5 px-4 text-center">発注リンク</th>
-                  <th className="py-3.5 px-4 text-center">操作</th>
+                  <th className="py-3 px-3">写真</th>
+                  <th className="py-3 px-3">品目コード / JAN</th>
+                  <th className="py-3 px-3">品名</th>
+                  <th className="py-3 px-3">規格・型番</th>
+                  <th className="py-3 px-3">メーカー</th>
+                  <th className="py-3 px-3">保管箱・棚番</th>
+                  <th className="py-3 px-3 text-right">現在庫 (調整)</th>
+                  <th className="py-3 px-3 text-right">安全在庫</th>
+                  <th className="py-3 px-3 text-center">操作</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-800/80">
-                {filteredItems.length === 0 ? (
-                  <tr>
-                    <td colSpan={10} className="py-12 text-center text-slate-500 font-medium">
-                      該当する品目はありません
-                    </td>
-                  </tr>
-                ) : (
+              <tbody className="divide-y divide-slate-800/60 font-medium">
+                {filteredItems.length > 0 ? (
                   filteredItems.map((item) => {
                     const isLow = item.currentStock <= item.safetyStock;
-                    const isSelectedForOrder = selectedOrderIds.includes(item.id);
+                    const isSelected = selectedOrderIds.includes(item.id);
+
                     return (
                       <tr
                         key={item.id}
                         className={`hover:bg-slate-800/40 transition ${
-                          isSelectedForOrder ? 'bg-amber-950/20' : ''
+                          isSelected ? 'bg-amber-950/20' : ''
                         }`}
                       >
-                        {/* Checkbox for Purchase Order */}
-                        <td className="py-3.5 px-3 text-center">
-                          <button
-                            type="button"
-                            onClick={() => toggleSelectOneOrder(item.id)}
-                            className="text-slate-400 hover:text-white"
-                          >
-                            {isSelectedForOrder ? (
+                        <td className="py-2.5 px-3 text-center">
+                          <button onClick={() => toggleSelectOneOrder(item.id)}>
+                            {isSelected ? (
                               <CheckSquare className="w-4 h-4 text-amber-400" />
                             ) : (
-                              <Square className="w-4 h-4 text-slate-500" />
+                              <Square className="w-4 h-4 text-slate-600" />
                             )}
                           </button>
                         </td>
 
-                        {/* Code + Thumbnail */}
-                        <td className="py-3.5 px-4 font-mono font-bold text-white whitespace-nowrap">
-                          <div className="flex items-center gap-2">
-                            {item.imageUrl ? (
-                              <img
-                                src={item.imageUrl}
-                                alt={item.name}
-                                className="w-8 h-8 rounded-lg object-cover border border-slate-700 shrink-0 bg-black"
-                              />
-                            ) : (
-                              <div className="w-8 h-8 rounded-lg bg-slate-800 border border-slate-700 flex items-center justify-center text-[10px] text-slate-500 shrink-0">
-                                写真無
-                              </div>
-                            )}
-                            <span>{item.code}</span>
-                          </div>
-                        </td>
-
-                        {/* Name & Spec */}
-                        <td className="py-3.5 px-4 min-w-[200px]">
-                          <div className="font-extrabold text-white leading-tight">{item.name}</div>
-                          {item.spec && (
-                            <div className="text-xs text-slate-400 mt-0.5">{item.spec}</div>
-                          )}
-                        </td>
-
-                        {/* Supplier & Category */}
-                        <td className="py-3.5 px-4 whitespace-nowrap">
-                          {item.supplier && (
-                            <div className="flex items-center gap-1 text-xs font-bold text-blue-300 mb-0.5">
-                              <Building2 className="w-3 h-3 text-blue-400" />
-                              <span>{item.supplier}</span>
+                        <td className="py-2.5 px-3">
+                          {item.imageUrl ? (
+                            <img
+                              src={item.imageUrl}
+                              alt={item.name}
+                              onClick={() => setZoomedImage(item.imageUrl || null)}
+                              className="w-10 h-10 object-cover rounded-xl border border-slate-700 bg-black cursor-pointer hover:scale-125 transition shadow"
+                              title="拡大表示"
+                            />
+                          ) : (
+                            <div className="w-10 h-10 rounded-xl bg-slate-800 border border-slate-700 flex items-center justify-center text-[10px] text-slate-500">
+                              無
                             </div>
                           )}
-                          <span className="px-2 py-0.5 rounded-md text-[10px] font-semibold bg-slate-800 text-slate-300 border border-slate-700">
-                            {item.category}
-                          </span>
                         </td>
 
-                        {/* Current Stock */}
-                        <td className="py-3.5 px-4 text-right whitespace-nowrap">
-                          <div className="flex items-center justify-end gap-1.5">
-                            <div className="flex items-baseline gap-1">
-                              <span
-                                className={`font-black text-base ${
-                                  isLow ? 'text-amber-400' : 'text-emerald-400'
-                                }`}
-                              >
-                                {item.currentStock}
-                              </span>
-                              <span className="text-xs text-slate-400">{item.baseUnit}</span>
-                            </div>
-                            <div className="flex items-center gap-0.5 ml-1">
-                              <button
-                                type="button"
-                                onClick={() => handleQuickAdjust(item, 1)}
-                                className="p-1 text-emerald-400 hover:bg-emerald-950/80 rounded border border-slate-800 text-xs active:scale-95 transition"
-                                title="在庫 +1 加算"
-                              >
-                                <PlusCircle className="w-4 h-4" />
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => handleQuickAdjust(item, -1)}
-                                disabled={item.currentStock <= 0}
-                                className="p-1 text-rose-400 hover:bg-rose-950/80 rounded border border-slate-800 text-xs disabled:opacity-20 active:scale-95 transition"
-                                title="在庫 -1 減算"
-                              >
-                                <MinusCircle className="w-4 h-4" />
-                              </button>
-                            </div>
-                          </div>
-                          {isLow && (
-                            <span className="text-[10px] font-bold text-amber-400 bg-amber-500/10 px-1.5 py-0.5 rounded inline-block mt-0.5">
-                              要発注
+                        <td className="py-2.5 px-3 font-mono text-slate-300">
+                          <div>{item.code}</div>
+                          {item.linkedBarcodes && item.linkedBarcodes.length > 0 && (
+                            <span className="text-[10px] text-indigo-400 font-bold block">
+                              +{item.linkedBarcodes.length} 箱コード紐付
                             </span>
                           )}
                         </td>
 
-                        {/* Safety Stock */}
-                        <td className="py-3.5 px-4 text-right text-slate-400 whitespace-nowrap">
+                        <td className="py-2.5 px-3 font-bold text-white max-w-xs truncate">
+                          {item.name}
+                        </td>
+
+                        <td className="py-2.5 px-3 font-mono text-amber-300 font-bold">
+                          {item.spec || '-'}
+                        </td>
+
+                        <td className="py-2.5 px-3 text-slate-300">{item.supplier || '-'}</td>
+
+                        <td className="py-2.5 px-3 text-blue-300 font-semibold">{item.location}</td>
+
+                        <td className="py-2.5 px-3 text-right">
+                          <div className="flex items-center justify-end gap-1.5">
+                            <span
+                              className={`font-black text-sm ${
+                                isLow ? 'text-rose-400 font-bold' : 'text-emerald-400'
+                              }`}
+                            >
+                              {item.currentStock} {item.baseUnit}
+                            </span>
+                            <div className="flex items-center gap-0.5 ml-1">
+                              <button
+                                onClick={() => handleQuickAdjust(item, -1)}
+                                disabled={item.currentStock <= 0}
+                                className="w-5 h-5 rounded bg-slate-800 hover:bg-rose-600 disabled:opacity-30 text-white font-bold flex items-center justify-center"
+                              >
+                                −
+                              </button>
+                              <button
+                                onClick={() => handleQuickAdjust(item, 1)}
+                                className="w-5 h-5 rounded bg-slate-800 hover:bg-emerald-600 text-white font-bold flex items-center justify-center"
+                              >
+                                ＋
+                              </button>
+                            </div>
+                          </div>
+                        </td>
+
+                        <td className="py-2.5 px-3 text-right text-slate-400 font-mono">
                           {item.safetyStock} {item.baseUnit}
                         </td>
 
-                        {/* Box Name */}
-                        <td className="py-3.5 px-4 whitespace-nowrap">
-                          <div className="flex items-center gap-1 font-bold text-blue-300">
-                            <Box className="w-3.5 h-3.5 text-blue-400" />
-                            <span>{item.location}</span>
-                          </div>
-                        </td>
-
-                        {/* Unit conversions */}
-                        <td className="py-3.5 px-4 max-w-[180px]">
-                          <div className="flex flex-wrap gap-1">
-                            {item.unitConversions?.map((c) => (
-                              <span
-                                key={c.unit}
-                                className="text-[11px] px-1.5 py-0.5 rounded bg-slate-950 border border-slate-800 text-slate-300 font-mono"
-                              >
-                                1{c.unit}={c.multiplier}
-                              </span>
-                            ))}
-                          </div>
-                        </td>
-
-                        {/* Order Link Column */}
-                        <td className="py-3.5 px-4 whitespace-nowrap text-center">
-                          {item.orderUrl ? (
-                            <a
-                              href={item.orderUrl}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-cyan-950/80 hover:bg-cyan-900 border border-cyan-800 text-cyan-300 text-xs font-bold transition"
-                              title={item.orderUrl}
-                            >
-                              <ExternalLink className="w-3 h-3" />
-                              <span>発注先</span>
-                            </a>
-                          ) : (
-                            <button
-                              onClick={() => handleEdit(item)}
-                              className="text-[11px] text-slate-500 hover:text-blue-400 underline"
-                              title="発注URLを登録"
-                            >
-                              + URL登録
-                            </button>
-                          )}
-                        </td>
-
-                        {/* Actions */}
-                        <td className="py-3.5 px-4 whitespace-nowrap text-center">
-                          <div className="flex items-center justify-center gap-1">
+                        <td className="py-2.5 px-3 text-center">
+                          <div className="flex items-center justify-center gap-1.5">
                             <button
                               onClick={() => openQRGenerator(item)}
-                              className="p-1.5 text-slate-400 hover:text-blue-400 rounded-lg hover:bg-slate-800 transition"
-                              title="QRコード発行"
+                              className="p-1.5 text-slate-400 hover:text-blue-400 hover:bg-slate-800 rounded-lg transition"
+                              title="QRコード表示"
                             >
                               <QrCode className="w-4 h-4" />
                             </button>
                             <button
                               onClick={() => handleEdit(item)}
-                              className="p-1.5 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition"
+                              className="p-1.5 text-slate-400 hover:text-indigo-400 hover:bg-slate-800 rounded-lg transition"
                               title="編集"
                             >
                               <Edit2 className="w-4 h-4" />
                             </button>
                             <button
                               onClick={() => handleDelete(item.id, item.name)}
-                              className="p-1.5 text-slate-400 hover:text-rose-400 rounded-lg hover:bg-slate-800 transition"
+                              className="p-1.5 text-slate-500 hover:text-rose-400 hover:bg-slate-800 rounded-lg transition"
                               title="削除"
                             >
                               <Trash2 className="w-4 h-4" />
@@ -670,6 +835,12 @@ export const ItemMasterTable: React.FC = () => {
                       </tr>
                     );
                   })
+                ) : (
+                  <tr>
+                    <td colSpan={10} className="py-12 text-center text-slate-500 text-xs">
+                      該当する品目がありません。
+                    </td>
+                  </tr>
                 )}
               </tbody>
             </table>
@@ -677,35 +848,125 @@ export const ItemMasterTable: React.FC = () => {
         </div>
       )}
 
-      {/* Form Modal */}
-      <ItemFormModal
-        isOpen={isFormOpen}
-        onClose={() => setIsFormOpen(false)}
-        initialItem={editingItem}
-      />
+      {/* ───────────────────────────────────────────────────────────── */}
+      {/* 🎴 VIEW 3: 部品カード表示 (Cards View) */}
+      {/* ───────────────────────────────────────────────────────────── */}
+      {viewMode === 'CARDS' && (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5">
+          {filteredItems.map((item) => (
+            <div
+              key={item.id}
+              className="bg-slate-900 border border-slate-800 rounded-3xl p-4 shadow-lg flex flex-col justify-between space-y-3"
+            >
+              <div className="flex items-start gap-3">
+                {item.imageUrl ? (
+                  <img
+                    src={item.imageUrl}
+                    alt={item.name}
+                    onClick={() => setZoomedImage(item.imageUrl || null)}
+                    className="w-14 h-14 object-cover rounded-2xl border border-slate-700 bg-black cursor-pointer hover:scale-110 transition shrink-0"
+                    title="拡大表示"
+                  />
+                ) : (
+                  <div className="w-14 h-14 rounded-2xl bg-slate-800 border border-slate-700 flex items-center justify-center text-slate-500 text-xs font-bold shrink-0">
+                    No Photo
+                  </div>
+                )}
+                <div className="flex-1 min-w-0">
+                  <span className="font-black text-sm text-white truncate block">{item.name}</span>
+                  {item.spec && (
+                    <span className="px-2 py-0.5 rounded-lg bg-amber-500/20 text-amber-300 font-mono font-bold text-xs inline-block mt-0.5 truncate max-w-full">
+                      規格: {item.spec}
+                    </span>
+                  )}
+                  <div className="text-[11px] text-slate-400 mt-1">
+                    {item.supplier || '-'} | <span className="text-blue-300">{item.location}</span>
+                  </div>
+                </div>
+              </div>
 
-      {/* CSV Import Modal */}
-      <CsvImportExportModal
-        isOpen={isCsvImportOpen}
-        onClose={() => setIsCsvImportOpen(false)}
-      />
+              <div className="bg-slate-950 p-2.5 rounded-2xl border border-slate-800 flex items-center justify-between">
+                <div>
+                  <span className="text-[10px] text-slate-500 font-semibold block">現在庫</span>
+                  <span className="text-xl font-black text-emerald-400">
+                    {item.currentStock} <span className="text-xs font-bold text-slate-300">{item.baseUnit}</span>
+                  </span>
+                </div>
+                <div className="flex items-center gap-1">
+                  <button
+                    onClick={() => handleQuickAdjust(item, -1)}
+                    className="w-8 h-8 rounded-xl bg-slate-800 hover:bg-rose-600 text-white font-black text-sm flex items-center justify-center"
+                  >
+                    −
+                  </button>
+                  <button
+                    onClick={() => handleQuickAdjust(item, 1)}
+                    className="w-8 h-8 rounded-xl bg-slate-800 hover:bg-emerald-600 text-white font-black text-sm flex items-center justify-center"
+                  >
+                    ＋
+                  </button>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
 
-      {/* CSV Filtered Export Modal */}
-      <CsvExportModal
-        isOpen={isCsvExportOpen}
-        onClose={() => setIsCsvExportOpen(false)}
-        allItems={items}
-        filteredItems={filteredItems}
-        currentFilterLabel={`絞り込み条件適用 (${filteredItems.length}件)`}
-        onSuccessToast={(msg) => addToast('success', msg)}
-      />
+      {/* Modals */}
+      {isFormOpen && (
+        <ItemFormModal
+          isOpen={isFormOpen}
+          onClose={() => {
+            setIsFormOpen(false);
+            setEditingItem(null);
+          }}
+          initialItem={editingItem}
+        />
+      )}
 
-      {/* Purchase Order Modal */}
-      <PurchaseOrderModal
-        isOpen={isPurchaseOrderOpen}
-        onClose={() => setIsPurchaseOrderOpen(false)}
-        initialSelectedItems={selectedOrderItems.length > 0 ? selectedOrderItems : items.filter((i) => i.currentStock <= i.safetyStock)}
-      />
+      {isCsvImportOpen && (
+        <CsvImportExportModal isOpen={isCsvImportOpen} onClose={() => setIsCsvImportOpen(false)} />
+      )}
+
+      {isCsvExportOpen && (
+        <CsvExportModal
+          isOpen={isCsvExportOpen}
+          onClose={() => setIsCsvExportOpen(false)}
+          allItems={items}
+          filteredItems={filteredItems}
+        />
+      )}
+
+      {isPurchaseOrderOpen && (
+        <PurchaseOrderModal
+          isOpen={isPurchaseOrderOpen}
+          onClose={() => setIsPurchaseOrderOpen(false)}
+          initialSelectedItems={selectedOrderItems}
+        />
+      )}
+
+      {/* Photo Zoom Lightbox */}
+      {zoomedImage && (
+        <div
+          onClick={() => setZoomedImage(null)}
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/90 backdrop-blur-md animate-in fade-in"
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="relative max-w-4xl max-h-[90vh] bg-slate-900 border border-slate-700 rounded-3xl p-3 shadow-2xl flex flex-col items-center"
+          >
+            <button
+              onClick={() => setZoomedImage(null)}
+              className="absolute -top-3 -right-3 p-2 bg-slate-800 hover:bg-rose-600 text-white rounded-full border border-slate-600 shadow transition"
+            >
+              <X className="w-5 h-5" />
+            </button>
+            <div className="overflow-auto max-h-[82vh] rounded-2xl border border-slate-800 bg-black">
+              <img src={zoomedImage} alt="拡大プレビュー" className="max-w-full max-h-[80vh] object-contain rounded-xl" />
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
