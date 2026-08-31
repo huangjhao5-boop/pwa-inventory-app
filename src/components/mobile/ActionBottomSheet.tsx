@@ -928,73 +928,58 @@ export const ActionBottomSheet: React.FC = () => {
             </div>
           )}
 
-          {/* ── STEP 5: 初回入荷数量の確認 ── */}
-          {currentStep === 'NEW_ITEM_INBOUND' && (
-            <div className="space-y-3">
-              <div className="bg-emerald-950/60 border border-emerald-700/60 rounded-2xl p-3.5 text-xs">
-                <p className="font-bold text-emerald-300 mb-1">✅ 品目マスタを登録・学習しました！</p>
-                <p className="text-slate-300">
-                  品名：<strong className="text-white">{newItemName}</strong>
-                  {newItemSupplier && ` | メーカー：${newItemSupplier}`}
-                </p>
-                <p className="text-slate-300 mt-0.5">
-                  保管場所：<strong className="text-blue-300">{newItemBoxName}</strong>
-                  {' | '}単位：<strong className="text-white">{newItemBaseUnit}</strong>
-                </p>
-                <p className="text-amber-300 mt-1 font-semibold">
-                  {settings.requirePcApprovalForInbound
-                    ? '入荷データは「承認待ち」として一時保存され、PC側で正式反映されます。'
-                    : '確定すると直ちに在庫数に加算されます。'}
-                </p>
-              </div>
+          {/* ── STEP 5: 初回入荷数量の確認（フル数字キーパッドで自由な数量を入力） ── */}
+          {currentStep === 'NEW_ITEM_INBOUND' && (() => {
+            const allConversions: UnitConversion[] = [
+              ...newItemConversions.filter((c) => c.unit !== newItemBaseUnit),
+              { unit: newItemBaseUnit, multiplier: 1 },
+            ];
 
-              <div>
-                <label className="block font-semibold text-slate-300 mb-2 text-sm">初回入荷数量</label>
-                <div className="flex items-center gap-3 bg-slate-950 rounded-2xl border border-slate-800 p-3">
-                  <button type="button"
-                    onClick={() => setQuantity(Math.max(1, quantity - 1))}
-                    className="w-12 h-12 rounded-xl bg-slate-800 hover:bg-slate-700 text-white text-2xl font-black flex items-center justify-center active:scale-95 transition">
-                    −
-                  </button>
-                  <input type="number" min="1" value={quantity}
-                    onChange={(e) => setQuantity(Math.max(1, parseInt(e.target.value) || 1))}
-                    className="flex-1 text-center text-3xl font-black text-white bg-transparent focus:outline-none" />
-                  <button type="button"
-                    onClick={() => setQuantity(quantity + 1)}
-                    className="w-12 h-12 rounded-xl bg-slate-800 hover:bg-slate-700 text-white text-2xl font-black flex items-center justify-center active:scale-95 transition">
-                    ＋
-                  </button>
+            return (
+              <div className="space-y-3">
+                <div className="bg-emerald-950/60 border border-emerald-700/60 rounded-2xl p-3 text-xs">
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="font-bold text-emerald-300">✅ 品目を登録・学習しました！</span>
+                    <span className="text-[11px] text-slate-400">初回入荷数を入力してください</span>
+                  </div>
+                  <p className="text-slate-300">
+                    品名：<strong className="text-white">{newItemName}</strong>
+                    {newItemSpec && ` [${newItemSpec}]`}
+                    {newItemSupplier && ` | ${newItemSupplier}`}
+                  </p>
+                  <p className="text-slate-300 mt-0.5">
+                    保管場所：<strong className="text-blue-300">{newItemBoxName}</strong>
+                    {' | '}基準単位：<strong className="text-emerald-400">{newItemBaseUnit}</strong>
+                  </p>
                 </div>
-                <div className="mt-2 flex gap-2 justify-center">
-                  {[1, 5, 10, 20, 50, 100].map((n) => (
-                    <button key={n} type="button" onClick={() => setQuantity(n)}
-                      className={`px-3 py-1.5 rounded-xl text-xs font-bold border transition ${
-                        quantity === n
-                          ? 'bg-emerald-600 text-white border-emerald-500'
-                          : 'bg-slate-800 text-slate-300 border-slate-700 hover:bg-slate-700'
-                      }`}>
-                      {n}
-                    </button>
-                  ))}
-                </div>
+
+                <NumericKeypad
+                  value={quantity}
+                  onChange={setQuantity}
+                  units={allConversions}
+                  baseUnit={newItemBaseUnit}
+                  selectedUnit={selectedUnit}
+                  onSelectUnit={setSelectedUnit}
+                  onConfirm={handleConfirmNewItemInbound}
+                  soundEnabled={settings.soundEnabled}
+                  confirmLabel={
+                    settings.requirePcApprovalForInbound
+                      ? `承認待ち送信 (+${quantity} ${selectedUnit})`
+                      : `初回入荷確定 (+${quantity} ${selectedUnit})`
+                  }
+                  confirmColor="bg-emerald-600 hover:bg-emerald-500"
+                />
+
+                <button
+                  type="button"
+                  onClick={closeBottomSheet}
+                  className="w-full py-2 bg-slate-800 hover:bg-slate-700 text-slate-400 font-semibold text-xs rounded-xl transition"
+                >
+                  入荷せずマスタ登録のみで終了
+                </button>
               </div>
-
-              <button type="button" onClick={handleConfirmNewItemInbound}
-                className="w-full py-4 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 active:scale-95 text-white font-extrabold text-base rounded-2xl shadow-xl shadow-emerald-950/60 transition flex items-center justify-center gap-2">
-                <CheckCircle2 className="w-6 h-6" />
-                <span>
-                  {settings.requirePcApprovalForInbound
-                    ? `承認待ち送信 (+${quantity} ${newItemBaseUnit})`
-                    : `入荷確定 (+${quantity} ${newItemBaseUnit})`}
-                </span>
-              </button>
-
-              <button type="button" onClick={closeBottomSheet}
-                className="w-full py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-400 font-semibold text-sm rounded-xl transition">
-                入荷をスキップしてスキャンへ戻る
-              </button>
-            </div>
-          )}
+            );
+          })()}
         </div>
       </div>
 
