@@ -68,6 +68,7 @@ export const ItemMasterTable: React.FC = () => {
   const [selectedSupplier, setSelectedSupplier] = useState<string>('ALL');
   const [selectedLocation, setSelectedLocation] = useState<string>('ALL');
   const [stockStatusFilter, setStockStatusFilter] = useState<'ALL' | 'LOW' | 'IN_STOCK' | 'OUT_OF_STOCK'>('ALL');
+  const [sortBy, setSortBy] = useState<'UPDATED' | 'NAME' | 'CODE' | 'STOCK_ASC'>('UPDATED');
 
   // Order selection state
   const [selectedOrderIds, setSelectedOrderIds] = useState<string[]>([]);
@@ -119,7 +120,9 @@ export const ItemMasterTable: React.FC = () => {
     );
 
     return allBoxNames.map((boxName) => {
-      const boxItems = items.filter((i) => (i.location || '未分類保管箱') === boxName);
+      const boxItems = items
+        .filter((i) => (i.location || '未分類保管箱') === boxName)
+        .sort((a, b) => new Date(b.updatedAt || 0).getTime() - new Date(a.updatedAt || 0).getTime());
       const lowStockInBox = boxItems.filter((i) => i.currentStock <= i.safetyStock).length;
       const totalUnits = boxItems.reduce((acc, curr) => acc + curr.currentStock, 0);
       const sampleImages = boxItems.map((i) => i.imageUrl).filter(Boolean) as string[];
@@ -157,36 +160,52 @@ export const ItemMasterTable: React.FC = () => {
     });
   }, [items, boxConfigs]);
 
-  // Filter items
-  const filteredItems = items.filter((item) => {
-    const q = searchQuery.toLowerCase().trim();
-    const matchQuery =
-      !q ||
-      item.code.toLowerCase().includes(q) ||
-      item.name.toLowerCase().includes(q) ||
-      (item.supplier && item.supplier.toLowerCase().includes(q)) ||
-      (item.spec && item.spec.toLowerCase().includes(q)) ||
-      (item.location && item.location.toLowerCase().includes(q)) ||
-      (item.aliasCodes && item.aliasCodes.some((ac) => ac.toLowerCase().includes(q)));
+  // Filter & Sort items (最新の更新・出入庫品目を一番上に自動浮動)
+  const filteredItems = useMemo(() => {
+    return items
+      .filter((item) => {
+        const q = searchQuery.toLowerCase().trim();
+        const matchQuery =
+          !q ||
+          item.code.toLowerCase().includes(q) ||
+          item.name.toLowerCase().includes(q) ||
+          (item.supplier && item.supplier.toLowerCase().includes(q)) ||
+          (item.spec && item.spec.toLowerCase().includes(q)) ||
+          (item.location && item.location.toLowerCase().includes(q)) ||
+          (item.note && item.note.toLowerCase().includes(q)) ||
+          (item.aliasCodes && item.aliasCodes.some((ac) => ac.toLowerCase().includes(q)));
 
-    const matchCat = selectedCategory === 'ALL' || item.category === selectedCategory;
-    const matchSup = selectedSupplier === 'ALL' || item.supplier === selectedSupplier;
-    const matchLoc =
-      activeBoxFilter !== null
-        ? item.location === activeBoxFilter
-        : selectedLocation === 'ALL' || item.location === selectedLocation;
+        const matchCat = selectedCategory === 'ALL' || item.category === selectedCategory;
+        const matchSup = selectedSupplier === 'ALL' || item.supplier === selectedSupplier;
+        const matchLoc =
+          activeBoxFilter !== null
+            ? item.location === activeBoxFilter
+            : selectedLocation === 'ALL' || item.location === selectedLocation;
 
-    let matchStock = true;
-    if (stockStatusFilter === 'LOW') {
-      matchStock = item.currentStock <= item.safetyStock;
-    } else if (stockStatusFilter === 'IN_STOCK') {
-      matchStock = item.currentStock > 0;
-    } else if (stockStatusFilter === 'OUT_OF_STOCK') {
-      matchStock = item.currentStock === 0;
-    }
+        let matchStock = true;
+        if (stockStatusFilter === 'LOW') {
+          matchStock = item.currentStock <= item.safetyStock;
+        } else if (stockStatusFilter === 'IN_STOCK') {
+          matchStock = item.currentStock > 0;
+        } else if (stockStatusFilter === 'OUT_OF_STOCK') {
+          matchStock = item.currentStock === 0;
+        }
 
-    return matchQuery && matchCat && matchSup && matchLoc && matchStock;
-  });
+        return matchQuery && matchCat && matchSup && matchLoc && matchStock;
+      })
+      .sort((a, b) => {
+        if (sortBy === 'UPDATED') {
+          return new Date(b.updatedAt || 0).getTime() - new Date(a.updatedAt || 0).getTime();
+        } else if (sortBy === 'NAME') {
+          return a.name.localeCompare(b.name, 'ja');
+        } else if (sortBy === 'CODE') {
+          return a.code.localeCompare(b.code, 'ja');
+        } else if (sortBy === 'STOCK_ASC') {
+          return a.currentStock - b.currentStock;
+        }
+        return 0;
+      });
+  }, [items, searchQuery, selectedCategory, selectedSupplier, selectedLocation, activeBoxFilter, stockStatusFilter, sortBy]);
 
   const lowStockCount = items.filter((i) => i.currentStock <= i.safetyStock).length;
 
@@ -391,7 +410,7 @@ export const ItemMasterTable: React.FC = () => {
         </div>
 
         {/* Dropdown Filters */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 pt-1 border-t border-slate-800/80">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5 pt-1 border-t border-slate-800/80">
           <div>
             <select
               value={selectedCategory}
@@ -433,6 +452,18 @@ export const ItemMasterTable: React.FC = () => {
                   保管場所: {l === 'ALL' ? 'すべての保管箱' : l}
                 </option>
               ))}
+            </select>
+          </div>
+          <div>
+            <select
+              value={sortBy}
+              onChange={(e) => setSortBy(e.target.value as any)}
+              className="w-full px-3 py-1.5 bg-slate-950 border border-indigo-500/40 rounded-xl text-xs text-amber-300 font-bold focus:outline-none focus:border-amber-400"
+            >
+              <option value="UPDATED">⚡ 最終更新順（最新が上）</option>
+              <option value="NAME">🔤 品名順 (A-Z)</option>
+              <option value="CODE">🔢 品目コード順</option>
+              <option value="STOCK_ASC">⚠️ 残り在庫が少ない順</option>
             </select>
           </div>
         </div>
@@ -776,6 +807,12 @@ export const ItemMasterTable: React.FC = () => {
                           <div className="text-[11px] text-slate-400 mt-1 truncate">
                             {item.supplier || 'メーカー未設定'} | <span className="text-blue-300">{item.location}</span>
                           </div>
+                          {item.note && (
+                            <div className="mt-1.5 px-2 py-1 rounded-xl bg-amber-500/15 border border-amber-500/30 text-amber-200 text-[11px] flex items-start gap-1">
+                              <span className="shrink-0 text-amber-400 font-black">📌 注意:</span>
+                              <span className="truncate" title={item.note}>{item.note}</span>
+                            </div>
+                          )}
                         </div>
                       </div>
 
@@ -971,8 +1008,13 @@ export const ItemMasterTable: React.FC = () => {
                           )}
                         </td>
 
-                        <td className="py-2.5 px-3 font-bold text-white max-w-xs truncate">
-                          {item.name}
+                        <td className="py-2.5 px-3 font-bold text-white max-w-xs">
+                          <div className="truncate">{item.name}</div>
+                          {item.note && (
+                            <span className="inline-block mt-0.5 px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 text-[10px] font-bold border border-amber-500/30 truncate max-w-full" title={item.note}>
+                              📌 {item.note}
+                            </span>
+                          )}
                         </td>
 
                         <td className="py-2.5 px-3 font-mono text-amber-300 font-bold">
@@ -1118,6 +1160,12 @@ export const ItemMasterTable: React.FC = () => {
                     <div className="text-[11px] text-slate-400 mt-1">
                       {item.supplier || '-'} | <span className="text-blue-300">{item.location}</span>
                     </div>
+                    {item.note && (
+                      <div className="mt-1.5 px-2 py-1 rounded-xl bg-amber-500/15 border border-amber-500/30 text-amber-200 text-[11px] flex items-start gap-1">
+                        <span className="shrink-0 text-amber-400 font-black">📌 注意:</span>
+                        <span className="truncate" title={item.note}>{item.note}</span>
+                      </div>
+                    )}
                   </div>
                 </div>
 

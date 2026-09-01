@@ -18,6 +18,7 @@ import {
   Tag,
   Check,
   Link2,
+  FileText,
 } from 'lucide-react';
 
 interface ItemFormModalProps {
@@ -218,7 +219,8 @@ export const ItemFormModal: React.FC<ItemFormModalProps> = ({
     if (field === 'unit') {
       next[idx].unit = String(value);
     } else {
-      next[idx].multiplier = Math.max(1, Number(value) || 1);
+      const valStr = String(value);
+      next[idx].multiplier = valStr === '' ? ('' as any) : Math.max(0, parseInt(valStr) || 0);
     }
     setConversions(next);
   };
@@ -582,8 +584,9 @@ export const ItemFormModal: React.FC<ItemFormModalProps> = ({
               <input
                 type="number"
                 min="0"
-                value={currentStock}
-                onChange={(e) => setCurrentStock(Number(e.target.value))}
+                value={currentStock === 0 ? '' : currentStock}
+                onChange={(e) => setCurrentStock(e.target.value === '' ? 0 : parseInt(e.target.value) || 0)}
+                placeholder="0"
                 className="w-full px-3.5 py-2.5 bg-slate-800 border border-slate-700 rounded-xl text-white font-bold focus:outline-none focus:border-blue-500"
               />
             </div>
@@ -594,8 +597,9 @@ export const ItemFormModal: React.FC<ItemFormModalProps> = ({
               <input
                 type="number"
                 min="0"
-                value={safetyStock}
-                onChange={(e) => setSafetyStock(Number(e.target.value))}
+                value={safetyStock === 0 ? '' : safetyStock}
+                onChange={(e) => setSafetyStock(e.target.value === '' ? 0 : parseInt(e.target.value) || 0)}
+                placeholder="0"
                 className="w-full px-3.5 py-2.5 bg-slate-800 border border-slate-700 rounded-xl text-white font-bold focus:outline-none focus:border-blue-500"
               />
             </div>
@@ -694,6 +698,24 @@ export const ItemFormModal: React.FC<ItemFormModalProps> = ({
                 className="w-full px-3.5 py-2.5 bg-slate-800 border border-slate-700 rounded-xl text-white text-xs font-mono focus:outline-none focus:border-blue-500"
               />
             </div>
+
+            {/* 📌 備考・作業員リマインダーメモ */}
+            <div className="col-span-full pt-1">
+              <label className="block font-bold text-slate-300 text-xs flex items-center justify-between mb-1.5">
+                <span className="flex items-center gap-1.5">
+                  <FileText className="w-3.5 h-3.5 text-amber-400" />
+                  <span>備考・注意メモ（作業員へのリマインダー・注意事項）</span>
+                </span>
+                <span className="text-[10px] text-slate-400 font-normal">カードや出庫時に注意喚起タグとして表示されます</span>
+              </label>
+              <textarea
+                rows={2}
+                value={note}
+                onChange={(e) => setNote(e.target.value)}
+                placeholder="例: 開封済みの端数袋から優先使用すること / 類似型番との混用注意 / ロット番号確認必須"
+                className="w-full px-3.5 py-2 bg-slate-800 border border-slate-700 rounded-xl text-white text-xs placeholder-slate-500 focus:outline-none focus:border-amber-400 resize-none"
+              />
+            </div>
           </div>
 
           {/* Dynamic Unit Conversions Section */}
@@ -755,9 +777,10 @@ export const ItemFormModal: React.FC<ItemFormModalProps> = ({
                   <input
                     type="number"
                     min="1"
-                    value={conv.multiplier}
+                    value={conv.multiplier === 0 || (conv.multiplier as any) === '' ? '' : conv.multiplier}
                     onChange={(e) => handleUpdateConversion(idx, 'multiplier', e.target.value)}
-                    className="w-20 px-2 py-1.5 bg-slate-800 border border-slate-700 rounded-lg text-white font-black text-xs text-center text-emerald-400"
+                    placeholder="入数"
+                    className="w-20 px-2 py-1.5 bg-slate-800 border border-slate-700 rounded-lg text-white font-black text-xs text-center text-emerald-400 focus:border-blue-500"
                   />
 
                   {/* 右：換算先の基準単位 */}

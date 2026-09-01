@@ -121,6 +121,7 @@ export const ActionBottomSheet: React.FC = () => {
   const [newItemBaseUnit, setNewItemBaseUnit] = useState('個');
   const [newItemSafetyStock, setNewItemSafetyStock] = useState(10);
   const [newItemBoxName, setNewItemBoxName] = useState('端子ボックス (A-01)');
+  const [newItemNote, setNewItemNote] = useState('');
   const [itemImage, setItemImage] = useState<string | null>(null);
 
   // Multi-level unit conversions (箱, 箱(小), 袋, パック, 個)
@@ -202,6 +203,7 @@ export const ActionBottomSheet: React.FC = () => {
         setVisionSource(null);
         setRawOcrText('');
         setInitialInboundQty(1);
+        setNewItemNote('');
         setNewItemConversions([
           { unit: '箱', multiplier: 1000 },
           { unit: '袋', multiplier: 100 },
@@ -372,8 +374,12 @@ export const ActionBottomSheet: React.FC = () => {
 
   const handleUpdateConversion = (idx: number, field: 'unit' | 'multiplier', val: any) => {
     const next = [...newItemConversions];
-    if (field === 'unit') next[idx].unit = String(val);
-    else next[idx].multiplier = Math.max(1, Number(val) || 1);
+    if (field === 'unit') {
+      next[idx].unit = String(val);
+    } else {
+      const valStr = String(val);
+      next[idx].multiplier = valStr === '' ? ('' as any) : Math.max(0, parseInt(valStr) || 0);
+    }
     setNewItemConversions(next);
   };
 
@@ -401,6 +407,7 @@ export const ActionBottomSheet: React.FC = () => {
       qrCode: `INV:v1:${activeScannedCode}`,
       unitConversions: allConversions,
       updatedAt: new Date().toISOString(),
+      note: newItemNote.trim() || undefined,
     };
 
     // 自己学習ナレッジバンクに登録（次回以降の認識精度が向上）
@@ -439,6 +446,7 @@ export const ActionBottomSheet: React.FC = () => {
       qrCode: `INV:v1:${activeScannedCode}`,
       unitConversions: allConversions,
       updatedAt: new Date().toISOString(),
+      note: newItemNote.trim() || undefined,
     };
 
     if (itemImage) {
@@ -472,6 +480,7 @@ export const ActionBottomSheet: React.FC = () => {
       qrCode: `INV:v1:${activeScannedCode}`,
       unitConversions: allConversions,
       updatedAt: new Date().toISOString(),
+      note: newItemNote.trim() || undefined,
     };
     await saveItem(item);
     const conv = allConversions.find((c) => c.unit === selectedUnit) || { multiplier: 1 };
@@ -594,6 +603,14 @@ export const ActionBottomSheet: React.FC = () => {
                   <span className="text-sm font-black text-amber-300 bg-slate-950/80 px-2.5 py-0.5 rounded-lg border border-amber-500/40 font-mono">
                     {activeScannedItem.spec}
                   </span>
+                </div>
+              )}
+
+              {/* 作業員への備考・注意メモ */}
+              {activeScannedItem.note && (
+                <div className="bg-amber-950/40 border border-amber-500/40 px-3.5 py-2 rounded-2xl flex items-start gap-2 text-xs text-amber-200 shadow-sm">
+                  <span className="shrink-0 font-black text-amber-400">📌 注意:</span>
+                  <span className="font-semibold leading-relaxed">{activeScannedItem.note}</span>
                 </div>
               )}
 
@@ -1068,10 +1085,26 @@ export const ActionBottomSheet: React.FC = () => {
                   </div>
                   <div>
                     <label className="block font-semibold text-slate-300 mb-1">安全在庫数</label>
-                    <input type="number" min="0" value={newItemSafetyStock}
-                      onChange={(e) => setNewItemSafetyStock(Number(e.target.value) || 0)}
+                    <input type="number" min="0" value={newItemSafetyStock === 0 ? '' : newItemSafetyStock}
+                      onChange={(e) => setNewItemSafetyStock(e.target.value === '' ? 0 : parseInt(e.target.value) || 0)}
+                      placeholder="0"
                       className="w-full px-2.5 py-2 bg-slate-800 border border-slate-700 rounded-xl text-white text-xs" />
                   </div>
+                </div>
+
+                {/* 📌 備考・リマインダーメモ */}
+                <div>
+                  <label className="block font-semibold text-slate-300 mb-1 text-xs flex items-center justify-between">
+                    <span>📌 備考・注意メモ（作業員リマインダー）</span>
+                    <span className="text-[10px] text-slate-500">任意</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={newItemNote}
+                    onChange={(e) => setNewItemNote(e.target.value)}
+                    placeholder="例: 開封済み袋から優先使用 / ロット確認"
+                    className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-white text-xs focus:outline-none focus:border-amber-400 placeholder-slate-500"
+                  />
                 </div>
 
                 {/* 包装単位・換算倍率リスト (箱、袋、パック、束、巻等) */}
@@ -1117,8 +1150,9 @@ export const ActionBottomSheet: React.FC = () => {
                       <input
                         type="number"
                         min="1"
-                        value={conv.multiplier}
+                        value={conv.multiplier === 0 || (conv.multiplier as any) === '' ? '' : conv.multiplier}
                         onChange={(e) => handleUpdateConversion(idx, 'multiplier', e.target.value)}
+                        placeholder="入数"
                         className="w-16 px-1.5 py-1 bg-slate-800 border border-slate-700 rounded-lg text-white font-black text-xs text-center text-emerald-400"
                       />
 
