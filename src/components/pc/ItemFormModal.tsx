@@ -67,7 +67,7 @@ export const ItemFormModal: React.FC<ItemFormModalProps> = ({
   onClose,
   initialItem,
 }) => {
-  const { saveItem, addToast, settings, items } = useInventory();
+  const { saveItem, deleteItem, addToast, settings, items } = useInventory();
 
   const [code, setCode] = useState('');
   const [name, setName] = useState('');
@@ -906,20 +906,39 @@ export const ItemFormModal: React.FC<ItemFormModalProps> = ({
           </div>
 
           {/* Buttons */}
-          <div className="pt-3 border-t border-slate-800 flex items-center justify-end gap-2">
-            <button
-              type="button"
-              onClick={onClose}
-              className="px-4 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold rounded-xl transition"
-            >
-              キャンセル
-            </button>
-            <button
-              type="submit"
-              className="px-6 py-2.5 bg-blue-600 hover:bg-blue-500 text-white font-extrabold rounded-xl shadow-lg shadow-blue-900/40 transition"
-            >
-              マスタを保存 (AI学習)
-            </button>
+          <div className="pt-3 border-t border-slate-800 flex items-center justify-between gap-2">
+            <div>
+              {initialItem && (
+                <button
+                  type="button"
+                  onClick={async () => {
+                    if (window.confirm(`品目「${initialItem.name}」を完全に削除しますか？\n（この操作は取り消せません）`)) {
+                      await deleteItem(initialItem.id);
+                      onClose();
+                    }
+                  }}
+                  className="px-3.5 py-2 bg-rose-950/60 hover:bg-rose-900 border border-rose-700/60 text-rose-300 hover:text-white font-bold text-xs rounded-xl transition flex items-center gap-1.5"
+                >
+                  <Trash2 className="w-4 h-4 text-rose-400" />
+                  <span>この品目を削除</span>
+                </button>
+              )}
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={onClose}
+                className="px-4 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold rounded-xl transition text-xs"
+              >
+                キャンセル
+              </button>
+              <button
+                type="submit"
+                className="px-6 py-2.5 bg-blue-600 hover:bg-blue-500 text-white font-extrabold rounded-xl shadow-lg shadow-blue-900/40 transition text-xs"
+              >
+                マスタを保存 (AI学習)
+              </button>
+            </div>
           </div>
         </form>
       </div>

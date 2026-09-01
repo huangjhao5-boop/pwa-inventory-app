@@ -256,6 +256,17 @@ export const ItemMasterTable: React.FC = () => {
     addToast('info', `要発注品 (${lowIds.length}件) を発注選択しました`);
   };
 
+  const handleBatchDelete = async () => {
+    if (selectedOrderIds.length === 0) return;
+    if (window.confirm(`選択中の ${selectedOrderIds.length} 件の品目をマスタから一括削除しますか？\n（この操作は取り消せません）`)) {
+      for (const id of selectedOrderIds) {
+        await deleteItem(id);
+      }
+      setSelectedOrderIds([]);
+      addToast('info', `${selectedOrderIds.length} 件の品目を一括削除しました`);
+    }
+  };
+
   const selectedOrderItems = items.filter((i) => selectedOrderIds.includes(i.id));
 
   return (
@@ -300,6 +311,19 @@ export const ItemMasterTable: React.FC = () => {
               {selectedOrderIds.length > 0 ? ` (${selectedOrderIds.length}件選択中)` : ''}
             </span>
           </button>
+
+          {/* Batch Delete Selected Items */}
+          {selectedOrderIds.length > 0 && (
+            <button
+              type="button"
+              onClick={handleBatchDelete}
+              className="flex items-center gap-1.5 px-3.5 py-2 bg-rose-950/80 hover:bg-rose-900 active:scale-95 text-rose-300 hover:text-white border border-rose-700/80 rounded-xl text-xs font-black shadow-lg shadow-rose-950/60 transition"
+              title="選択中の品目を一括削除"
+            >
+              <Trash2 className="w-4 h-4 text-rose-400" />
+              <span>選択品目を一括削除 ({selectedOrderIds.length}件)</span>
+            </button>
+          )}
 
           {!isFieldMode && (
             <>
@@ -928,6 +952,14 @@ export const ItemMasterTable: React.FC = () => {
                           >
                             <Edit2 className="w-4 h-4" />
                           </button>
+                          <button
+                            type="button"
+                            onClick={() => handleDelete(item.id, item.name)}
+                            className="p-1.5 text-slate-500 hover:text-rose-400 hover:bg-slate-800 rounded-lg transition"
+                            title="削除"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
                         </div>
                       </div>
                     </div>
@@ -1252,6 +1284,14 @@ export const ItemMasterTable: React.FC = () => {
                       title="編集"
                     >
                       <Edit2 className="w-4 h-4" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleDelete(item.id, item.name)}
+                      className="p-1.5 text-slate-500 hover:text-rose-400 hover:bg-slate-800 rounded-lg transition"
+                      title="削除"
+                    >
+                      <Trash2 className="w-4 h-4" />
                     </button>
                   </div>
                 </div>
