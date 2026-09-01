@@ -12,7 +12,7 @@ import {
   DEFAULT_STORAGE_BOXES,
   CheckedOutItem,
   ReturnCondition,
-  RETURN_CONDITIONS,
+  RETURN_FRACTION_PRESETS,
 } from '../types/inventory';
 import { LocalDatabaseService } from '../services/db';
 import { cloudSync, FirebaseConfigOptions } from '../services/firebase';
@@ -58,11 +58,27 @@ export interface InventoryContextType {
     note?: string;
     trackAsCheckedOut?: boolean;
   }) => Promise<boolean>;
+  recordPcBatchOutbound: (params: {
+    items: {
+      item: ItemMaster;
+      quantity: number;
+      unit: string;
+      multiplier: number;
+    }[];
+    operator: string;
+    destination?: string;
+    note?: string;
+    trackAsCheckedOut?: boolean;
+  }) => Promise<boolean>;
   returnCheckedOutItem: (
     checkoutId: string,
     params: {
-      returnCondition: ReturnCondition;
+      unopenedCount: number;
+      openedCount: number;
+      openedFraction: number;
+      returnedPackEquivalent: number;
       returnedBaseQty: number;
+      returnCondition?: ReturnCondition;
       isOpenPackage: boolean;
       returnNote?: string;
     }
@@ -948,12 +964,100 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
     [recordTransaction, checkedOutList, settings.activeOperator, addToast]
   );
 
+  const recordPcBatchOutbound = useCallback(
+    async (params: {
+      items: {
+        item: ItemMaster;
+        quantity: number;
+        unit: string;
+        multiplier: number;
+      }[];
+      operator: string;
+      destination?: string;
+      note?: string;
+      trackAsCheckedOut?: boolean;
+    }): Promise<boolean> => {
+      const {
+        items: batchItems,
+        operator,
+        destination,
+        note,
+        trackAsCheckedOut = true,
+      } = params;
+
+      if (batchItems.length === 0) return false;
+
+      // 1. Verify stock sufficiency for all items
+      for (const bi of batchItems) {
+        const requiredBase = Math.round(bi.quantity * bi.multiplier);
+        if (bi.item.currentStock < requiredBase) {
+          addToast(
+            'error',
+            `⚠️ 在庫不足:「${bi.item.name}」の出庫量 (${requiredBase}${bi.item.baseUnit}) が現在庫 (${bi.item.currentStock}${bi.item.baseUnit}) を超過しています！`
+          );
+          return false;
+        }
+      }
+
+      // 2. Process each item transaction
+      const newRecords: CheckedOutItem[] = [];
+      const outNote = [
+        destination ? `現場/用途: ${destination}` : '',
+        note ? `メモ: ${note}` : '',
+      ]
+        .filter(Boolean)
+        .join(' | ');
+
+      for (const bi of batchItems) {
+        const baseQuantity = Math.round(bi.quantity * bi.multiplier);
+        await recordTransaction(bi.item, 'OUT', bi.quantity, bi.unit, bi.multiplier, outNote);
+
+        if (trackAsCheckedOut) {
+          newRecords.push({
+            id: `checkout-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+            itemId: bi.item.id,
+            itemCode: bi.item.code,
+            itemName: bi.item.name,
+            spec: bi.item.spec,
+            supplier: bi.item.supplier,
+            imageUrl: bi.item.imageUrl,
+            location: bi.item.location,
+            outQuantity: bi.quantity,
+            outUnit: bi.unit,
+            multiplier: bi.multiplier,
+            outBaseQuantity: baseQuantity,
+            operator: operator.trim() || settings.activeOperator || '現場作業員',
+            destination: destination?.trim() || '現場持出',
+            checkedOutAt: new Date().toISOString(),
+            status: 'CHECKED_OUT',
+          });
+        }
+      }
+
+      if (trackAsCheckedOut && newRecords.length > 0) {
+        const updated = [...newRecords, ...checkedOutList];
+        saveCheckedOutListToStorage(updated);
+      }
+
+      addToast(
+        'success',
+        `複数資材 (${batchItems.length}件) を現場持出・払出登録しました`
+      );
+      return true;
+    },
+    [recordTransaction, checkedOutList, settings.activeOperator, addToast]
+  );
+
   const returnCheckedOutItem = useCallback(
     async (
       checkoutId: string,
       params: {
-        returnCondition: ReturnCondition;
+        unopenedCount: number;
+        openedCount: number;
+        openedFraction: number;
+        returnedPackEquivalent: number;
         returnedBaseQty: number;
+        returnCondition?: ReturnCondition;
         isOpenPackage: boolean;
         returnNote?: string;
       }
@@ -961,16 +1065,29 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
       const target = checkedOutList.find((c) => c.id === checkoutId);
       if (!target) return false;
 
-      const { returnCondition, returnedBaseQty, isOpenPackage, returnNote } = params;
+      const {
+        unopenedCount,
+        openedCount,
+        openedFraction,
+        returnedPackEquivalent,
+        returnedBaseQty,
+        returnCondition,
+        isOpenPackage,
+        returnNote,
+      } = params;
       const targetItem = itemsRef.current.find((i) => i.id === target.itemId);
 
       // Return stock into inventory
       if (returnedBaseQty > 0 && targetItem) {
-        const condLabel = RETURN_CONDITIONS.find((r) => r.key === returnCondition)?.label || '';
+        const condLabel = RETURN_FRACTION_PRESETS.find((r) => r.key === returnCondition)?.label || '';
+        const consumedPacks = Math.max(0, target.outQuantity - returnedPackEquivalent);
         const noteStr = [
-          `【現場返却】${condLabel}`,
-          isOpenPackage ? '📦 開封品あり(残量端数)' : '未開封全量',
-          returnNote ? `メモ: ${returnNote}` : '',
+          `【現場返却】+${returnedPackEquivalent}${target.outUnit} (+${returnedBaseQty}${targetItem.baseUnit})`,
+          unopenedCount > 0 ? `未開封:${unopenedCount}${target.outUnit}` : '',
+          openedCount > 0 ? `開封品:${openedCount}${target.outUnit}(残率:${Math.round(openedFraction * 100)}%)` : '',
+          consumedPacks > 0 ? `現場消費:${consumedPacks.toFixed(2)}${target.outUnit}` : '',
+          condLabel ? `状態:${condLabel}` : '',
+          returnNote ? `メモ:${returnNote}` : '',
         ]
           .filter(Boolean)
           .join(' | ');
@@ -992,6 +1109,11 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
             ...c,
             status: 'RETURNED' as const,
             returnedAt: new Date().toISOString(),
+            unopenedReturnedCount: unopenedCount,
+            openedReturnedCount: openedCount,
+            openedRemainingFraction: openedFraction,
+            consumedCount: Math.max(0, target.outQuantity - (unopenedCount + openedCount)),
+            returnedPackEquivalent,
             returnedBaseQuantity: returnedBaseQty,
             returnCondition,
             isPackageOpened: isOpenPackage,
@@ -1004,7 +1126,7 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
       saveCheckedOutListToStorage(updated);
       addToast(
         'success',
-        `「${target.itemName}」の返却・棚戻しを完了しました（戻し数量: ${returnedBaseQty}${targetItem?.baseUnit || ''}）`
+        `「${target.itemName}」の返却完了: +${returnedPackEquivalent} ${target.outUnit}（${returnedBaseQty} ${targetItem?.baseUnit || ''}）を保管箱へ棚戻ししました`
       );
       return true;
     },
@@ -1219,7 +1341,7 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
       items, logs, pendingInbounds, checkedOutList, activeTab, setActiveTab,
       settings, updateSettings, toasts, addToast, removeToast,
       boxConfigs, updateBoxConfig, addBoxConfig, deleteBoxConfig, batchMoveItemsToBox, clearOldLogs,
-      recordPcOutbound, returnCheckedOutItem, markCheckedOutAsConsumed, deleteCheckedOutRecord,
+      recordPcOutbound, recordPcBatchOutbound, returnCheckedOutItem, markCheckedOutAsConsumed, deleteCheckedOutRecord,
       isOnline, isCloudConnected, setIsCloudConnected,
       pendingSyncCount: pendingCount, pendingCount, isSyncing,
       triggerManualSync: triggerSync, triggerSync, refreshPendingCount,

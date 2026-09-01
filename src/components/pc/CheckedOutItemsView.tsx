@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { useInventory } from '../../context/InventoryContext';
-import { CheckedOutItem, ReturnCondition, RETURN_CONDITIONS } from '../../types/inventory';
+import { CheckedOutItem, ReturnCondition, RETURN_FRACTION_PRESETS } from '../../types/inventory';
 import { PcOutboundModal } from './PcOutboundModal';
 import {
   Truck,
@@ -12,6 +12,7 @@ import {
   PackageOpen,
   ArrowUpCircle,
   X,
+  Calculator,
 } from 'lucide-react';
 
 export const CheckedOutItemsView: React.FC = () => {
@@ -32,10 +33,11 @@ export const CheckedOutItemsView: React.FC = () => {
   const [isOutboundModalOpen, setIsOutboundModalOpen] = useState(false);
   const [returningItem, setReturningItem] = useState<CheckedOutItem | null>(null);
 
-  // Return Form State
-  const [returnCondition, setReturnCondition] = useState<ReturnCondition>('UNOPENED');
-  const [returnedBaseQty, setReturnedBaseQty] = useState<number>(1);
-  const [isOpenPackage, setIsOpenPackage] = useState<boolean>(false);
+  // Return Form State (Multi-pack & fractional return)
+  const [unopenedCount, setUnopenedCount] = useState<number>(0);
+  const [openedCount, setOpenedCount] = useState<number>(0);
+  const [returnPreset, setReturnPreset] = useState<ReturnCondition>('ONE_QUARTER_OR_LITTLE');
+  const [customFraction, setCustomFraction] = useState<number>(0.25);
   const [returnNote, setReturnNote] = useState<string>('');
 
   // Extract unique operators from checked out list
@@ -69,46 +71,57 @@ export const CheckedOutItemsView: React.FC = () => {
   const returnedCount = checkedOutList.filter((c) => c.status === 'RETURNED').length;
   const consumedCount = checkedOutList.filter((c) => c.status === 'CONSUMED').length;
 
-  // Open Return Modal
+  // Open Return Modal with intelligent defaults
   const handleOpenReturnModal = (item: CheckedOutItem) => {
     setReturningItem(item);
-    setReturnCondition('UNOPENED');
-    setReturnedBaseQty(item.outBaseQuantity);
-    setIsOpenPackage(false);
+    if (item.outQuantity > 1) {
+      // e.g. took 3 packs -> default to 1 unopened + 1 opened (remainder 0.25)
+      setUnopenedCount(Math.max(0, item.outQuantity - 2));
+      setOpenedCount(1);
+    } else {
+      setUnopenedCount(0);
+      setOpenedCount(1);
+    }
+    setReturnPreset('ONE_QUARTER_OR_LITTLE');
+    setCustomFraction(0.25);
     setReturnNote('');
   };
 
-  // Handle Condition Change in Return Modal
-  const handleConditionSelect = (cond: ReturnCondition) => {
-    setReturnCondition(cond);
-    if (!returningItem) return;
-
-    const opt = RETURN_CONDITIONS.find((r) => r.key === cond);
-    if (!opt) return;
-
-    setIsOpenPackage(opt.isOpenPackage);
-    if (cond === 'UNOPENED') {
-      setReturnedBaseQty(returningItem.outBaseQuantity);
-    } else if (cond === 'LIGHTLY_USED') {
-      setReturnedBaseQty(Math.max(1, Math.round(returningItem.outBaseQuantity * 0.8)));
-    } else if (cond === 'HALF_USED') {
-      setReturnedBaseQty(Math.max(1, Math.round(returningItem.outBaseQuantity * 0.5)));
-    } else if (cond === 'MOSTLY_USED') {
-      setReturnedBaseQty(Math.max(1, Math.round(returningItem.outBaseQuantity * 0.2)));
+  const handleSelectPreset = (key: ReturnCondition) => {
+    setReturnPreset(key);
+    const preset = RETURN_FRACTION_PRESETS.find((p) => p.key === key);
+    if (preset && preset.fraction > 0) {
+      setCustomFraction(preset.fraction);
     }
   };
 
+  // Calculations for Return Modal
+  const currentFractionValue = returnPreset === 'EXACT_COUNT' ? customFraction : (RETURN_FRACTION_PRESETS.find((p) => p.key === returnPreset)?.fraction ?? 0.25);
+  const totalReturnedPacks = returningItem ? unopenedCount * 1.0 + (openedCount > 0 ? openedCount * currentFractionValue : 0) : 0;
+  const totalReturnedBaseQty = returningItem ? Math.round(totalReturnedPacks * returningItem.multiplier) : 0;
+  const consumedPacks = returningItem ? Math.max(0, returningItem.outQuantity - (unopenedCount + (openedCount > 0 ? openedCount : 0))) : 0;
+  const consumedFractionalPacks = returningItem ? Math.max(0, returningItem.outQuantity - totalReturnedPacks) : 0;
+
+  const originalTargetItem = returningItem ? items.find((i) => i.id === returningItem.itemId) : null;
+  const stockBeforeReturn = originalTargetItem ? originalTargetItem.currentStock : 0;
+  const stockAfterReturn = stockBeforeReturn + totalReturnedBaseQty;
+
   const handleConfirmReturn = async () => {
     if (!returningItem) return;
-    if (returnedBaseQty < 0) {
-      addToast('error', '返却数量は 0 以上を指定してください');
+
+    if (unopenedCount + openedCount > returningItem.outQuantity) {
+      addToast('error', `返却包数の合計 (${unopenedCount + openedCount}) が持出包数 (${returningItem.outQuantity}) を超えています`);
       return;
     }
 
     const ok = await returnCheckedOutItem(returningItem.id, {
-      returnCondition,
-      returnedBaseQty,
-      isOpenPackage,
+      unopenedCount,
+      openedCount,
+      openedFraction: currentFractionValue,
+      returnedPackEquivalent: totalReturnedPacks,
+      returnedBaseQty: totalReturnedBaseQty,
+      returnCondition: returnPreset,
+      isOpenPackage: openedCount > 0 && currentFractionValue < 1.0,
       returnNote: returnNote.trim(),
     });
 
@@ -136,7 +149,7 @@ export const CheckedOutItemsView: React.FC = () => {
                 )}
               </h2>
               <p className="text-xs text-slate-400">
-                現場に持ち出した資材の追跡・残量確認・開封品棚戻しを一括管理します
+                現場に持ち出した資材の追跡・未開封/開封残量端数の正確な棚戻し計算
               </p>
             </div>
           </div>
@@ -343,14 +356,20 @@ export const CheckedOutItemsView: React.FC = () => {
 
                     {/* Return Info if already returned */}
                     {item.status === 'RETURNED' && (
-                      <div className="mt-2 pt-2 border-t border-emerald-500/30 bg-emerald-950/20 p-2 rounded-xl text-emerald-300 space-y-1">
-                        <div className="flex items-center justify-between font-bold">
-                          <span>棚戻し数量：</span>
-                          <span>+{item.returnedBaseQuantity} {originalItem?.baseUnit}</span>
+                      <div className="mt-2 pt-2 border-t border-emerald-500/30 bg-emerald-950/20 p-2.5 rounded-xl text-emerald-300 space-y-1.5">
+                        <div className="flex items-center justify-between font-black text-xs">
+                          <span>棚戻し内訳：</span>
+                          <span className="text-emerald-400">
+                            +{item.returnedPackEquivalent ?? item.outQuantity} {item.outUnit} (+{item.returnedBaseQuantity} {originalItem?.baseUnit})
+                          </span>
+                        </div>
+                        <div className="text-[11px] text-slate-300 flex items-center justify-between">
+                          <span>未開封: {item.unopenedReturnedCount ?? 0} {item.outUnit}</span>
+                          <span>開封残: {item.openedReturnedCount ?? 0} {item.outUnit} (残率:{Math.round((item.openedRemainingFraction ?? 1) * 100)}%)</span>
                         </div>
                         {item.isPackageOpened && (
                           <span className="inline-block px-1.5 py-0.5 bg-amber-500/20 text-amber-300 border border-amber-500/40 rounded text-[10px] font-black">
-                            📦 開封済み端数あり
+                            📦 開封品あり（端数残）
                           </span>
                         )}
                         {item.returnNote && (
@@ -410,7 +429,7 @@ export const CheckedOutItemsView: React.FC = () => {
       </div>
 
       {/* ───────────────────────────────────────────────────────────── */}
-      {/* 📦 現場返却・残量確認モーダル (Return Modal) */}
+      {/* 📦 現場返却・残量端数棚戻しモーダル (Precision Return Modal) */}
       {/* ───────────────────────────────────────────────────────────── */}
       {returningItem && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-950/80 backdrop-blur-sm animate-in fade-in duration-200">
@@ -425,7 +444,7 @@ export const CheckedOutItemsView: React.FC = () => {
                     📦 現場持出資材の返却・棚戻し
                   </h3>
                   <p className="text-xs text-slate-400">
-                    持って帰ってきた余りの残量・開封状態を確認して在庫に戻します
+                    未開封包数と開封品（残量少許など）を正確に計算して在庫に戻します
                   </p>
                 </div>
               </div>
@@ -444,97 +463,168 @@ export const CheckedOutItemsView: React.FC = () => {
                 <div className="font-black text-sm text-white">{returningItem.itemName}</div>
                 <div className="text-amber-300 font-mono">規格: {returningItem.spec || '-'}</div>
                 <div className="text-slate-400">
-                  持出時: <strong className="text-rose-400">{returningItem.outQuantity} {returningItem.outUnit} ({returningItem.outBaseQuantity} 個)</strong> | 担当: <span className="text-blue-300">{returningItem.operator}</span>
+                  持出時: <strong className="text-rose-400">{returningItem.outQuantity} {returningItem.outUnit} ({returningItem.outBaseQuantity} {originalTargetItem?.baseUnit || '個'})</strong> | 担当: <span className="text-blue-300">{returningItem.operator}</span>
                 </div>
                 <div className="text-slate-300">
                   戻し先保管箱: <strong className="text-indigo-300">📦 {returningItem.location}</strong>
                 </div>
               </div>
 
-              {/* Quantifier Options (残量・開封状態の選択) */}
-              <div>
-                <label className="block text-xs font-bold text-slate-300 mb-2">
-                  残量・開封状態を選択してください：
-                </label>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                  {RETURN_CONDITIONS.map((cond) => {
-                    const isSelected = returnCondition === cond.key;
-                    return (
-                      <button
-                        key={cond.key}
-                        type="button"
-                        onClick={() => handleConditionSelect(cond.key)}
-                        className={`p-3 rounded-2xl text-left border transition flex flex-col justify-between ${
-                          isSelected
-                            ? 'bg-emerald-600/20 border-emerald-500 text-white shadow-md'
-                            : 'bg-slate-950 border-slate-800 text-slate-400 hover:bg-slate-800 hover:text-slate-200'
-                        }`}
-                      >
-                        <span className="font-black text-xs block">{cond.label}</span>
-                        <span className="text-[10px] text-slate-400 mt-1">{cond.description}</span>
-                      </button>
-                    );
-                  })}
+              {/* Step 1 & 2: Multi-pack Breakdown Inputs */}
+              <div className="bg-slate-950 p-4 rounded-2xl border border-slate-800 space-y-3">
+                <div className="text-xs font-extrabold text-slate-200 flex items-center justify-between">
+                  <span>持ち帰った包数（{returningItem.outUnit}）の内訳を入力：</span>
+                  <span className="text-slate-400">持出計: {returningItem.outQuantity} {returningItem.outUnit}</span>
                 </div>
-              </div>
 
-              {/* Returned Quantity Input */}
-              <div className="bg-slate-950 p-3.5 rounded-2xl border border-slate-800 space-y-2">
-                <div className="flex items-center justify-between">
-                  <label className="text-xs font-bold text-slate-300">
-                    在庫に戻す基準数量：
-                  </label>
+                {/* Unopened Count */}
+                <div className="flex items-center justify-between bg-slate-900/80 p-2.5 rounded-xl border border-slate-800">
+                  <div>
+                    <span className="text-xs font-bold text-emerald-300 block">🟢 完全未開封で返却：</span>
+                    <span className="text-[10px] text-slate-400">手をつけていない新品パック</span>
+                  </div>
                   <div className="flex items-center gap-1">
                     <button
                       type="button"
-                      onClick={() => setReturnedBaseQty(Math.max(0, returnedBaseQty - 1))}
-                      className="w-8 h-8 rounded-xl bg-slate-800 hover:bg-slate-700 text-white font-black text-sm flex items-center justify-center"
+                      onClick={() => setUnopenedCount(Math.max(0, unopenedCount - 1))}
+                      className="w-7 h-7 rounded-lg bg-slate-800 text-white font-black text-xs flex items-center justify-center hover:bg-slate-700"
                     >
                       −
                     </button>
                     <input
                       type="number"
                       min="0"
-                      max={returningItem.outBaseQuantity}
-                      value={returnedBaseQty}
-                      onChange={(e) => setReturnedBaseQty(Math.max(0, parseInt(e.target.value) || 0))}
-                      className="w-24 text-center py-1.5 bg-slate-900 border border-slate-700 rounded-xl text-emerald-400 font-black text-lg focus:outline-none focus:border-emerald-500"
+                      max={returningItem.outQuantity}
+                      value={unopenedCount}
+                      onChange={(e) => setUnopenedCount(Math.max(0, parseInt(e.target.value) || 0))}
+                      className="w-14 text-center py-1 bg-slate-950 border border-slate-700 rounded-lg text-emerald-400 font-black text-sm"
                     />
                     <button
                       type="button"
-                      onClick={() => setReturnedBaseQty(Math.min(returningItem.outBaseQuantity, returnedBaseQty + 1))}
-                      className="w-8 h-8 rounded-xl bg-slate-800 hover:bg-slate-700 text-white font-black text-sm flex items-center justify-center"
+                      onClick={() => setUnopenedCount(Math.min(returningItem.outQuantity - openedCount, unopenedCount + 1))}
+                      className="w-7 h-7 rounded-lg bg-slate-800 text-white font-black text-xs flex items-center justify-center hover:bg-slate-700"
                     >
                       ＋
                     </button>
+                    <span className="text-xs text-slate-400 font-bold ml-1">{returningItem.outUnit}</span>
                   </div>
                 </div>
 
-                <div className="text-[11px] text-slate-500 flex items-center justify-between">
-                  <span>（持出総数: {returningItem.outBaseQuantity} 個のうち）</span>
-                  <span>現場消費分: {Math.max(0, returningItem.outBaseQuantity - returnedBaseQty)} 個</span>
+                {/* Opened Count */}
+                <div className="flex items-center justify-between bg-slate-900/80 p-2.5 rounded-xl border border-slate-800">
+                  <div>
+                    <span className="text-xs font-bold text-amber-300 block">📦 開封・使いかけで返却：</span>
+                    <span className="text-[10px] text-slate-400">袋を開封し一部使用したパック</span>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={() => setOpenedCount(Math.max(0, openedCount - 1))}
+                      className="w-7 h-7 rounded-lg bg-slate-800 text-white font-black text-xs flex items-center justify-center hover:bg-slate-700"
+                    >
+                      −
+                    </button>
+                    <input
+                      type="number"
+                      min="0"
+                      max={returningItem.outQuantity - unopenedCount}
+                      value={openedCount}
+                      onChange={(e) => setOpenedCount(Math.max(0, parseInt(e.target.value) || 0))}
+                      className="w-14 text-center py-1 bg-slate-950 border border-slate-700 rounded-lg text-amber-300 font-black text-sm"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setOpenedCount(Math.min(returningItem.outQuantity - unopenedCount, openedCount + 1))}
+                      className="w-7 h-7 rounded-lg bg-slate-800 text-white font-black text-xs flex items-center justify-center hover:bg-slate-700"
+                    >
+                      ＋
+                    </button>
+                    <span className="text-xs text-slate-400 font-bold ml-1">{returningItem.outUnit}</span>
+                  </div>
+                </div>
+
+                {/* Consumed on site preview */}
+                <div className="text-[11px] text-slate-400 flex items-center justify-between pt-1 border-t border-slate-800/80">
+                  <span>現場で完全使い切り（消費）:</span>
+                  <strong className="text-rose-400 font-bold">{consumedPacks} {returningItem.outUnit}</strong>
                 </div>
               </div>
 
-              {/* Package Opened Flag */}
-              <div
-                className="bg-amber-950/30 p-3 rounded-2xl border border-amber-500/40 flex items-start gap-2.5 cursor-pointer"
-                onClick={() => setIsOpenPackage(!isOpenPackage)}
-              >
-                <input
-                  type="checkbox"
-                  checked={isOpenPackage}
-                  onChange={(e) => setIsOpenPackage(e.target.checked)}
-                  className="mt-0.5 w-4 h-4 rounded text-amber-600 focus:ring-0 cursor-pointer"
-                />
-                <div className="text-xs">
-                  <span className="font-black text-amber-300 block flex items-center gap-1">
+              {/* Step 3: Fraction Selector for Opened Pack */}
+              {openedCount > 0 && (
+                <div className="bg-slate-950 p-4 rounded-2xl border border-amber-500/40 space-y-2.5 animate-in fade-in">
+                  <label className="block text-xs font-bold text-amber-300 flex items-center gap-1.5">
                     <PackageOpen className="w-3.5 h-3.5 text-amber-400" />
-                    <span>開封済み端数として記録する</span>
+                    <span>開封品（{openedCount} {returningItem.outUnit}）の残量を選択してください：</span>
+                  </label>
+
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                    {RETURN_FRACTION_PRESETS.map((preset) => {
+                      const isSelected = returnPreset === preset.key;
+                      return (
+                        <button
+                          key={preset.key}
+                          type="button"
+                          onClick={() => handleSelectPreset(preset.key)}
+                          className={`p-2 rounded-xl text-left border transition flex flex-col justify-between ${
+                            isSelected
+                              ? 'bg-amber-500/20 border-amber-400 text-white shadow'
+                              : 'bg-slate-900 border-slate-800 text-slate-400 hover:bg-slate-800'
+                          }`}
+                        >
+                          <span className="font-extrabold text-xs block">{preset.label}</span>
+                          <span className="text-[10px] text-slate-400 mt-0.5">{preset.description}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  {returnPreset === 'EXACT_COUNT' && (
+                    <div className="pt-2 flex items-center justify-between bg-slate-900 p-2.5 rounded-xl border border-slate-800 text-xs">
+                      <span className="text-slate-300 font-bold">残量係数 (0.01〜0.99):</span>
+                      <input
+                        type="number"
+                        step="0.05"
+                        min="0.01"
+                        max="0.99"
+                        value={customFraction}
+                        onChange={(e) => setCustomFraction(Math.max(0.01, Math.min(0.99, parseFloat(e.target.value) || 0.25)))}
+                        className="w-20 text-center py-1 bg-slate-950 border border-amber-500/60 rounded-lg text-amber-300 font-black text-sm"
+                      />
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Step 4: Crystal-Clear Calculation Summary Box */}
+              <div className="bg-gradient-to-br from-indigo-950/40 via-slate-900 to-emerald-950/40 p-4 rounded-2xl border border-indigo-500/50 space-y-2.5">
+                <div className="flex items-center gap-1.5 text-xs font-black text-indigo-200">
+                  <Calculator className="w-4 h-4 text-indigo-400" />
+                  <span>📐 リアルタイム在庫計算明細 (結論)</span>
+                </div>
+
+                <div className="bg-slate-950/80 p-3 rounded-xl border border-slate-800 space-y-1.5 text-xs">
+                  <div className="flex items-center justify-between text-slate-300">
+                    <span>現場持出数量：</span>
+                    <strong className="text-rose-400">{returningItem.outQuantity}.00 {returningItem.outUnit}</strong>
+                  </div>
+                  <div className="flex items-center justify-between text-slate-300">
+                    <span>現場実質消費量：</span>
+                    <span className="text-slate-400">−{consumedFractionalPacks.toFixed(2)} {returningItem.outUnit}</span>
+                  </div>
+                  <div className="flex items-center justify-between text-emerald-300 font-black pt-1 border-t border-slate-800">
+                    <span>今回棚戻し（入庫）：</span>
+                    <span className="text-sm text-emerald-400">
+                      +{totalReturnedPacks.toFixed(2)} {returningItem.outUnit} (+{totalReturnedBaseQty} {originalTargetItem?.baseUnit || '個'})
+                    </span>
+                  </div>
+                </div>
+
+                <div className="p-2.5 bg-emerald-950/30 border border-emerald-500/40 rounded-xl text-xs text-emerald-200 flex items-center justify-between font-bold">
+                  <span>在庫への反映結果：</span>
+                  <span className="font-mono text-sm">
+                    {stockBeforeReturn} ➔ <strong className="text-emerald-400 font-black text-base">{stockAfterReturn}</strong> {originalTargetItem?.baseUnit}
                   </span>
-                  <p className="text-[11px] text-slate-400 mt-0.5">
-                    チェックを入れると、在庫品目に「開封品あり（端数残）」のマークを付け、次回優先して使うよう共有できます。
-                  </p>
                 </div>
               </div>
 
@@ -545,7 +635,7 @@ export const CheckedOutItemsView: React.FC = () => {
                   type="text"
                   value={returnNote}
                   onChange={(e) => setReturnNote(e.target.value)}
-                  placeholder="例: 1袋開封済みで残り約70本を箱へ戻しました"
+                  placeholder="例: 未開封1袋 + 開封品1袋(約25%残)を棚戻し"
                   className="w-full px-3.5 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white text-xs focus:outline-none focus:border-emerald-500"
                 />
               </div>
@@ -565,7 +655,7 @@ export const CheckedOutItemsView: React.FC = () => {
                   className="px-5 py-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-extrabold text-xs rounded-xl shadow-lg shadow-emerald-950 transition flex items-center gap-1.5"
                 >
                   <RotateCcw className="w-4 h-4" />
-                  <span>この内容で棚戻し（入庫 +{returnedBaseQty}）</span>
+                  <span>この内容で棚戻し（+{totalReturnedPacks.toFixed(2)} {returningItem.outUnit}）</span>
                 </button>
               </div>
             </div>

@@ -80,6 +80,7 @@ export const ItemMasterTable: React.FC = () => {
   const [isPurchaseOrderOpen, setIsPurchaseOrderOpen] = useState(false);
   const [isOutboundModalOpen, setIsOutboundModalOpen] = useState(false);
   const [outboundTargetItem, setOutboundTargetItem] = useState<ItemMaster | null>(null);
+  const [outboundTargetItems, setOutboundTargetItems] = useState<ItemMaster[]>([]);
 
   // Photo Zoom Lightbox
   const [zoomedImage, setZoomedImage] = useState<string | null>(null);
@@ -513,14 +514,14 @@ export const ItemMasterTable: React.FC = () => {
             </button>
             <button
               onClick={() => {
-                const firstItem = items.find((i) => selectedOrderIds.includes(i.id));
-                setOutboundTargetItem(firstItem || null);
+                setOutboundTargetItem(null);
+                setOutboundTargetItems(selectedOrderItems);
                 setIsOutboundModalOpen(true);
               }}
               className="px-3.5 py-1.5 bg-rose-600 hover:bg-rose-500 text-white font-extrabold text-xs rounded-xl shadow transition flex items-center gap-1.5"
             >
               <ArrowUpCircle className="w-4 h-4" />
-              <span>📤 払出・持出</span>
+              <span>📤 選択品目を一括持出・払出 ({selectedOrderIds.length}件)</span>
             </button>
             <button
               onClick={() => setIsPurchaseOrderOpen(true)}
@@ -1338,8 +1339,10 @@ export const ItemMasterTable: React.FC = () => {
           onClose={() => {
             setIsOutboundModalOpen(false);
             setOutboundTargetItem(null);
+            setOutboundTargetItems([]);
           }}
           initialItem={outboundTargetItem}
+          initialItems={outboundTargetItems}
         />
       )}
 

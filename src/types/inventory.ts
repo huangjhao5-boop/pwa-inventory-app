@@ -183,26 +183,26 @@ export interface AppSettings {
   };
 }
 
-export type ReturnCondition = 'UNOPENED' | 'LIGHTLY_USED' | 'HALF_USED' | 'MOSTLY_USED' | 'EXACT_COUNT';
+export type ReturnCondition = 'UNOPENED' | 'NEAR_FULL' | 'THREE_QUARTERS' | 'HALF_USED' | 'ONE_QUARTER_OR_LITTLE' | 'EXACT_COUNT';
 
-export interface ReturnConditionOption {
+export interface ReturnFractionPreset {
   key: ReturnCondition;
-  label: string;            // '🟢 未開封 (全量残)' | '🟡 少許使用・残80%' | '🟠 半分使用・残50%' | '🔴 ほぼ使用・残少許' | '🔢 正確な実数を入力'
-  ratio: number;            // 1.0, 0.8, 0.5, 0.2, or 0 for exact
-  isOpenPackage: boolean;   // true if package was opened
+  label: string;
+  fraction: number; // 1.0, 0.9, 0.75, 0.5, 0.25
   description: string;
 }
 
-export const RETURN_CONDITIONS: ReturnConditionOption[] = [
-  { key: 'UNOPENED', label: '🟢 未開封 (100% 残量)', ratio: 1.0, isOpenPackage: false, description: '未開封のまま全量返却' },
-  { key: 'LIGHTLY_USED', label: '🟡 少し使用 (約80% 残量)', ratio: 0.8, isOpenPackage: true, description: '開封済み・約8割残り' },
-  { key: 'HALF_USED', label: '🟠 半分使用 (約50% 残量)', ratio: 0.5, isOpenPackage: true, description: '開封済み・約半分残り' },
-  { key: 'MOSTLY_USED', label: '🔴 ほぼ使用 (約20% 残量)', ratio: 0.2, isOpenPackage: true, description: '開封済み・残り僅か' },
-  { key: 'EXACT_COUNT', label: '🔢 端数実数を手入力', ratio: 0, isOpenPackage: true, description: '正確な残り数量を入力' },
+export const RETURN_FRACTION_PRESETS: ReturnFractionPreset[] = [
+  { key: 'UNOPENED', label: '🟢 未開封 (1.00 / 100% 残量)', fraction: 1.0, description: '未開封のまま全量残' },
+  { key: 'NEAR_FULL', label: '🟢 ほぼ満杯 (0.90 / 約9割 残量)', fraction: 0.9, description: '数本・数個だけ使用' },
+  { key: 'THREE_QUARTERS', label: '🟡 約3/4残 (0.75 / 約75% 残量)', fraction: 0.75, description: '約1/4を使用' },
+  { key: 'HALF_USED', label: '🟠 半分使用 (0.50 / 約50% 残量)', fraction: 0.5, description: '約半分を使用' },
+  { key: 'ONE_QUARTER_OR_LITTLE', label: '🔴 剩餘少許 (0.25 / 約25% 残量)', fraction: 0.25, description: '約3/4を使用・残り少許' },
+  { key: 'EXACT_COUNT', label: '🔢 端数実数を直接入力', fraction: 0, description: '正確な端数または実数' },
 ];
 
 /**
- * 現場持出・未返却管理データ
+ * 現場持出・未返却管理データ（複数包・開封端数の正確な計算対応）
  */
 export interface CheckedOutItem {
   id: string;
@@ -213,17 +213,24 @@ export interface CheckedOutItem {
   supplier?: string;
   imageUrl?: string;
   location: string;             // 本来の保管場所 (戻し先)
-  outQuantity: number;          // 持出・払出入力数量 (例: 2)
-  outUnit: string;              // 持出単位 (例: 袋, 箱, 本)
-  multiplier: number;           // 換算倍率
-  outBaseQuantity: number;      // 持出基準数量 (例: 200本)
+  outQuantity: number;          // 持出・払出入力数量 (例: 3)
+  outUnit: string;              // 持出単位 (例: 袋, 箱, パック, 本)
+  multiplier: number;           // 換算倍率 (例: 1袋 = 100本)
+  outBaseQuantity: number;      // 持出基準数量 (例: 300本)
   operator: string;             // 持出作業員 (例: M.K(TW), 田中)
   destination?: string;         // 現場名・工事番号・用途 (例: A棟制御盤配線, 現場持出)
   checkedOutAt: string;         // 持出日時 ISO
   status: 'CHECKED_OUT' | 'RETURNED' | 'CONSUMED'; // 持出中 / 返却済 / 全消費完了
-  returnedAt?: string;          // 返却日時
-  returnedBaseQuantity?: number;// 実際に返却された基準数量
-  returnCondition?: ReturnCondition; // 返却時の開封・残量状態
+
+  // 返却・棚戻し詳細
+  returnedAt?: string;          // 返却日時 ISO
+  unopenedReturnedCount?: number; // 未開封で返却した包数 (例: 1)
+  openedReturnedCount?: number;   // 開封品として返却した包数 (例: 1)
+  openedRemainingFraction?: number; // 開封品の残量係数 (例: 0.25)
+  consumedCount?: number;         // 現場で全消費した包数 (例: 1)
+  returnedPackEquivalent?: number;// 返却合計換算包数 (例: 1 + 0.25 = 1.25 包)
+  returnedBaseQuantity?: number;  // 実際に返却された基準数量 (例: 125本)
+  returnCondition?: ReturnCondition;
   isPackageOpened?: boolean;    // 開封済みフラグ
   returnNote?: string;          // 返却時メモ
 }

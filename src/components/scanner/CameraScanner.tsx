@@ -36,8 +36,8 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({ onScan }) => {
     (decodedText: string) => {
       const now = Date.now();
       const isSameCode = lastScannedRef.current.code === decodedText;
-      // 連続スキャン誤検知防止のため、最低3.0秒（同一品目は3.5秒）のバッファ間隔を設定
-      const cooldown = isSameCode ? 3500 : 3000;
+      // 連続検品モード時は軽快な1.2秒（同一品目は1.8秒）、単体スキャン時は2.0秒のバッファ間隔を設定
+      const cooldown = onScan ? (isSameCode ? 1800 : 1200) : (isSameCode ? 2500 : 2000);
 
       if (now - lastScannedRef.current.time < cooldown) {
         return;
