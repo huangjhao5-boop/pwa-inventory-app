@@ -5,6 +5,8 @@ import { ItemFormModal } from './ItemFormModal';
 import { CsvImportExportModal } from './CsvImportExportModal';
 import { CsvExportModal } from './CsvExportModal';
 import { PurchaseOrderModal } from './PurchaseOrderModal';
+import { StorageBoxModal, BOX_ICONS, BOX_COLORS } from './StorageBoxModal';
+import { StorageBoxConfig } from '../../types/inventory';
 import {
   Package,
   Search,
@@ -27,15 +29,31 @@ import {
   ZoomIn,
   X,
   ArrowRight,
+  Settings2,
 } from 'lucide-react';
 
 export const ItemMasterTable: React.FC = () => {
-  const { items, deleteItem, openQRGenerator, addToast, settings, recordTransaction, setActiveTab } = useInventory();
+  const {
+    items,
+    deleteItem,
+    openQRGenerator,
+    addToast,
+    settings,
+    recordTransaction,
+    setActiveTab,
+    boxConfigs,
+  } = useInventory();
   const isFieldMode = settings.viewMode === 'FIELD';
 
   // View mode switcher: BOX_EXPLORER (保管箱ビジュアル), GRID (データテーブル), CARDS (部品カード)
   const [viewMode, setViewMode] = useState<'BOX_EXPLORER' | 'GRID' | 'CARDS'>('BOX_EXPLORER');
   const [activeBoxFilter, setActiveBoxFilter] = useState<string | null>(null);
+
+  // Storage Box Edit Modal State
+  const [isBoxModalOpen, setIsBoxModalOpen] = useState(false);
+  const [editingBoxConfig, setEditingBoxConfig] = useState<StorageBoxConfig | null>(null);
+  const [editingBoxName, setEditingBoxName] = useState<string | undefined>(undefined);
+  const [editingBoxItemCount, setEditingBoxItemCount] = useState<number>(0);
 
   // Filters
   const [searchQuery, setSearchQuery] = useState('');
@@ -62,39 +80,56 @@ export const ItemMasterTable: React.FC = () => {
   const suppliers = ['ALL', ...Array.from(new Set(items.map((i) => i.supplier).filter(Boolean) as string[]))];
   const locations = ['ALL', ...Array.from(new Set(items.map((i) => i.location).filter(Boolean)))];
 
-  // Group items by storage box for the Visual Box Map
-  const boxGroups = useMemo(() => {
-    const map = new Map<string, ItemMaster[]>();
-    items.forEach((item) => {
-      const loc = item.location || '未分類保管箱';
-      if (!map.has(loc)) map.set(loc, []);
-      map.get(loc)!.push(item);
-    });
+  const handleOpenEditBox = (boxName: string, count: number) => {
+    const config = boxConfigs.find((b) => b.name === boxName) || {
+      name: boxName,
+      icon: 'box',
+      color: 'emerald',
+    };
+    setEditingBoxConfig(config);
+    setEditingBoxName(boxName);
+    setEditingBoxItemCount(count);
+    setIsBoxModalOpen(true);
+  };
 
-    return Array.from(map.entries()).map(([boxName, boxItems]) => {
+  const handleOpenCreateBox = () => {
+    setEditingBoxConfig(null);
+    setEditingBoxName(undefined);
+    setEditingBoxItemCount(0);
+    setIsBoxModalOpen(true);
+  };
+
+  // Group items by storage box for the Visual Box Map (combines boxConfigs and items)
+  const boxGroups = useMemo(() => {
+    const allBoxNames = Array.from(
+      new Set([
+        ...boxConfigs.map((b) => b.name),
+        ...items.map((i) => i.location || '未分類保管箱'),
+      ])
+    );
+
+    return allBoxNames.map((boxName) => {
+      const boxItems = items.filter((i) => (i.location || '未分類保管箱') === boxName);
       const lowStockInBox = boxItems.filter((i) => i.currentStock <= i.safetyStock).length;
       const totalUnits = boxItems.reduce((acc, curr) => acc + curr.currentStock, 0);
       const sampleImages = boxItems.map((i) => i.imageUrl).filter(Boolean) as string[];
 
-      // Determine theme color based on box name
-      let themeColor = 'from-blue-600/20 to-indigo-950/40 border-blue-500/40 text-blue-400';
-      let iconColor = 'text-blue-400 bg-blue-500/20 border-blue-500/30';
-      if (boxName.includes('端子')) {
-        themeColor = 'from-emerald-600/20 to-teal-950/40 border-emerald-500/40 text-emerald-400';
-        iconColor = 'text-emerald-400 bg-emerald-500/20 border-emerald-500/30';
-      } else if (boxName.includes('結束バンド') || boxName.includes('インシュロック')) {
-        themeColor = 'from-amber-600/20 to-yellow-950/40 border-amber-500/40 text-amber-400';
-        iconColor = 'text-amber-400 bg-amber-500/20 border-amber-500/30';
-      } else if (boxName.includes('ネジ') || boxName.includes('ボルト') || boxName.includes('締結')) {
-        themeColor = 'from-cyan-600/20 to-blue-950/40 border-cyan-500/40 text-cyan-400';
-        iconColor = 'text-cyan-400 bg-cyan-500/20 border-cyan-500/30';
-      } else if (boxName.includes('ヒューズ')) {
-        themeColor = 'from-rose-600/20 to-red-950/40 border-rose-500/40 text-rose-400';
-        iconColor = 'text-rose-400 bg-rose-500/20 border-rose-500/30';
-      } else if (boxName.includes('盤') || boxName.includes('制御')) {
-        themeColor = 'from-purple-600/20 to-violet-950/40 border-purple-500/40 text-purple-400';
-        iconColor = 'text-purple-400 bg-purple-500/20 border-purple-500/30';
-      }
+      // Lookup custom box config
+      const config = boxConfigs.find((b) => b.name === boxName);
+      let defaultColor = 'blue';
+      let defaultIcon = 'box';
+      if (boxName.includes('端子')) { defaultColor = 'emerald'; defaultIcon = 'zap'; }
+      else if (boxName.includes('結束バンド') || boxName.includes('インシュロック')) { defaultColor = 'amber'; defaultIcon = 'link'; }
+      else if (boxName.includes('ネジ') || boxName.includes('ボルト') || boxName.includes('締結')) { defaultColor = 'cyan'; defaultIcon = 'wrench'; }
+      else if (boxName.includes('ヒューズ')) { defaultColor = 'rose'; defaultIcon = 'shield'; }
+      else if (boxName.includes('盤') || boxName.includes('制御')) { defaultColor = 'purple'; defaultIcon = 'server'; }
+      else if (boxName.includes('マークチューブ')) { defaultColor = 'orange'; defaultIcon = 'tag'; }
+
+      const iconId = config?.icon || defaultIcon;
+      const colorId = config?.color || defaultColor;
+
+      const colorObj = BOX_COLORS.find((c) => c.id === colorId) || BOX_COLORS[0];
+      const iconObj = BOX_ICONS.find((i) => i.id === iconId) || BOX_ICONS[0];
 
       return {
         boxName,
@@ -103,11 +138,14 @@ export const ItemMasterTable: React.FC = () => {
         lowStockCount: lowStockInBox,
         totalUnits,
         sampleImages,
-        themeColor,
-        iconColor,
+        themeColor: `${colorObj.bg} ${colorObj.border}`,
+        iconColor: `${colorObj.badge} ${colorObj.text}`,
+        iconComponent: iconObj.icon,
+        iconLabel: iconObj.label,
+        description: config?.description,
       };
     });
-  }, [items]);
+  }, [items, boxConfigs]);
 
   // Filter items
   const filteredItems = items.filter((item) => {
@@ -466,7 +504,7 @@ export const ItemMasterTable: React.FC = () => {
         <div className="space-y-4">
           {/* Breadcrumb Navigation when a box is opened */}
           {activeBoxFilter && (
-            <div className="bg-slate-900 border border-indigo-500/40 rounded-2xl p-3 flex items-center justify-between gap-3 shadow-md animate-in fade-in">
+            <div className="bg-slate-900 border border-indigo-500/40 rounded-2xl p-3 flex flex-wrap items-center justify-between gap-3 shadow-md animate-in fade-in">
               <div className="flex items-center gap-2 text-xs sm:text-sm">
                 <button
                   onClick={() => setActiveBoxFilter(null)}
@@ -480,83 +518,132 @@ export const ItemMasterTable: React.FC = () => {
                   {activeBoxFilter} ({filteredItems.length} 品目)
                 </span>
               </div>
-              <button
-                onClick={() => setActiveBoxFilter(null)}
-                className="flex items-center gap-1 px-3 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold rounded-xl border border-slate-700 transition"
-              >
-                <X className="w-3.5 h-3.5" />
-                <span>すべての箱を表示</span>
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => handleOpenEditBox(activeBoxFilter, filteredItems.length)}
+                  className="flex items-center gap-1.5 px-3 py-1 bg-indigo-950/80 hover:bg-indigo-900 text-indigo-200 text-xs font-bold rounded-xl border border-indigo-700/80 transition"
+                  title="保管箱の名前・アイコン・色を変更"
+                >
+                  <Settings2 className="w-3.5 h-3.5" />
+                  <span>箱設定・名前変更</span>
+                </button>
+                <button
+                  onClick={() => setActiveBoxFilter(null)}
+                  className="flex items-center gap-1 px-3 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold rounded-xl border border-slate-700 transition"
+                >
+                  <X className="w-3.5 h-3.5" />
+                  <span>すべての箱を表示</span>
+                </button>
+              </div>
             </div>
           )}
 
-          {/* Box Overview Grid (Shown when no specific box is locked, or as quick drawer) */}
+          {/* Box Overview Header & Grid (Shown when no specific box is locked) */}
           {!activeBoxFilter && (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-              {boxGroups.map((box) => (
-                <div
-                  key={box.boxName}
-                  onClick={() => setActiveBoxFilter(box.boxName)}
-                  className={`bg-gradient-to-br ${box.themeColor} rounded-3xl p-5 border shadow-xl hover:scale-[1.02] hover:shadow-2xl transition cursor-pointer flex flex-col justify-between space-y-4 group`}
+            <div className="space-y-3">
+              <div className="flex items-center justify-between px-1">
+                <div className="flex items-center gap-2">
+                  <span className="font-extrabold text-sm text-slate-200">
+                    保管ボックス一覧 ({boxGroups.length} 箱)
+                  </span>
+                  <span className="text-[11px] text-slate-400">
+                    箱をクリックすると中身の品目一覧を表示します
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleOpenCreateBox}
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs rounded-xl shadow transition active:scale-95"
                 >
-                  {/* Top: Icon & Box Title */}
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="flex items-center gap-3">
-                      <div className={`p-3 rounded-2xl border shadow-inner ${box.iconColor} group-hover:scale-110 transition duration-200`}>
-                        <Box className="w-6 h-6 stroke-[2.5]" />
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>＋ 保管箱を追加</span>
+                </button>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                {boxGroups.map((box) => {
+                  const BoxIcon = box.iconComponent;
+                  return (
+                    <div
+                      key={box.boxName}
+                      onClick={() => setActiveBoxFilter(box.boxName)}
+                      className={`bg-gradient-to-br ${box.themeColor} rounded-3xl p-5 border shadow-xl hover:scale-[1.02] hover:shadow-2xl transition cursor-pointer flex flex-col justify-between space-y-4 group relative`}
+                    >
+                      {/* Top: Icon & Box Title & Edit Button */}
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="flex items-center gap-3 min-w-0">
+                          <div className={`p-3 rounded-2xl border shadow-inner ${box.iconColor} group-hover:scale-110 transition duration-200 shrink-0`}>
+                            <BoxIcon className="w-6 h-6 stroke-[2.5]" />
+                          </div>
+                          <div className="min-w-0">
+                            <h3 className="font-black text-base sm:text-lg text-white group-hover:text-amber-300 transition truncate">
+                              {box.boxName}
+                            </h3>
+                            <p className="text-xs text-slate-400 font-medium mt-0.5 truncate">
+                              {box.description || `${box.itemCount} 品目格納 / 総計: ${box.totalUnits}`}
+                            </p>
+                          </div>
+                        </div>
+
+                        <div className="flex flex-col items-end gap-1.5 shrink-0">
+                          {/* Edit Box settings */}
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleOpenEditBox(box.boxName, box.itemCount);
+                            }}
+                            className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-800/80 rounded-xl transition border border-transparent hover:border-slate-700"
+                            title="箱の設定・名前・色を変更"
+                          >
+                            <Settings2 className="w-4 h-4" />
+                          </button>
+
+                          {/* Stock status badge */}
+                          {box.lowStockCount > 0 ? (
+                            <span className="px-2.5 py-1 rounded-full text-[10px] font-black bg-rose-500/20 text-rose-300 border border-rose-500/40 animate-pulse">
+                              ⚠️ 要発注: {box.lowStockCount}
+                            </span>
+                          ) : (
+                            <span className="px-2.5 py-1 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                              ✅ 健全
+                            </span>
+                          )}
+                        </div>
                       </div>
-                      <div>
-                        <h3 className="font-black text-base sm:text-lg text-white group-hover:text-amber-300 transition">
-                          {box.boxName}
-                        </h3>
-                        <p className="text-xs text-slate-400 font-medium mt-0.5">
-                          {box.itemCount} 品目格納 / 総計: <strong className="text-emerald-400">{box.totalUnits}</strong>
-                        </p>
+
+                      {/* Middle: Visual Sample Images Mosaic */}
+                      <div className="bg-slate-950/70 p-2.5 rounded-2xl border border-slate-800/80 flex items-center gap-2 overflow-x-auto scrollbar-none min-h-[58px]">
+                        {box.sampleImages.length > 0 ? (
+                          box.sampleImages.slice(0, 4).map((imgUrl, i) => (
+                            <img
+                              key={i}
+                              src={imgUrl}
+                              alt="部品写真"
+                              className="w-11 h-11 object-cover rounded-xl border border-slate-700 bg-black shrink-0"
+                            />
+                          ))
+                        ) : (
+                          <span className="text-[11px] text-slate-500 px-2 py-1">
+                            {box.itemCount > 0 ? '写真未登録の品目が格納中' : '品目がまだ格納されていません'}
+                          </span>
+                        )}
+                        {box.sampleImages.length > 4 && (
+                          <span className="text-[10px] font-bold text-slate-400 bg-slate-800 px-2 py-1 rounded-lg shrink-0">
+                            +{box.sampleImages.length - 4}
+                          </span>
+                        )}
+                      </div>
+
+                      {/* Bottom: Open Action Button */}
+                      <div className="flex items-center justify-between pt-1 border-t border-slate-800/60 text-xs font-extrabold text-indigo-300 group-hover:text-white transition">
+                        <span>この保管箱を開いて確認 ({box.itemCount} 品目)</span>
+                        <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition" />
                       </div>
                     </div>
-
-                    {/* Stock status badge */}
-                    {box.lowStockCount > 0 ? (
-                      <span className="px-2.5 py-1 rounded-full text-[10px] font-black bg-rose-500/20 text-rose-300 border border-rose-500/40 animate-pulse shrink-0">
-                        ⚠️ 要発注: {box.lowStockCount}
-                      </span>
-                    ) : (
-                      <span className="px-2.5 py-1 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 shrink-0">
-                        ✅ 健全
-                      </span>
-                    )}
-                  </div>
-
-                  {/* Middle: Visual Sample Images Mosaic */}
-                  <div className="bg-slate-950/70 p-2.5 rounded-2xl border border-slate-800/80 flex items-center gap-2 overflow-x-auto scrollbar-none min-h-[58px]">
-                    {box.sampleImages.length > 0 ? (
-                      box.sampleImages.slice(0, 4).map((imgUrl, i) => (
-                        <img
-                          key={i}
-                          src={imgUrl}
-                          alt="部品写真"
-                          className="w-11 h-11 object-cover rounded-xl border border-slate-700 bg-black shrink-0"
-                        />
-                      ))
-                    ) : (
-                      <span className="text-[11px] text-slate-500 px-2 py-1">
-                        写真未登録の品目が格納されています
-                      </span>
-                    )}
-                    {box.sampleImages.length > 4 && (
-                      <span className="text-[10px] font-bold text-slate-400 bg-slate-800 px-2 py-1 rounded-lg shrink-0">
-                        +{box.sampleImages.length - 4}
-                      </span>
-                    )}
-                  </div>
-
-                  {/* Bottom: Open Action Button */}
-                  <div className="flex items-center justify-between pt-1 border-t border-slate-800/60 text-xs font-extrabold text-indigo-300 group-hover:text-white transition">
-                    <span>この保管箱を開いて確認</span>
-                    <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition" />
-                  </div>
-                </div>
-              ))}
+                  );
+                })}
+              </div>
             </div>
           )}
 
@@ -942,6 +1029,21 @@ export const ItemMasterTable: React.FC = () => {
           isOpen={isPurchaseOrderOpen}
           onClose={() => setIsPurchaseOrderOpen(false)}
           initialSelectedItems={selectedOrderItems}
+        />
+      )}
+
+      {/* Storage Box Customization & Rename Modal */}
+      {isBoxModalOpen && (
+        <StorageBoxModal
+          isOpen={isBoxModalOpen}
+          onClose={() => {
+            setIsBoxModalOpen(false);
+            setEditingBoxConfig(null);
+            setEditingBoxName(undefined);
+          }}
+          boxConfig={editingBoxConfig}
+          currentBoxName={editingBoxName}
+          itemCountInBox={editingBoxItemCount}
         />
       )}
 

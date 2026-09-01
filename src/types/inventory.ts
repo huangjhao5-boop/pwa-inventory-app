@@ -50,6 +50,27 @@ export interface LinkedBarcode {
   label?: string;             // 用途ラベル (例: 外箱ITFコード, 仕入先発注コード, ケースコード)
 }
 
+/**
+ * 保管ボックス設定（名前変更・アイコン・テーマカラー設定）
+ */
+export interface StorageBoxConfig {
+  name: string;        // 保管箱名 (例: 端子ボックス (A-01))
+  icon: string;        // 'zap' | 'link' | 'wrench' | 'shield' | 'server' | 'tag' | 'plug' | 'tool' | 'box'
+  color: string;       // 'emerald' | 'amber' | 'blue' | 'rose' | 'purple' | 'cyan' | 'orange' | 'slate'
+  description?: string;
+}
+
+export const DEFAULT_STORAGE_BOXES: StorageBoxConfig[] = [
+  { name: '端子ボックス (A-01)', icon: 'zap', color: 'emerald', description: '圧着端子・スリーブ・絶縁キャップ' },
+  { name: '結束バンドボックス (B-01)', icon: 'link', color: 'amber', description: 'インシュロック・タイマウント・固定具' },
+  { name: 'ネジ・締結ボックス (B-02)', icon: 'wrench', color: 'cyan', description: 'M3〜M6ビス・ナット・ワッシャー' },
+  { name: 'ヒューズボックス (C-01)', icon: 'shield', color: 'rose', description: '筒型・管ヒューズ・ブレーカー予備' },
+  { name: 'マークチューブ棚 (C-02)', icon: 'tag', color: 'orange', description: '印字チューブ・ラベル・銘板シート' },
+  { name: '盤材ラック (D-01)', icon: 'server', color: 'purple', description: 'DINレール・ダクト・端子台・リレー' },
+  { name: 'コネクタ・プラグ箱 (E-01)', icon: 'plug', color: 'blue', description: '産業用コネクタ・モジュラープラグ' },
+  { name: '予備品ボックス (E-02)', icon: 'box', color: 'slate', description: 'その他汎用資材・消耗品ストック' },
+];
+
 export interface ItemMaster {
   id: string;
   code: string;               // 品目コード / メインJAN / QRコード

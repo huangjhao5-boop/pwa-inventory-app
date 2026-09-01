@@ -8,6 +8,8 @@ import {
   TabKey,
   PendingInbound,
   LinkedBarcode,
+  StorageBoxConfig,
+  DEFAULT_STORAGE_BOXES,
 } from '../types/inventory';
 import { LocalDatabaseService } from '../services/db';
 import { cloudSync, FirebaseConfigOptions } from '../services/firebase';
@@ -32,6 +34,12 @@ export interface InventoryContextType {
   toasts: ToastMessage[];
   addToast: (type: 'success' | 'error' | 'info' | 'warning', text: string) => void;
   removeToast: (id: string) => void;
+
+  // Storage Boxes configuration & cascading rename
+  boxConfigs: StorageBoxConfig[];
+  updateBoxConfig: (oldName: string, newConfig: StorageBoxConfig) => Promise<boolean>;
+  addBoxConfig: (newConfig: StorageBoxConfig) => Promise<boolean>;
+  deleteBoxConfig: (boxName: string) => Promise<boolean>;
 
   isOnline: boolean;
   isCloudConnected: boolean;
@@ -135,6 +143,28 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
   const [isQRModalOpen, setIsQRModalOpen] = useState(false);
   const [qrModalItem, setQrModalItem] = useState<ItemMaster | null>(null);
 
+  // Storage Box Configuration State
+  const [boxConfigs, setBoxConfigs] = useState<StorageBoxConfig[]>(() => {
+    try {
+      const saved = localStorage.getItem('smart_inventory_box_configs');
+      if (saved) {
+        return JSON.parse(saved);
+      }
+    } catch {
+      // fallback
+    }
+    return DEFAULT_STORAGE_BOXES;
+  });
+
+  const saveBoxConfigsToStorage = (configs: StorageBoxConfig[]) => {
+    setBoxConfigs(configs);
+    try {
+      localStorage.setItem('smart_inventory_box_configs', JSON.stringify(configs));
+    } catch (e) {
+      console.error('Failed to save box configs:', e);
+    }
+  };
+
   // Keep items ref for fast lookups without stale closure
   const itemsRef = useRef<ItemMaster[]>([]);
   useEffect(() => { itemsRef.current = items; }, [items]);
@@ -149,6 +179,82 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
     setToasts((prev) => [...prev.slice(-3), { id, type, text }]); // max 4 toasts
     setTimeout(() => removeToast(id), 3800);
   }, [removeToast]);
+
+  // ─── Storage Box CRUD & Cascading Location Rename ───
+  const updateBoxConfig = useCallback(async (oldName: string, newConfig: StorageBoxConfig): Promise<boolean> => {
+    try {
+      // 1. Update boxConfigs list
+      const existingIdx = boxConfigs.findIndex((b) => b.name === oldName);
+      let updatedConfigs = [...boxConfigs];
+      if (existingIdx >= 0) {
+        updatedConfigs[existingIdx] = newConfig;
+      } else {
+        updatedConfigs.push(newConfig);
+      }
+      saveBoxConfigsToStorage(updatedConfigs);
+
+      // 2. Cascading location rename: If box name changed, update all items currently located in oldName!
+      if (oldName !== newConfig.name) {
+        const affectedItems = itemsRef.current.filter((item) => item.location === oldName);
+        if (affectedItems.length > 0) {
+          const updatedItemsList = itemsRef.current.map((item) => {
+            if (item.location === oldName) {
+              return { ...item, location: newConfig.name, updatedAt: new Date().toISOString() };
+            }
+            return item;
+          });
+          setItems(updatedItemsList);
+
+          // Persist each modified item
+          for (const item of affectedItems) {
+            const updated = { ...item, location: newConfig.name, updatedAt: new Date().toISOString() };
+            await LocalDatabaseService.saveItem(updated);
+            if (cloudSync.isCloudEnabled()) {
+              cloudSync.syncItemToCloud(updated);
+            }
+          }
+          addToast('success', `保管箱名を「${newConfig.name}」に変更し、所属する${affectedItems.length}件の品目を自動連動更新しました！`);
+        } else {
+          addToast('success', `保管箱「${newConfig.name}」の設定を更新しました`);
+        }
+      } else {
+        addToast('success', `保管箱「${newConfig.name}」のアイコン・色を更新しました`);
+      }
+      return true;
+    } catch (err) {
+      console.error('Failed to update box config:', err);
+      addToast('error', '保管箱の更新に失敗しました');
+      return false;
+    }
+  }, [boxConfigs, addToast]);
+
+  const addBoxConfig = useCallback(async (newConfig: StorageBoxConfig): Promise<boolean> => {
+    try {
+      if (boxConfigs.some((b) => b.name.trim() === newConfig.name.trim())) {
+        addToast('warning', `同名の保管箱「${newConfig.name}」が既に存在します`);
+        return false;
+      }
+      const updated = [...boxConfigs, newConfig];
+      saveBoxConfigsToStorage(updated);
+      addToast('success', `新しい保管箱「${newConfig.name}」を追加しました`);
+      return true;
+    } catch (err) {
+      addToast('error', '保管箱の追加に失敗しました');
+      return false;
+    }
+  }, [boxConfigs, addToast]);
+
+  const deleteBoxConfig = useCallback(async (boxName: string): Promise<boolean> => {
+    try {
+      const updated = boxConfigs.filter((b) => b.name !== boxName);
+      saveBoxConfigsToStorage(updated);
+      addToast('info', `保管箱「${boxName}」を削除しました`);
+      return true;
+    } catch (err) {
+      addToast('error', '保管箱の削除に失敗しました');
+      return false;
+    }
+  }, [boxConfigs, addToast]);
 
   // ─── Network ───
   const refreshPendingCount = useCallback(async () => {
@@ -841,6 +947,7 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
     <InventoryContext.Provider value={{
       items, logs, pendingInbounds, activeTab, setActiveTab,
       settings, updateSettings, toasts, addToast, removeToast,
+      boxConfigs, updateBoxConfig, addBoxConfig, deleteBoxConfig,
       isOnline, isCloudConnected, setIsCloudConnected,
       pendingSyncCount: pendingCount, pendingCount, isSyncing,
       triggerManualSync: triggerSync, triggerSync, refreshPendingCount,
