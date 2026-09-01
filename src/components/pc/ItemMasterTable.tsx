@@ -534,7 +534,48 @@ export const ItemMasterTable: React.FC = () => {
                   {activeBoxFilter} ({filteredItems.length} 品目)
                 </span>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
+                {/* Select All / Deselect All inside this box */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    const boxItemIds = filteredItems.map((i) => i.id);
+                    const allSelected = boxItemIds.every((id) => selectedOrderIds.includes(id));
+                    if (allSelected) {
+                      setSelectedOrderIds(selectedOrderIds.filter((id) => !boxItemIds.includes(id)));
+                    } else {
+                      setSelectedOrderIds(Array.from(new Set([...selectedOrderIds, ...boxItemIds])));
+                    }
+                  }}
+                  className="flex items-center gap-1.5 px-3 py-1 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold rounded-xl border border-slate-700 transition"
+                >
+                  <CheckSquare className="w-3.5 h-3.5 text-indigo-400" />
+                  <span>
+                    {filteredItems.every((i) => selectedOrderIds.includes(i.id))
+                      ? 'この箱の選択を解除'
+                      : 'この箱の全品目を選択'}
+                  </span>
+                </button>
+
+                {/* Move All items in this box */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    const boxItemIds = filteredItems.map((i) => i.id);
+                    if (boxItemIds.length === 0) return;
+                    setSelectedOrderIds(boxItemIds);
+                    setTargetMoveBox(
+                      boxGroups.find((b) => b.boxName !== activeBoxFilter)?.boxName || '端子ボックス (A-01)'
+                    );
+                    setIsBatchMoveOpen(true);
+                  }}
+                  className="flex items-center gap-1.5 px-3 py-1 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold rounded-xl shadow transition"
+                  title="この箱に入っている全品目を別の保管箱へ一括移動"
+                >
+                  <Box className="w-3.5 h-3.5" />
+                  <span>中身を一括で別箱へ移動</span>
+                </button>
+
                 <button
                   onClick={() => handleOpenEditBox(activeBoxFilter, filteredItems.length)}
                   className="flex items-center gap-1.5 px-3 py-1 bg-indigo-950/80 hover:bg-indigo-900 text-indigo-200 text-xs font-bold rounded-xl border border-indigo-700/80 transition"
@@ -745,18 +786,41 @@ export const ItemMasterTable: React.FC = () => {
 
                       {/* Card Footer Actions */}
                       <div className="flex items-center justify-between pt-1 border-t border-slate-800/80 text-xs">
-                        <button
-                          type="button"
-                          onClick={() => toggleSelectOneOrder(item.id)}
-                          className={`flex items-center gap-1 px-2.5 py-1 rounded-lg font-bold transition ${
-                            isSelectedForOrder
-                              ? 'bg-amber-500 text-slate-950'
-                              : 'text-slate-400 hover:text-amber-400 bg-slate-800'
-                          }`}
-                        >
-                          <ShoppingCart className="w-3.5 h-3.5" />
-                          <span>{isSelectedForOrder ? '発注対象中' : '発注に追加'}</span>
-                        </button>
+                        <div className="flex items-center gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => toggleSelectOneOrder(item.id)}
+                            className={`flex items-center gap-1 px-2 py-1 rounded-lg font-bold transition ${
+                              isSelectedForOrder
+                                ? 'bg-indigo-600 text-white'
+                                : 'text-slate-400 hover:text-white bg-slate-800'
+                            }`}
+                            title="選択して一括操作"
+                          >
+                            {isSelectedForOrder ? (
+                              <CheckSquare className="w-3.5 h-3.5 text-white" />
+                            ) : (
+                              <Square className="w-3.5 h-3.5 text-slate-500" />
+                            )}
+                            <span>{isSelectedForOrder ? '選択中' : '選択'}</span>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setSelectedOrderIds([item.id]);
+                              setTargetMoveBox(
+                                boxGroups.find((b) => b.boxName !== item.location)?.boxName || '端子ボックス (A-01)'
+                              );
+                              setIsBatchMoveOpen(true);
+                            }}
+                            className="flex items-center gap-1 px-2 py-1 rounded-lg font-bold text-indigo-300 hover:text-white bg-indigo-950/70 hover:bg-indigo-900 border border-indigo-700/60 transition"
+                            title="この品目を別の保管箱へ移動"
+                          >
+                            <Box className="w-3.5 h-3.5" />
+                            <span>移箱</span>
+                          </button>
+                        </div>
 
                         <div className="flex items-center gap-1">
                           <button
@@ -913,6 +977,20 @@ export const ItemMasterTable: React.FC = () => {
                         <td className="py-2.5 px-3 text-center">
                           <div className="flex items-center justify-center gap-1.5">
                             <button
+                              type="button"
+                              onClick={() => {
+                                setSelectedOrderIds([item.id]);
+                                setTargetMoveBox(
+                                  boxGroups.find((b) => b.boxName !== item.location)?.boxName || '端子ボックス (A-01)'
+                                );
+                                setIsBatchMoveOpen(true);
+                              }}
+                              className="p-1.5 text-slate-400 hover:text-indigo-300 hover:bg-slate-800 rounded-lg transition"
+                              title="保管箱を移動"
+                            >
+                              <Box className="w-4 h-4" />
+                            </button>
+                            <button
                               onClick={() => openQRGenerator(item)}
                               className="p-1.5 text-slate-400 hover:text-blue-400 hover:bg-slate-800 rounded-lg transition"
                               title="QRコード表示"
@@ -956,62 +1034,108 @@ export const ItemMasterTable: React.FC = () => {
       {/* ───────────────────────────────────────────────────────────── */}
       {viewMode === 'CARDS' && (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5">
-          {filteredItems.map((item) => (
-            <div
-              key={item.id}
-              className="bg-slate-900 border border-slate-800 rounded-3xl p-4 shadow-lg flex flex-col justify-between space-y-3"
-            >
-              <div className="flex items-start gap-3">
-                {item.imageUrl ? (
-                  <img
-                    src={item.imageUrl}
-                    alt={item.name}
-                    onClick={() => setZoomedImage(item.imageUrl || null)}
-                    className="w-14 h-14 object-cover rounded-2xl border border-slate-700 bg-black cursor-pointer hover:scale-110 transition shrink-0"
-                    title="拡大表示"
-                  />
-                ) : (
-                  <div className="w-14 h-14 rounded-2xl bg-slate-800 border border-slate-700 flex items-center justify-center text-slate-500 text-xs font-bold shrink-0">
-                    No Photo
-                  </div>
-                )}
-                <div className="flex-1 min-w-0">
-                  <span className="font-black text-sm text-white truncate block">{item.name}</span>
-                  {item.spec && (
-                    <span className="px-2 py-0.5 rounded-lg bg-amber-500/20 text-amber-300 font-mono font-bold text-xs inline-block mt-0.5 truncate max-w-full">
-                      規格: {item.spec}
-                    </span>
-                  )}
-                  <div className="text-[11px] text-slate-400 mt-1">
-                    {item.supplier || '-'} | <span className="text-blue-300">{item.location}</span>
-                  </div>
-                </div>
-              </div>
+          {filteredItems.map((item) => {
+            const isLow = item.currentStock <= item.safetyStock;
+            const isSelected = selectedOrderIds.includes(item.id);
 
-              <div className="bg-slate-950 p-2.5 rounded-2xl border border-slate-800 flex items-center justify-between">
-                <div>
-                  <span className="text-[10px] text-slate-500 font-semibold block">現在庫</span>
-                  <span className="text-xl font-black text-emerald-400">
-                    {item.currentStock} <span className="text-xs font-bold text-slate-300">{item.baseUnit}</span>
-                  </span>
+            return (
+              <div
+                key={item.id}
+                className="bg-slate-900 border border-slate-800 rounded-3xl p-4 shadow-lg flex flex-col justify-between space-y-3"
+              >
+                <div className="flex items-start gap-3">
+                  {item.imageUrl ? (
+                    <img
+                      src={item.imageUrl}
+                      alt={item.name}
+                      onClick={() => setZoomedImage(item.imageUrl || null)}
+                      className="w-14 h-14 object-cover rounded-2xl border border-slate-700 bg-black cursor-pointer hover:scale-110 transition shrink-0"
+                      title="拡大表示"
+                    />
+                  ) : (
+                    <div className="w-14 h-14 rounded-2xl bg-slate-800 border border-slate-700 flex items-center justify-center text-slate-500 text-xs font-bold shrink-0">
+                      No Photo
+                    </div>
+                  )}
+                  <div className="flex-1 min-w-0">
+                    <span className="font-black text-sm text-white truncate block">{item.name}</span>
+                    {item.spec && (
+                      <span className="px-2 py-0.5 rounded-lg bg-amber-500/20 text-amber-300 font-mono font-bold text-xs inline-block mt-0.5 truncate max-w-full">
+                        規格: {item.spec}
+                      </span>
+                    )}
+                    <div className="text-[11px] text-slate-400 mt-1">
+                      {item.supplier || '-'} | <span className="text-blue-300">{item.location}</span>
+                    </div>
+                  </div>
                 </div>
-                <div className="flex items-center gap-1">
+
+                <div className="bg-slate-950 p-2.5 rounded-2xl border border-slate-800 flex items-center justify-between">
+                  <div>
+                    <span className="text-[10px] text-slate-500 font-semibold block">現在庫</span>
+                    <span className={`text-xl font-black ${isLow ? 'text-rose-400' : 'text-emerald-400'}`}>
+                      {item.currentStock} <span className="text-xs font-bold text-slate-300">{item.baseUnit}</span>
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <button
+                      onClick={() => handleQuickAdjust(item, -1)}
+                      className="w-8 h-8 rounded-xl bg-slate-800 hover:bg-rose-600 text-white font-black text-sm flex items-center justify-center"
+                    >
+                      −
+                    </button>
+                    <button
+                      onClick={() => handleQuickAdjust(item, 1)}
+                      className="w-8 h-8 rounded-xl bg-slate-800 hover:bg-emerald-600 text-white font-black text-sm flex items-center justify-center"
+                    >
+                      ＋
+                    </button>
+                  </div>
+                </div>
+
+                {/* Card Actions */}
+                <div className="flex items-center justify-between pt-1 border-t border-slate-800 text-xs">
                   <button
-                    onClick={() => handleQuickAdjust(item, -1)}
-                    className="w-8 h-8 rounded-xl bg-slate-800 hover:bg-rose-600 text-white font-black text-sm flex items-center justify-center"
+                    type="button"
+                    onClick={() => toggleSelectOneOrder(item.id)}
+                    className={`flex items-center gap-1 px-2.5 py-1 rounded-lg font-bold transition ${
+                      isSelected
+                        ? 'bg-indigo-600 text-white'
+                        : 'text-slate-400 hover:text-white bg-slate-800'
+                    }`}
                   >
-                    −
+                    {isSelected ? <CheckSquare className="w-3.5 h-3.5" /> : <Square className="w-3.5 h-3.5" />}
+                    <span>{isSelected ? '選択中' : '選択'}</span>
                   </button>
-                  <button
-                    onClick={() => handleQuickAdjust(item, 1)}
-                    className="w-8 h-8 rounded-xl bg-slate-800 hover:bg-emerald-600 text-white font-black text-sm flex items-center justify-center"
-                  >
-                    ＋
-                  </button>
+
+                  <div className="flex items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedOrderIds([item.id]);
+                        setTargetMoveBox(
+                          boxGroups.find((b) => b.boxName !== item.location)?.boxName || '端子ボックス (A-01)'
+                        );
+                        setIsBatchMoveOpen(true);
+                      }}
+                      className="p-1.5 text-slate-400 hover:text-indigo-300 hover:bg-slate-800 rounded-lg transition"
+                      title="保管箱を移動"
+                    >
+                      <Box className="w-4 h-4" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleEdit(item)}
+                      className="p-1.5 text-slate-400 hover:text-indigo-400 hover:bg-slate-800 rounded-lg transition"
+                      title="編集"
+                    >
+                      <Edit2 className="w-4 h-4" />
+                    </button>
+                  </div>
                 </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
 
