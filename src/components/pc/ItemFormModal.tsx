@@ -4,6 +4,7 @@ import { useInventory } from '../../context/InventoryContext';
 import { AiVisionService } from '../../utils/geminiAiVision';
 import { VisualKnowledgeService } from '../../utils/visualKnowledgeService';
 import { ImageCompressor } from '../../utils/imageCompressor';
+import { SmartAutoCompleteInput } from '../common/SmartAutoCompleteInput';
 import {
   X,
   Plus,
@@ -114,6 +115,12 @@ export const ItemFormModal: React.FC<ItemFormModalProps> = ({
   const uniqueLocations = useMemo(() => {
     const fromItems = items.map((i) => i.location).filter(Boolean) as string[];
     const defaults = ['端子ボックス (A-01)', '結束バンドボックス (B-01)', 'マークチューブ棚 (C-01)', '盤内資材 (D-01)'];
+    return Array.from(new Set([...fromItems, ...defaults]));
+  }, [items]);
+
+  const uniqueSpecs = useMemo(() => {
+    const fromItems = items.map((i) => i.spec).filter(Boolean) as string[];
+    const defaults = ['JB-100', 'JB-150', 'R2-4', 'R5.5-5', '1.25Y-3.5', '2Y-4', 'AB300', 'AB150-W', 'TX-10', 'TB-15', '250V 5A', 'M6×20mm'];
     return Array.from(new Set([...fromItems, ...defaults]));
   }, [items]);
 
@@ -469,15 +476,15 @@ export const ItemFormModal: React.FC<ItemFormModalProps> = ({
               )}
             </div>
 
-            {/* Spec */}
+            {/* Spec with Smart AutoComplete */}
             <div>
-              <label className="block font-bold text-slate-300 mb-1">規格 / 型番 (重要)</label>
-              <input
-                type="text"
+              <SmartAutoCompleteInput
+                label="規格 / 型番 (重要)"
                 value={spec}
-                onChange={(e) => setSpec(e.target.value)}
-                placeholder="例: R2-4 (0.5~2.0sq用), AB150-W..."
-                className="w-full px-3.5 py-2.5 bg-slate-800 border border-slate-700 rounded-xl text-white font-mono focus:outline-none focus:border-blue-500"
+                onChange={setSpec}
+                placeholder="例: R2-4, JB-100, AB150-W..."
+                candidates={uniqueSpecs}
+                inputClassName="text-amber-300 font-mono"
               />
             </div>
 

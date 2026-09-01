@@ -1,10 +1,11 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { useInventory } from '../../context/InventoryContext';
 import { ItemMaster, UnitConversion, PRESET_UNITS } from '../../types/inventory';
 import { AiVisionService, AiVisionResult } from '../../utils/geminiAiVision';
 import { VisualKnowledgeService } from '../../utils/visualKnowledgeService';
 import { ImageCompressor } from '../../utils/imageCompressor';
 import { ImageCropperModal } from './ImageCropperModal';
+import { SmartAutoCompleteInput } from '../common/SmartAutoCompleteInput';
 import {
   Camera,
   Loader2,
@@ -245,6 +246,83 @@ export const PhotoCheckInModal: React.FC<PhotoCheckInModalProps> = ({
       (i.supplier && i.supplier.toLowerCase().includes(q))
     );
   });
+
+  const nameCandidates = useMemo(() => {
+    const list = [
+      '中継端子ボックス',
+      '中継ボックス',
+      '端子台',
+      '裸圧着端子 丸形',
+      '裸圧着端子 Y形',
+      '絶縁被覆付圧着端子',
+      'インシュロック (結束バンド)',
+      'DINレール',
+      'ガラス管ヒューズ',
+      'ミニチュアリレー',
+      'プルボックス',
+      '配線ダクト',
+      'マークチューブ',
+      ...items.map((i) => i.name),
+      ...(aiResult?.candidateTokens || []),
+    ];
+    return Array.from(new Set(list.filter(Boolean)));
+  }, [items, aiResult]);
+
+  const specCandidates = useMemo(() => {
+    const list = [
+      'JB-100',
+      'JB-150',
+      'R2-4',
+      'R5.5-5',
+      '1.25Y-3.5',
+      '2Y-4',
+      'AB300',
+      'AB150-W',
+      'TX-10',
+      'TB-15',
+      '250V 5A',
+      'M6×20mm',
+      ...items.map((i) => i.spec).filter(Boolean),
+      ...(aiResult?.candidateTokens || []),
+    ];
+    return Array.from(new Set(list.filter(Boolean) as string[]));
+  }, [items, aiResult]);
+
+  const supplierCandidates = useMemo(() => {
+    const list = [
+      '春日電機',
+      '日東工業',
+      'タカチ電機工業',
+      'ニチフ',
+      'ヘラマンタイトン',
+      'パンドウイット',
+      '東洋技研',
+      '寺田電機',
+      'オムロン',
+      '富士電機',
+      '三菱電機',
+      'IDEC',
+      'WAGO',
+      'ミスミ',
+      'SMC',
+      'キーエンス',
+      'パナソニック',
+      ...items.map((i) => i.supplier).filter(Boolean),
+    ];
+    return Array.from(new Set(list.filter(Boolean) as string[]));
+  }, [items]);
+
+  const boxCandidates = useMemo(() => {
+    const list = [
+      '端子ボックス (A-01)',
+      '結束バンドボックス (B-01)',
+      '電線・チューブ棚 (C-01)',
+      '盤内資材 (D-01)',
+      'ボルト・ナット箱 (E-01)',
+      ...items.map((i) => i.location).filter(Boolean),
+    ];
+    return Array.from(new Set(list.filter(Boolean) as string[]));
+  }, [items]);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-950/85 backdrop-blur-sm animate-in fade-in duration-200">
@@ -641,42 +719,41 @@ export const PhotoCheckInModal: React.FC<PhotoCheckInModalProps> = ({
               <div className="flex items-center justify-between border-b border-slate-800/80 pb-2">
                 <span className="text-xs font-black text-blue-300 flex items-center gap-1">
                   <Sparkles className="w-3.5 h-3.5 text-amber-400" />
-                  <span>AIが写真から読み取った品目情報（編集可能）:</span>
+                  <span>AIが写真から読み取った品目情報（編集・予測入力対応）:</span>
                 </span>
                 <span className="text-[10px] font-mono text-slate-400">コード: {newItemCode}</span>
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                 <div className="sm:col-span-2">
-                  <label className="block text-xs font-bold text-slate-300 mb-1">品名 <span className="text-rose-400">*</span></label>
-                  <input
-                    type="text"
+                  <SmartAutoCompleteInput
+                    label="品名"
+                    required
                     value={newItemName}
-                    onChange={(e) => setNewItemName(e.target.value)}
+                    onChange={setNewItemName}
                     placeholder="品名 (例: 中継端子ボックス / 裸圧着端子)"
-                    className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-white font-bold text-xs focus:outline-none focus:border-blue-500"
+                    candidates={nameCandidates}
                   />
                 </div>
 
                 <div>
-                  <label className="block text-xs font-bold text-slate-300 mb-1">規格 / 型番</label>
-                  <input
-                    type="text"
+                  <SmartAutoCompleteInput
+                    label="規格 / 型番"
                     value={newItemSpec}
-                    onChange={(e) => setNewItemSpec(e.target.value)}
+                    onChange={setNewItemSpec}
                     placeholder="例: JB-100 / R2-4"
-                    className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-amber-300 font-mono font-bold text-xs focus:outline-none focus:border-blue-500"
+                    candidates={specCandidates}
+                    inputClassName="text-amber-300 font-mono"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-xs font-bold text-slate-300 mb-1">メーカー / 仕入先</label>
-                  <input
-                    type="text"
+                  <SmartAutoCompleteInput
+                    label="メーカー / 仕入先"
                     value={newItemSupplier}
-                    onChange={(e) => setNewItemSupplier(e.target.value)}
+                    onChange={setNewItemSupplier}
                     placeholder="例: 春日電機 / 日東工業 / ニチフ"
-                    className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-white text-xs focus:outline-none focus:border-blue-500"
+                    candidates={supplierCandidates}
                   />
                 </div>
 
@@ -694,13 +771,13 @@ export const PhotoCheckInModal: React.FC<PhotoCheckInModalProps> = ({
                 </div>
 
                 <div>
-                  <label className="block text-xs font-bold text-slate-300 mb-1">保管ボックス名</label>
-                  <input
-                    type="text"
+                  <SmartAutoCompleteInput
+                    label="保管ボックス名"
                     value={newItemBoxName}
-                    onChange={(e) => setNewItemBoxName(e.target.value)}
+                    onChange={setNewItemBoxName}
                     placeholder="例: 盤内資材 (D-01)"
-                    className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-indigo-300 font-bold text-xs focus:outline-none focus:border-blue-500"
+                    candidates={boxCandidates}
+                    inputClassName="text-indigo-300 font-bold"
                   />
                 </div>
 

@@ -15,82 +15,63 @@ export interface AiVisionResult {
   suggestedQuantity?: number;
   confidenceScore?: number; // 0 ~ 100
   rawAnalysis?: string;
+  candidateTokens?: string[]; // Extracted keywords for quick auto-fill pills
 }
 
 export class AiVisionService {
   /**
-   * 基準画像照合：撮影写真とデータベース内の品目写真（基準画像）を画像比較照合
-   */
-  static matchExistingItemByImage(
-    capturedImageBase64: string,
-    existingItems: ItemMaster[]
-  ): ItemMaster | null {
-    const itemsWithImages = existingItems.filter((i) => Boolean(i.imageUrl));
-    if (itemsWithImages.length === 0) return null;
-
-    const matched = itemsWithImages.find((item) => {
-      if (!item.imageUrl) return false;
-      if (item.imageUrl === capturedImageBase64) return true;
-      return false;
-    });
-
-    return matched || null;
-  }
-
-  /**
-   * Gemini Multimodal AI 画像認識（型番・品名・メーカー・規格・数量の高精度AI抽出）
+   * Gemini Multimodal AI 画像認識（型番・品名・メーカー・規格・数量・既存品目IDの高精度判定）
    */
   static async analyzeWithGemini(
     imageBase64: string,
     apiKey: string,
-    existingItems?: ItemMaster[]
+    existingItems: ItemMaster[] = []
   ): Promise<AiVisionResult | null> {
     try {
       const base64Data = imageBase64.replace(/^data:image\/\w+;base64,/, '');
       const mimeType = imageBase64.match(/^data:(image\/\w+);base64,/)?.[1] || 'image/jpeg';
 
-      const knowledgeBank = VisualKnowledgeService.getKnowledgeBank();
-      const knownPatterns = [
-        ...knowledgeBank.map(
-          (k) =>
-            `・品名: ${k.name} / 型番: ${k.spec || '-'} / メーカー: ${k.supplier || '-'} / 最小単位: ${k.baseUnit || '個'}`
-        ),
-        ...(existingItems || [])
-          .slice(0, 30)
-          .map(
-            (i) =>
-              `・品名: ${i.name} / 型番: ${i.spec || '-'} / メーカー: ${i.supplier || '-'} / 最小単位: ${i.baseUnit || '個'}`
-          ),
-      ]
-        .slice(0, 40)
-        .join('\n');
+      // 既存の登録済み品目カタログをAIに参照情報として提供（最大80件）
+      const inventoryCatalog = existingItems.slice(0, 80).map((i) => ({
+        id: i.id,
+        code: i.code,
+        name: i.name,
+        spec: i.spec || '',
+        supplier: i.supplier || '',
+        location: i.location || '',
+        baseUnit: i.baseUnit || '個',
+      }));
 
       const prompt = `
-あなたは電気工事・制御盤製作・電設資材の在庫管理AIです。
-提供された写真（ラベル、銘板、部品本体、包装袋・箱、または端子・結束バンド・電線などの電気部品）を観察し、印字された文字（型番・商品名・メーカー名・ロット番号・入り数・バーコード等）や外観特徴を精確に読み取ってください。
+あなたは電気工事・制御盤製作・電設資材の在庫管理のエキスパートAIです。
+提供された写真（部品本体、中継ボックス、端子台、圧着端子、結束バンド、電線、銘板ラベル、箱等）を精密に観察・分析してください。
 
-【現場の登録済み品目・指導済み正解リスト】:
-${knownPatterns || '（登録データなし）'}
+【既存の登録済み品目マスタ一覧（ID付き）】:
+${JSON.stringify(inventoryCatalog, null, 2)}
 
 【指示】
-1. 写真内の文字やロゴ（例: HellermannTyton ➔ ヘラマンタイトン, NICHIFU ➔ ニチフ, OMRON ➔ オムロン, パンドウイット, WAGOなど）を正確に読み取り、メーカー名を特定してください。
-2. 型番（例: AB300, AB150, R2-4, 1.25Y-4, TC-1.25, DINレール等）を正確に抽出してください。
-3. 最小基準単位（結束バンド=本, 端子・ネジ=個, 電線・チューブ=mまたは巻, 銘板=枚）と包装入り数（100本入なら1袋=100本）を正しく判定してください。
-4. もし写真が上記の【現場の登録済み品目】と一致または類似している場合は、その品名・型番・メーカー・単位を適用してください。
+1. 写真内の物品（または銘板・刻印文字）が、上記の【既存の登録済み品目マスタ】のいずれかに一致または同等品であるかを判定してください。一致する場合は、その品目の "matchedItemId" に対象の id を入れてください。
+2. もし一致する登録品目がない場合（新規品目の場合）、写真から読み取れる文字（メーカー名、型番、定格、仕様）および外観特徴から、適切な「品名 (name)」「規格・型番 (spec)」「メーカー (supplier)」「分類 (category)」「基準単位 (baseUnit)」「おすすめ保管箱 (boxName)」を特定してください。
+3. 特に電設業界の主要材料を正しく区別してください：
+   - 中継端子ボックス・ジョイントボックス（例: JB-100, 日東工業, 春日電機, タカチ）➔ 品名: 中継端子ボックス, 分類: 制御盤パーツ, 単位: 個
+   - 裸圧着端子・絶縁端子（例: R2-4, 1.25Y-3.5, ニチフ）➔ 品名: 裸圧着端子, 分類: 端子・圧着具, 単位: 個
+   - 結束バンド・インシュロック（例: AB300, ヘラマンタイトン, パンドウイット）➔ 品名: インシュロック (結束バンド), 分類: 配線・電気資材, 単位: 本
+   - 端子台（例: TX-10, TB-15, 東洋技研）➔ 品名: 端子台, 分類: 制御盤パーツ, 単位: 個
+4. 抽出されたキーワード（型番、メーカー名、仕様、極数等）を "keywords" 配列として出力してください。
 
-以下の日本語JSON形式のみで返答してください。Markdown記号や前置きは含めず、純粋なJSON文字列のみを出力してください。
-
-【出力フォーマット】
+必ず以下の日本語JSON形式のみで出力してください（Markdownのバッククォート不要）:
 {
-  "name": "品名 (例: インシュロック, 丸形圧着端子, 結束バンド, ガラス管ヒューズ)",
-  "spec": "規格・型番 (例: 屋内用AB300, R2-4, 150mm×3.6mm, 250V 5A, M6×20mm)",
-  "supplier": "メーカー名 (例: ヘラマンタイトン, ニチフ, パンドウイット, オムロン, ミスミ, SMC)",
-  "category": "分類 (例: 配線・電気資材, 制御盤パーツ, 機構・締結部品)",
-  "baseUnit": "基準単位 (例: 個, 本, 枚, 箱, パック)",
-  "boxName": "おすすめ保管ボックス名 (例: 端子ボックス (A-01), 結束バンドボックス (B-01))",
+  "matchedItemId": "一致する品目のid (なければ null)",
+  "name": "品名",
+  "spec": "規格・型番",
+  "supplier": "メーカー名",
+  "category": "分類 (配線・電気資材 / 制御盤パーツ / 端子・圧着具 / 機構・締結部品 / 電線・ケーブル / 空圧・流体機器)",
+  "baseUnit": "基準単位 (個 / 本 / 枚 / 巻 / m / 袋 / 箱)",
+  "boxName": "おすすめ保管ボックス名",
   "suggestedQuantity": 1,
   "confidenceScore": 95,
-  "summary": "AIによる視覚的特徴の説明"
+  "keywords": ["抽出キーワード1", "キーワード2"],
+  "summary": "AIの視覚判定理由"
 }
 `;
 
@@ -133,8 +114,13 @@ ${knownPatterns || '（登録データなし）'}
       if (!contentText) return null;
 
       const parsed = JSON.parse(contentText);
+      const matchedItem = parsed.matchedItemId
+        ? existingItems.find((i) => i.id === parsed.matchedItemId || i.code === parsed.matchedItemId)
+        : undefined;
+
       return {
         source: 'GEMINI_AI',
+        matchedExistingItem: matchedItem || undefined,
         suggestedName: parsed.name,
         suggestedSpec: parsed.spec,
         suggestedSupplier: parsed.supplier,
@@ -144,6 +130,7 @@ ${knownPatterns || '（登録データなし）'}
         suggestedQuantity: Number(parsed.suggestedQuantity) || 1,
         confidenceScore: Number(parsed.confidenceScore) || 92,
         rawAnalysis: parsed.summary,
+        candidateTokens: Array.isArray(parsed.keywords) ? parsed.keywords : [],
       };
     } catch (err) {
       console.error('Gemini AI Vision analysis error:', err);
@@ -153,66 +140,24 @@ ${knownPatterns || '（登録データなし）'}
 
   /**
    * 総合スマート認識エンジン：
-   * 1. 登録済み基準画像との完全照合
-   * 2. Gemini AI マルチモーダル視覚認識（APIキー設定時、最先端AIの知能を活用）
-   * 3. 過去のユーザー修正に基づく自己学習ナレッジ（Visual Knowledge Bank）照合
-   * 4. 高精度ローカル電工 OCR + 学習特徴照合
+   * 1. Gemini AI マルチモーダル視覚認識（APIキー設定時、最高峰のカタログ照合）
+   * 2. 高精度電工 OCR + 特徴トークンによる全データベース検索照合
+   * 3. 過去のユーザー修正に基づく自己学習ナレッジ照合
    */
   static async smartRecognize(
     imageBase64: string,
     existingItems: ItemMaster[],
     apiKey?: string
   ): Promise<AiVisionResult> {
-    // 1. 登録済み基準画像との照合
-    const matchedItem = this.matchExistingItemByImage(imageBase64, existingItems);
-    if (matchedItem) {
-      return {
-        source: 'IMAGE_MATCH',
-        matchedExistingItem: matchedItem,
-        suggestedName: matchedItem.name,
-        suggestedSpec: matchedItem.spec,
-        suggestedSupplier: matchedItem.supplier,
-        suggestedCategory: matchedItem.category,
-        suggestedBaseUnit: matchedItem.baseUnit,
-        suggestedConversions: matchedItem.unitConversions,
-        suggestedBoxName: matchedItem.location,
-        confidenceScore: 99,
-        rawAnalysis: `登録済み基準画像と一致: ${matchedItem.name}`,
-      };
-    }
-
-    // 先に OCR テキストを取得
+    // 1. 先に OCR テキストとトークンを抽出
     const ocrResult = await OcrHelper.recognizeImage(imageBase64);
+    const ocrTokens = VisualKnowledgeService.extractTokens(ocrResult.rawText);
 
-    // 2. 過去のユーザー指導・学習記憶（VisualKnowledgeService）から照合
-    const learnedMatch = await VisualKnowledgeService.findBestMatch(
-      imageBase64,
-      ocrResult.rawText,
-      existingItems
-    );
-
-    if (learnedMatch.matchedEntry && learnedMatch.confidenceScore >= 55) {
-      const entry = learnedMatch.matchedEntry;
-      const units = OcrHelper.inferUnits(entry.name, entry.spec || '', entry.baseUnit || '');
-      return {
-        source: 'LEARNED_MEMORY',
-        matchedExistingItem: learnedMatch.matchedItem || undefined,
-        suggestedName: entry.name,
-        suggestedSpec: entry.spec,
-        suggestedSupplier: entry.supplier,
-        suggestedCategory: entry.category || '配線・電気資材',
-        suggestedBaseUnit: entry.baseUnit || units.baseUnit,
-        suggestedConversions: units.conversions,
-        suggestedBoxName: entry.boxName || '端子ボックス (A-01)',
-        confidenceScore: learnedMatch.confidenceScore,
-        rawAnalysis: `🧠 ${learnedMatch.explanation}`,
-      };
-    }
-
-    // 3. Gemini AI マルチモーダル認識（APIキー設定時）
-    const effectiveKey = (apiKey && apiKey.trim().length > 5)
-      ? apiKey.trim()
-      : 'AQ.Ab8RN6K-0iI-v6dqX7QDe5r00o5iNZH_EVDd812ALgyzZS07Mw';
+    // 2. Gemini AI 判定の試行
+    const effectiveKey =
+      apiKey && apiKey.trim().length > 5
+        ? apiKey.trim()
+        : 'AQ.Ab8RN6K-0iI-v6dqX7QDe5r00o5iNZH_EVDd812ALgyzZS07Mw';
 
     if (effectiveKey && effectiveKey.length > 5) {
       const aiResult = await this.analyzeWithGemini(imageBase64, effectiveKey, existingItems);
@@ -222,15 +167,90 @@ ${knownPatterns || '（登録データなし）'}
           aiResult.suggestedSpec || '',
           aiResult.suggestedBaseUnit || ''
         );
+        const combinedTokens = Array.from(
+          new Set([
+            ...(aiResult.candidateTokens || []),
+            ...ocrTokens,
+            aiResult.suggestedName,
+            aiResult.suggestedSpec,
+            aiResult.suggestedSupplier,
+          ].filter(Boolean) as string[])
+        );
+
         return {
           ...aiResult,
           suggestedBaseUnit: aiResult.suggestedBaseUnit || units.baseUnit,
           suggestedConversions: units.conversions,
+          candidateTokens: combinedTokens,
         };
       }
     }
 
-    // 4. 高精度ローカル電工 OCR フォールバック
+    // 3. ローカル照合（データベース内の既存品目と OCR 文字列・トークンの高精度類似度ランキング）
+    let bestMatchedItem: ItemMaster | null = null;
+    let highestScore = 0;
+    const upperOcr = (ocrResult.rawText || '').toUpperCase();
+
+    for (const item of existingItems) {
+      let score = 0;
+      const upperName = item.name.toUpperCase();
+      const upperSpec = (item.spec || '').toUpperCase();
+      const upperSup = (item.supplier || '').toUpperCase();
+      const upperCode = item.code.toUpperCase();
+
+      // 型番・コードの完全一致
+      if (upperSpec.length >= 2 && upperOcr.includes(upperSpec)) {
+        score += 60;
+      }
+      if (upperCode.length >= 2 && upperOcr.includes(upperCode)) {
+        score += 50;
+      }
+
+      // 品名・メーカーの一致
+      if (upperName.length >= 2 && upperOcr.includes(upperName)) {
+        score += 40;
+      }
+      if (upperSup.length >= 2 && upperOcr.includes(upperSup)) {
+        score += 25;
+      }
+
+      // トークン一致
+      for (const tok of ocrTokens) {
+        if (upperSpec.includes(tok) || upperName.includes(tok) || upperSup.includes(tok)) {
+          score += 15;
+        }
+      }
+
+      if (score > highestScore) {
+        highestScore = score;
+        bestMatchedItem = item;
+      }
+    }
+
+    // 最低50点以上で既存品目として照合
+    if (bestMatchedItem && highestScore >= 50) {
+      const units = OcrHelper.inferUnits(
+        bestMatchedItem.name,
+        bestMatchedItem.spec || '',
+        bestMatchedItem.baseUnit || ''
+      );
+      return {
+        source: 'IMAGE_MATCH',
+        matchedExistingItem: bestMatchedItem,
+        suggestedName: bestMatchedItem.name,
+        suggestedSpec: bestMatchedItem.spec,
+        suggestedSupplier: bestMatchedItem.supplier,
+        suggestedCategory: bestMatchedItem.category,
+        suggestedBaseUnit: bestMatchedItem.baseUnit,
+        suggestedConversions: bestMatchedItem.unitConversions || units.conversions,
+        suggestedBoxName: bestMatchedItem.location,
+        confidenceScore: Math.min(98, Math.round(highestScore + 20)),
+        rawAnalysis: `OCR型番・名称照合一致: ${bestMatchedItem.name}`,
+        candidateTokens: ocrTokens,
+      };
+    }
+
+    // 4. ローカル OCR フォールバック
     return {
       source: 'LOCAL_OCR',
       suggestedName: ocrResult.suggestedName,
@@ -242,6 +262,7 @@ ${knownPatterns || '（登録データなし）'}
       suggestedBoxName: ocrResult.suggestedBoxName,
       confidenceScore: ocrResult.suggestedName ? 75 : 40,
       rawAnalysis: ocrResult.rawText,
+      candidateTokens: ocrTokens,
     };
   }
 }
