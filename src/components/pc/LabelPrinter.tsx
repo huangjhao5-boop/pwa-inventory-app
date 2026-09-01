@@ -1,8 +1,22 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useInventory } from '../../context/InventoryContext';
 import { LabelLayout } from '../../types/inventory';
 import { LabelSheetPreview } from './LabelSheetPreview';
-import { Printer, CheckSquare, Layers, Download, Image as ImageIcon, Sparkles } from 'lucide-react';
+import {
+  Printer,
+  CheckSquare,
+  Layers,
+  Download,
+  Image as ImageIcon,
+  Sparkles,
+  Search,
+  X,
+  Box,
+  Tag,
+  Building2,
+  AlertTriangle,
+  RotateCcw,
+} from 'lucide-react';
 import confetti from 'canvas-confetti';
 
 export const LabelPrinter: React.FC = () => {
@@ -11,6 +25,14 @@ export const LabelPrinter: React.FC = () => {
   const [pureQrOnly, setPureQrOnly] = useState<boolean>(true); // ユーザー要望によりデフォルトはQRコード単体（文字なし）
   const [isExportingImage, setIsExportingImage] = useState(false);
 
+  // ─── 絞り込みフィルター状態 ───
+  const [searchQuery, setSearchQuery] = useState('');
+  const [filterLocation, setFilterLocation] = useState('ALL');
+  const [filterCategory, setFilterCategory] = useState('ALL');
+  const [filterSupplier, setFilterSupplier] = useState('ALL');
+  const [filterStockStatus, setFilterStockStatus] = useState<'ALL' | 'IN_STOCK' | 'LOW_STOCK' | 'OUT_OF_STOCK'>('ALL');
+
+  // 選択状態
   const [selectedItemIds, setSelectedItemIds] = useState<Record<string, boolean>>(() => {
     const initial: Record<string, boolean> = {};
     items.slice(0, 6).forEach((i) => {
@@ -20,13 +42,84 @@ export const LabelPrinter: React.FC = () => {
   });
   const [printCopies, setPrintCopies] = useState<Record<string, number>>({});
 
-  const toggleSelectAll = () => {
-    const allSelected = items.every((i) => selectedItemIds[i.id]);
-    const next: Record<string, boolean> = {};
-    items.forEach((i) => {
-      next[i.id] = !allSelected;
+  // フィルター用ユニーク一覧
+  const uniqueLocations = useMemo(() => {
+    const locs = items.map((i) => i.location).filter(Boolean);
+    return Array.from(new Set(locs));
+  }, [items]);
+
+  const uniqueCategories = useMemo(() => {
+    const cats = items.map((i) => i.category).filter(Boolean);
+    return Array.from(new Set(cats));
+  }, [items]);
+
+  const uniqueSuppliers = useMemo(() => {
+    const sups = items.map((i) => i.supplier).filter(Boolean) as string[];
+    return Array.from(new Set(sups));
+  }, [items]);
+
+  // 絞り込み実行後の品目リスト
+  const filteredItems = useMemo(() => {
+    return items.filter((item) => {
+      // 1. 検索ワード（品名、規格、型番、コード、メーカー、ボックス名、備考）
+      if (searchQuery.trim()) {
+        const q = searchQuery.toLowerCase().trim();
+        const matchName = item.name.toLowerCase().includes(q);
+        const matchSpec = (item.spec || '').toLowerCase().includes(q);
+        const matchCode = item.code.toLowerCase().includes(q);
+        const matchSupplier = (item.supplier || '').toLowerCase().includes(q);
+        const matchLocation = (item.location || '').toLowerCase().includes(q);
+        const matchNote = (item.note || '').toLowerCase().includes(q);
+        if (!matchName && !matchSpec && !matchCode && !matchSupplier && !matchLocation && !matchNote) {
+          return false;
+        }
+      }
+
+      // 2. 保管ボックス・場所
+      if (filterLocation !== 'ALL' && item.location !== filterLocation) {
+        return false;
+      }
+
+      // 3. カテゴリ
+      if (filterCategory !== 'ALL' && item.category !== filterCategory) {
+        return false;
+      }
+
+      // 4. メーカー / 仕入先
+      if (filterSupplier !== 'ALL' && item.supplier !== filterSupplier) {
+        return false;
+      }
+
+      // 5. 在庫ステータス
+      if (filterStockStatus === 'IN_STOCK' && item.currentStock <= 0) {
+        return false;
+      }
+      if (filterStockStatus === 'LOW_STOCK' && (item.currentStock > item.safetyStock || item.currentStock <= 0)) {
+        return false;
+      }
+      if (filterStockStatus === 'OUT_OF_STOCK' && item.currentStock > 0) {
+        return false;
+      }
+
+      return true;
     });
-    setSelectedItemIds(next);
+  }, [items, searchQuery, filterLocation, filterCategory, filterSupplier, filterStockStatus]);
+
+  // 全選択 / 解除（現在絞り込まれている品目に対して）
+  const toggleSelectFiltered = () => {
+    const allFilteredSelected = filteredItems.length > 0 && filteredItems.every((i) => selectedItemIds[i.id]);
+    setSelectedItemIds((prev) => {
+      const next = { ...prev };
+      filteredItems.forEach((i) => {
+        next[i.id] = !allFilteredSelected;
+      });
+      return next;
+    });
+  };
+
+  // 全選択解除（すべての品目）
+  const deselectAll = () => {
+    setSelectedItemIds({});
   };
 
   const toggleSelectItem = (id: string) => {
@@ -35,6 +128,14 @@ export const LabelPrinter: React.FC = () => {
 
   const updateCopies = (id: string, count: number) => {
     setPrintCopies((prev) => ({ ...prev, [id]: Math.max(1, count) }));
+  };
+
+  const resetFilters = () => {
+    setSearchQuery('');
+    setFilterLocation('ALL');
+    setFilterCategory('ALL');
+    setFilterSupplier('ALL');
+    setFilterStockStatus('ALL');
   };
 
   const selectedItemsWithCopies = items
@@ -98,35 +199,34 @@ export const LabelPrinter: React.FC = () => {
           const x = padding + colIdx * cellWidth;
           const y = padding + rowIdx * cellHeight;
 
+          img.crossOrigin = 'anonymous';
           img.onload = () => {
-            // 外枠ボーダー
-            ctx.strokeStyle = '#e2e8f0';
-            ctx.lineWidth = 2;
-            ctx.strokeRect(x + 5, y + 5, cellWidth - 10, cellHeight - 10);
+            // QRコード描画
+            const qrSize = pureQrOnly ? 220 : 120;
+            const qrX = pureQrOnly ? x + (cellWidth - qrSize) / 2 : x + 20;
+            const qrY = pureQrOnly ? y + (cellHeight - qrSize) / 2 : y + (cellHeight - qrSize) / 2;
 
-            if (pureQrOnly) {
-              const qrSize = Math.min(cellWidth - 40, cellHeight - 40);
-              const qrX = x + (cellWidth - qrSize) / 2;
-              const qrY = y + (cellHeight - qrSize) / 2;
-              ctx.drawImage(img, qrX, qrY, qrSize, qrSize);
-            } else {
-              const qrSize = 120;
-              ctx.drawImage(img, x + 15, y + 25, qrSize, qrSize);
+            ctx.drawImage(img, qrX, qrY, qrSize, qrSize);
 
-              const item = selectedItemsWithCopies[Math.min(idx, selectedItemsWithCopies.length - 1)]?.item;
-              if (item) {
+            // 文字情報描画（ラベル付きの場合）
+            if (!pureQrOnly) {
+              const itemDiv = svg.closest('.p-2') || svg.parentElement?.parentElement;
+              if (itemDiv) {
+                const nameEl = itemDiv.querySelector('.font-bold.text-slate-900');
+                const specEl = itemDiv.querySelector('.text-amber-800, .font-mono');
+                const codeEl = itemDiv.querySelector('.font-mono.text-slate-500');
+
                 ctx.fillStyle = '#0f172a';
-                ctx.font = 'bold 15px sans-serif';
-                ctx.fillText(item.name.slice(0, 14), x + 145, y + 50);
+                ctx.font = 'bold 16px sans-serif';
+                ctx.fillText((nameEl?.textContent || '').slice(0, 16), x + 155, y + 55);
+
+                ctx.fillStyle = '#b45309';
+                ctx.font = 'bold 13px monospace';
+                ctx.fillText((specEl?.textContent || '').slice(0, 20), x + 155, y + 85);
 
                 ctx.fillStyle = '#64748b';
-                ctx.font = '12px sans-serif';
-                if (item.spec) ctx.fillText(item.spec.slice(0, 16), x + 145, y + 75);
-                ctx.fillText(`ボックス: ${item.location}`, x + 145, y + 100);
-
-                ctx.fillStyle = '#94a3b8';
-                ctx.font = 'bold 11px monospace';
-                ctx.fillText(item.code, x + 145, y + 125);
+                ctx.font = '12px monospace';
+                ctx.fillText(codeEl?.textContent || '', x + 155, y + 115);
               }
             }
             resolve();
@@ -177,7 +277,6 @@ export const LabelPrinter: React.FC = () => {
 
       // Pure QR Code generator
       const qrImg = new Image();
-      // Use standard QR generator URL or local canvas
       const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=460x460&data=${encodeURIComponent(item.code)}`;
 
       await new Promise<void>((resolve) => {
@@ -202,6 +301,13 @@ export const LabelPrinter: React.FC = () => {
     addToast('success', `${selected.length}件のQRコードPNG画像を保存しました`);
   };
 
+  const isFiltered =
+    searchQuery.trim() !== '' ||
+    filterLocation !== 'ALL' ||
+    filterCategory !== 'ALL' ||
+    filterSupplier !== 'ALL' ||
+    filterStockStatus !== 'ALL';
+
   return (
     <div className="max-w-7xl mx-auto space-y-4 pb-20 md:pb-8">
       {/* Top Header */}
@@ -216,7 +322,7 @@ export const LabelPrinter: React.FC = () => {
                 QR ラベル一括印刷 & 画像出力 (Label Printer)
               </h2>
               <p className="text-xs text-slate-400">
-                A4ラベル用紙への直接印刷だけでなく、高解像度 PNG 画像としての一括保存に対応
+                ボックス・カテゴリ・メーカー・在庫状態による絞り込みに対応。A4用紙印刷 & 高解像度PNG保存
               </p>
             </div>
           </div>
@@ -258,7 +364,7 @@ export const LabelPrinter: React.FC = () => {
         </div>
       </div>
 
-      {/* Settings & Item Selection Bar */}
+      {/* Settings & Filterable Item Selection Bar */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 print:hidden">
         {/* Left Column: Layout selector & Options */}
         <div className="bg-slate-900 border border-slate-800 rounded-3xl p-4 sm:p-5 space-y-4 shadow-lg">
@@ -378,64 +484,238 @@ export const LabelPrinter: React.FC = () => {
           </div>
         </div>
 
-        {/* Right Column (2 cols): Item Selection List */}
+        {/* Right Column (2 cols): Filtering & Item Selection List */}
         <div className="lg:col-span-2 bg-slate-900 border border-slate-800 rounded-3xl p-4 sm:p-5 space-y-3 shadow-lg flex flex-col">
-          <div className="flex items-center justify-between">
-            <h3 className="font-bold text-sm text-slate-200">
-              出力する品目を選択 ({Object.values(selectedItemIds).filter(Boolean).length} 品目 / 計 {totalLabels} 枚)
-            </h3>
-            <button
-              onClick={toggleSelectAll}
-              className="text-xs text-blue-400 hover:text-blue-300 font-semibold flex items-center gap-1"
-            >
-              <CheckSquare className="w-3.5 h-3.5" />
-              <span>全選択 / 解除</span>
-            </button>
+          {/* Header with Selection Summary */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+            <div>
+              <h3 className="font-bold text-sm text-slate-200 flex items-center gap-2">
+                <span>品目を選択</span>
+                <span className="px-2 py-0.5 rounded-full bg-blue-500/20 text-blue-300 border border-blue-500/40 text-xs font-bold font-mono">
+                  {Object.values(selectedItemIds).filter(Boolean).length} / {items.length} 品目選択中
+                </span>
+                <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 text-xs font-bold font-mono">
+                  計 {totalLabels} 枚
+                </span>
+              </h3>
+            </div>
+
+            {/* Batch Select / Deselect Controls */}
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={toggleSelectFiltered}
+                className="text-xs bg-blue-600/20 hover:bg-blue-600/30 text-blue-300 border border-blue-500/40 px-2.5 py-1 rounded-xl font-bold flex items-center gap-1 transition"
+                title="現在絞り込まれている品目を一括で選択 / 解除"
+              >
+                <CheckSquare className="w-3.5 h-3.5" />
+                <span>絞り込み結果 ({filteredItems.length}件) を全選択</span>
+              </button>
+              <button
+                type="button"
+                onClick={deselectAll}
+                className="text-xs text-slate-400 hover:text-rose-400 px-2 py-1 transition"
+              >
+                全解除
+              </button>
+            </div>
           </div>
 
-          {/* Items list */}
-          <div className="max-h-72 overflow-y-auto space-y-2 pr-1 divide-y divide-slate-800/80">
-            {items.map((item) => {
-              const isSelected = Boolean(selectedItemIds[item.id]);
-              const copies = printCopies[item.id] || 1;
-              return (
-                <div
-                  key={item.id}
-                  className="pt-2 flex items-center justify-between gap-3 text-xs"
+          {/* 🔍 Filter & Search Bar */}
+          <div className="bg-slate-950/80 p-3 rounded-2xl border border-slate-800 space-y-2.5">
+            {/* Search Input */}
+            <div className="relative">
+              <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="品名・規格・型番・コード・メーカー・保管場所で検索..."
+                className="w-full pl-9 pr-8 py-2 bg-slate-900 border border-slate-700/80 rounded-xl text-xs text-white placeholder-slate-500 focus:outline-none focus:border-blue-500"
+              />
+              {searchQuery && (
+                <button
+                  type="button"
+                  onClick={() => setSearchQuery('')}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white"
                 >
-                  <label className="flex items-center gap-2.5 cursor-pointer flex-1 min-w-0">
-                    <input
-                      type="checkbox"
-                      checked={isSelected}
-                      onChange={() => toggleSelectItem(item.id)}
-                      className="rounded border-slate-700 text-blue-600 focus:ring-blue-500 bg-slate-800"
-                    />
-                    <div className="truncate">
-                      <span className="font-mono text-slate-400 mr-2">{item.code}</span>
-                      <strong className="text-white">{item.name}</strong>
-                      <span className="text-slate-500 ml-1">({item.location})</span>
-                    </div>
-                  </label>
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
 
-                  {/* Copies stepper */}
-                  {isSelected && (
-                    <div className="flex items-center gap-1.5 shrink-0">
-                      <span className="text-slate-400">枚数:</span>
+            {/* Filter Dropdowns Grid */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
+              {/* 1. Box / Location Filter */}
+              <div>
+                <label className="block text-[10px] font-bold text-slate-400 mb-1 flex items-center gap-1 truncate">
+                  <Box className="w-3 h-3 text-indigo-400 shrink-0" />
+                  <span>保管ボックス</span>
+                </label>
+                <select
+                  value={filterLocation}
+                  onChange={(e) => setFilterLocation(e.target.value)}
+                  className="w-full py-1.5 px-2 bg-slate-900 border border-slate-700 rounded-lg text-slate-200 text-xs focus:outline-none focus:border-blue-500 truncate font-mono"
+                >
+                  <option value="ALL">すべて ({items.length})</option>
+                  {uniqueLocations.map((loc) => (
+                    <option key={loc} value={loc}>
+                      {loc}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* 2. Category Filter */}
+              <div>
+                <label className="block text-[10px] font-bold text-slate-400 mb-1 flex items-center gap-1 truncate">
+                  <Tag className="w-3 h-3 text-blue-400 shrink-0" />
+                  <span>カテゴリ</span>
+                </label>
+                <select
+                  value={filterCategory}
+                  onChange={(e) => setFilterCategory(e.target.value)}
+                  className="w-full py-1.5 px-2 bg-slate-900 border border-slate-700 rounded-lg text-slate-200 text-xs focus:outline-none focus:border-blue-500 truncate"
+                >
+                  <option value="ALL">すべて</option>
+                  {uniqueCategories.map((cat) => (
+                    <option key={cat} value={cat}>
+                      {cat}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* 3. Supplier Filter */}
+              <div>
+                <label className="block text-[10px] font-bold text-slate-400 mb-1 flex items-center gap-1 truncate">
+                  <Building2 className="w-3 h-3 text-amber-400 shrink-0" />
+                  <span>メーカー</span>
+                </label>
+                <select
+                  value={filterSupplier}
+                  onChange={(e) => setFilterSupplier(e.target.value)}
+                  className="w-full py-1.5 px-2 bg-slate-900 border border-slate-700 rounded-lg text-slate-200 text-xs focus:outline-none focus:border-blue-500 truncate"
+                >
+                  <option value="ALL">すべて</option>
+                  {uniqueSuppliers.map((sup) => (
+                    <option key={sup} value={sup}>
+                      {sup}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* 4. Stock Status Filter */}
+              <div>
+                <label className="block text-[10px] font-bold text-slate-400 mb-1 flex items-center gap-1 truncate">
+                  <AlertTriangle className="w-3 h-3 text-rose-400 shrink-0" />
+                  <span>在庫状況</span>
+                </label>
+                <select
+                  value={filterStockStatus}
+                  onChange={(e) => setFilterStockStatus(e.target.value as any)}
+                  className="w-full py-1.5 px-2 bg-slate-900 border border-slate-700 rounded-lg text-slate-200 text-xs focus:outline-none focus:border-blue-500 truncate"
+                >
+                  <option value="ALL">すべて</option>
+                  <option value="IN_STOCK">在庫あり (&gt;0)</option>
+                  <option value="LOW_STOCK">要発注 (在庫少)</option>
+                  <option value="OUT_OF_STOCK">在庫ゼロ</option>
+                </select>
+              </div>
+            </div>
+
+            {/* Filter Reset Indicator */}
+            {isFiltered && (
+              <div className="flex items-center justify-between pt-1 text-[11px] text-blue-400 border-t border-slate-800/80">
+                <span>
+                  絞り込み中: <strong>{filteredItems.length}</strong> 件該当 (全 {items.length} 件中)
+                </span>
+                <button
+                  type="button"
+                  onClick={resetFilters}
+                  className="text-slate-400 hover:text-white flex items-center gap-1 text-xs font-bold"
+                >
+                  <RotateCcw className="w-3 h-3" />
+                  <span>条件クリア</span>
+                </button>
+              </div>
+            )}
+          </div>
+
+          {/* Filtered Items List */}
+          <div className="max-h-72 overflow-y-auto space-y-1.5 pr-1 divide-y divide-slate-800/60">
+            {filteredItems.length > 0 ? (
+              filteredItems.map((item) => {
+                const isSelected = Boolean(selectedItemIds[item.id]);
+                const copies = printCopies[item.id] || 1;
+                return (
+                  <div
+                    key={item.id}
+                    className={`pt-2 p-2 rounded-xl transition flex items-center justify-between gap-3 text-xs ${
+                      isSelected ? 'bg-blue-950/40 border border-blue-500/30' : 'hover:bg-slate-800/40'
+                    }`}
+                  >
+                    <label className="flex items-center gap-2.5 cursor-pointer flex-1 min-w-0">
                       <input
-                        type="number"
-                        min="1"
-                        max="100"
-                        value={copies}
-                        onChange={(e) =>
-                          updateCopies(item.id, parseInt(e.target.value, 10) || 1)
-                        }
-                        className="w-14 px-2 py-1 bg-slate-800 border border-slate-700 rounded-lg text-white font-bold text-center"
+                        type="checkbox"
+                        checked={isSelected}
+                        onChange={() => toggleSelectItem(item.id)}
+                        className="rounded border-slate-700 text-blue-600 focus:ring-blue-500 bg-slate-800 shrink-0"
                       />
-                    </div>
-                  )}
-                </div>
-              );
-            })}
+                      <div className="truncate min-w-0 flex-1">
+                        <div className="flex items-center gap-2 truncate">
+                          <span className="font-mono text-[11px] text-slate-400 bg-slate-800 px-1 rounded shrink-0">
+                            {item.code}
+                          </span>
+                          <strong className="text-white truncate">{item.name}</strong>
+                          {item.spec && (
+                            <span className="px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 font-mono text-[10px] font-bold shrink-0">
+                              {item.spec}
+                            </span>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-2 text-[11px] text-slate-400 mt-0.5 truncate">
+                          <span className="text-indigo-300 font-mono">📦 {item.location}</span>
+                          {item.supplier && <span>🏢 {item.supplier}</span>}
+                          <span className="text-slate-500">
+                            在庫: {item.currentStock} {item.baseUnit}
+                          </span>
+                        </div>
+                      </div>
+                    </label>
+
+                    {/* Copies stepper */}
+                    {isSelected && (
+                      <div className="flex items-center gap-1.5 shrink-0 bg-slate-900/90 px-2 py-1 rounded-lg border border-slate-700/80">
+                        <span className="text-slate-400 text-[11px]">枚数:</span>
+                        <input
+                          type="number"
+                          min="1"
+                          max="100"
+                          value={copies}
+                          onChange={(e) =>
+                            updateCopies(item.id, parseInt(e.target.value, 10) || 1)
+                          }
+                          className="w-12 px-1.5 py-0.5 bg-slate-950 border border-slate-700 rounded text-amber-300 font-black text-center text-xs font-mono"
+                        />
+                      </div>
+                    )}
+                  </div>
+                );
+              })
+            ) : (
+              <div className="py-8 text-center text-slate-400 text-xs space-y-1">
+                <p>該当する品目が見つかりませんでした。</p>
+                <button
+                  type="button"
+                  onClick={resetFilters}
+                  className="text-blue-400 underline font-bold"
+                >
+                  検索フィルターをリセット
+                </button>
+              </div>
+            )}
           </div>
         </div>
       </div>
