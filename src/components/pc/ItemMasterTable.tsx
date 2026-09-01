@@ -32,7 +32,9 @@ import {
   ArrowRight,
   Settings2,
   ArrowUpCircle,
+  Camera,
 } from 'lucide-react';
+import { PhotoCheckInModal } from '../scanner/PhotoCheckInModal';
 
 export const ItemMasterTable: React.FC = () => {
   const {
@@ -82,6 +84,7 @@ export const ItemMasterTable: React.FC = () => {
   const [isOutboundModalOpen, setIsOutboundModalOpen] = useState(false);
   const [outboundTargetItem, setOutboundTargetItem] = useState<ItemMaster | null>(null);
   const [outboundTargetItems, setOutboundTargetItems] = useState<ItemMaster[]>([]);
+  const [isPhotoCheckInOpen, setIsPhotoCheckInOpen] = useState(false);
 
   // Photo Zoom Lightbox
   const [zoomedImage, setZoomedImage] = useState<string | null>(null);
@@ -326,6 +329,15 @@ export const ItemMasterTable: React.FC = () => {
               </button>
             </>
           )}
+
+          <button
+            type="button"
+            onClick={() => setIsPhotoCheckInOpen(true)}
+            className="flex items-center gap-1.5 px-4 py-2 bg-gradient-to-r from-indigo-600 via-blue-600 to-indigo-700 hover:from-indigo-500 hover:to-blue-500 active:scale-95 text-white rounded-xl text-xs font-black shadow-lg shadow-indigo-950/50 transition border border-indigo-400/30"
+          >
+            <Camera className="w-4 h-4 text-amber-300" />
+            <span>📸 写真照合・入庫 (バーコード無)</span>
+          </button>
 
           <button
             onClick={() => {
@@ -1391,6 +1403,14 @@ export const ItemMasterTable: React.FC = () => {
           }}
           initialItem={outboundTargetItem}
           initialItems={outboundTargetItems}
+        />
+      )}
+
+      {/* Photo Check-In Modal (PC Admin) */}
+      {isPhotoCheckInOpen && (
+        <PhotoCheckInModal
+          isOpen={isPhotoCheckInOpen}
+          onClose={() => setIsPhotoCheckInOpen(false)}
         />
       )}
 

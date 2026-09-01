@@ -13,7 +13,9 @@ import {
   Box,
   Building2,
   PlusCircle,
+  Camera,
 } from 'lucide-react';
+import { PhotoCheckInModal } from './PhotoCheckInModal';
 
 interface CameraScannerProps {
   onScan?: (code: string) => void;
@@ -27,6 +29,7 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({ onScan }) => {
   const [manualCode, setManualCode] = useState('');
   const [showManualInput, setShowManualInput] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [isPhotoCheckInOpen, setIsPhotoCheckInOpen] = useState(false);
 
   const qrScannerRef = useRef<Html5Qrcode | null>(null);
   const scannerContainerId = 'qr-reader-viewport';
@@ -250,14 +253,51 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({ onScan }) => {
         </div>
       )}
 
+      {/* 📸 Photo Check-In / AI Direct Match without Barcode */}
+      <div className="w-full mt-3">
+        <button
+          type="button"
+          onClick={() => setIsPhotoCheckInOpen(true)}
+          className="w-full py-3.5 px-4 bg-gradient-to-r from-indigo-600 via-blue-600 to-indigo-700 hover:from-indigo-500 hover:to-blue-500 active:scale-[0.99] text-white rounded-2xl shadow-xl shadow-indigo-950/60 flex items-center justify-between border border-indigo-400/30 transition group"
+        >
+          <div className="flex items-center gap-3 text-left">
+            <span className="p-2 bg-white/10 rounded-xl group-hover:scale-110 transition shrink-0">
+              <Camera className="w-5 h-5 text-amber-300" />
+            </span>
+            <div>
+              <div className="font-black text-sm flex items-center gap-1.5">
+                <span>📸 バーコード無し・写真撮影で即座に入庫</span>
+                <span className="px-2 py-0.5 rounded-full bg-amber-400 text-slate-950 text-[10px] font-black animate-pulse">
+                  AI自動照合
+                </span>
+              </div>
+              <p className="text-[11px] text-indigo-200/90 font-medium">
+                現物写真から型番・メーカー・既存品目を自動判定して即入庫
+              </p>
+            </div>
+          </div>
+          <span className="text-xs font-bold text-amber-300 bg-black/30 px-2.5 py-1 rounded-xl shrink-0">
+            撮影 ➔
+          </span>
+        </button>
+      </div>
+
+      {/* Photo Check In Modal */}
+      {isPhotoCheckInOpen && (
+        <PhotoCheckInModal
+          isOpen={isPhotoCheckInOpen}
+          onClose={() => setIsPhotoCheckInOpen(false)}
+        />
+      )}
+
       {/* Hardware Gun Hint */}
-      <div className="mt-3 flex items-center gap-1.5 text-xs text-slate-400 bg-slate-900/60 px-3 py-1.5 rounded-xl border border-slate-800">
+      <div className="mt-2.5 flex items-center gap-1.5 text-xs text-slate-400 bg-slate-900/60 px-3 py-1.5 rounded-xl border border-slate-800">
         <Zap className="w-4 h-4 text-amber-400" />
         <span>Bluetooth・USBバーコードリーダーの直接入力に対応</span>
       </div>
 
       {/* Manual Search & Quick Retrieval Panel (バーコード読取不可時の手動検索) */}
-      <div className="w-full mt-3 space-y-2">
+      <div className="w-full mt-2.5 space-y-2">
         <div className="flex items-center justify-between">
           <button
             onClick={() => setShowManualInput(!showManualInput)}
