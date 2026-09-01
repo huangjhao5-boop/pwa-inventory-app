@@ -40,6 +40,8 @@ export interface InventoryContextType {
   updateBoxConfig: (oldName: string, newConfig: StorageBoxConfig) => Promise<boolean>;
   addBoxConfig: (newConfig: StorageBoxConfig) => Promise<boolean>;
   deleteBoxConfig: (boxName: string) => Promise<boolean>;
+  batchMoveItemsToBox: (itemIds: string[], targetBoxName: string) => Promise<boolean>;
+  clearOldLogs: (beforeDate: Date) => Promise<number>;
 
   isOnline: boolean;
   isCloudConnected: boolean;
@@ -255,6 +257,53 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
       return false;
     }
   }, [boxConfigs, addToast]);
+
+  const batchMoveItemsToBox = useCallback(async (itemIds: string[], targetBoxName: string): Promise<boolean> => {
+    try {
+      if (itemIds.length === 0 || !targetBoxName.trim()) return false;
+      const targetBox = targetBoxName.trim();
+      const updatedList = itemsRef.current.map((item) => {
+        if (itemIds.includes(item.id)) {
+          return { ...item, location: targetBox, updatedAt: new Date().toISOString() };
+        }
+        return item;
+      });
+      setItems(updatedList);
+
+      for (const id of itemIds) {
+        const item = updatedList.find((i) => i.id === id);
+        if (item) {
+          await LocalDatabaseService.saveItem(item);
+          if (cloudSync.isCloudEnabled()) {
+            cloudSync.syncItemToCloud(item);
+          }
+        }
+      }
+
+      addToast('success', `${itemIds.length} 件の品目を「${targetBox}」に一括移動しました！`);
+      return true;
+    } catch (err) {
+      console.error('Failed to batch move items:', err);
+      addToast('error', '品目の一括移動に失敗しました');
+      return false;
+    }
+  }, [addToast]);
+
+  const clearOldLogs = useCallback(async (beforeDate: Date): Promise<number> => {
+    try {
+      const cutoffTime = beforeDate.getTime();
+      const keepLogs = logs.filter((l) => new Date(l.timestamp).getTime() >= cutoffTime);
+      const deleteCount = logs.length - keepLogs.length;
+
+      setLogs(keepLogs);
+      addToast('success', `${deleteCount} 件の過去ログをクリーンアップしました`);
+      return deleteCount;
+    } catch (err) {
+      console.error('Failed to clear old logs:', err);
+      addToast('error', 'ログのクリーンアップに失敗しました');
+      return 0;
+    }
+  }, [logs, addToast]);
 
   // ─── Network ───
   const refreshPendingCount = useCallback(async () => {
@@ -947,7 +996,7 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
     <InventoryContext.Provider value={{
       items, logs, pendingInbounds, activeTab, setActiveTab,
       settings, updateSettings, toasts, addToast, removeToast,
-      boxConfigs, updateBoxConfig, addBoxConfig, deleteBoxConfig,
+      boxConfigs, updateBoxConfig, addBoxConfig, deleteBoxConfig, batchMoveItemsToBox, clearOldLogs,
       isOnline, isCloudConnected, setIsCloudConnected,
       pendingSyncCount: pendingCount, pendingCount, isSyncing,
       triggerManualSync: triggerSync, triggerSync, refreshPendingCount,

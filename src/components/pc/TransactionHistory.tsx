@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useInventory } from '../../context/InventoryContext';
 import { CsvHelper } from '../../utils/csvHelper';
 import {
@@ -9,15 +9,36 @@ import {
   Clock,
   Download,
   User,
+  Calendar,
+  Trash2,
 } from 'lucide-react';
 
 export const TransactionHistory: React.FC = () => {
-  const { logs, addToast } = useInventory();
+  const { logs, addToast, clearOldLogs } = useInventory();
 
   const [searchQuery, setSearchQuery] = useState('');
   const [filterAction, setFilterAction] = useState<string>('ALL');
 
+  // Year & Month Filters
+  const availableYears = useMemo(() => {
+    const years = Array.from(new Set(logs.map((l) => new Date(l.timestamp).getFullYear()))).filter(Boolean);
+    if (years.length === 0) years.push(new Date().getFullYear());
+    return years.sort((a, b) => b - a);
+  }, [logs]);
+
+  const [selectedYear, setSelectedYear] = useState<string>(
+    availableYears[0] ? availableYears[0].toString() : 'ALL'
+  );
+  const [selectedMonth, setSelectedMonth] = useState<string>('ALL');
+
   const filteredLogs = logs.filter((log) => {
+    const d = new Date(log.timestamp);
+    const logYear = d.getFullYear().toString();
+    const logMonth = (d.getMonth() + 1).toString();
+
+    if (selectedYear !== 'ALL' && logYear !== selectedYear) return false;
+    if (selectedMonth !== 'ALL' && logMonth !== selectedMonth) return false;
+
     const q = searchQuery.toLowerCase().trim();
     const matchQuery =
       !q ||
@@ -30,12 +51,12 @@ export const TransactionHistory: React.FC = () => {
     return matchQuery && matchAction;
   });
 
-  // Summary Metrics
-  const totalInCount = logs
+  // Summary Metrics for currently filtered logs
+  const totalInCount = filteredLogs
     .filter((l) => l.type === 'IN')
     .reduce((acc, curr) => acc + curr.baseQuantity, 0);
 
-  const totalOutCount = logs
+  const totalOutCount = filteredLogs
     .filter((l) => l.type === 'OUT')
     .reduce((acc, curr) => acc + curr.baseQuantity, 0);
 
@@ -73,9 +94,40 @@ export const TransactionHistory: React.FC = () => {
     ]);
 
     const csvContent = '\uFEFF' + [headers.join(','), ...rows.map((r) => r.join(','))].join('\r\n');
-    CsvHelper.downloadCsv(csvContent, `inventory_logs_${new Date().toISOString().slice(0, 10)}.csv`);
-    addToast('success', '入出庫履歴ログを CSV 出力しました');
+    const periodLabel = `${selectedYear === 'ALL' ? '全期間' : `${selectedYear}年`}${selectedMonth === 'ALL' ? '' : `${selectedMonth}月`}`;
+    CsvHelper.downloadCsv(csvContent, `inventory_logs_${periodLabel}_${new Date().toISOString().slice(0, 10)}.csv`);
+    addToast('success', `入出庫履歴ログ（${periodLabel}：${filteredLogs.length}件）を CSV 出力しました`);
   };
+
+  const handlePruneOldLogs = async () => {
+    const sixMonthsAgo = new Date();
+    sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
+    const dateStr = sixMonthsAgo.toISOString().slice(0, 10);
+
+    if (
+      window.confirm(
+        `【ログのクリーンアップ】\n6ヶ月以上前（${dateStr} 以前）の古い入出庫ログを削除して軽量化しますか？\n（※事前にCSV出力を済ませておくことをお勧めします）`
+      )
+    ) {
+      await clearOldLogs(sixMonthsAgo);
+    }
+  };
+
+  const MONTHS = [
+    { key: 'ALL', label: '全月' },
+    { key: '1', label: '1月' },
+    { key: '2', label: '2月' },
+    { key: '3', label: '3月' },
+    { key: '4', label: '4月' },
+    { key: '5', label: '5月' },
+    { key: '6', label: '6月' },
+    { key: '7', label: '7月' },
+    { key: '8', label: '8月' },
+    { key: '9', label: '9月' },
+    { key: '10', label: '10月' },
+    { key: '11', label: '11月' },
+    { key: '12', label: '12月' },
+  ];
 
   return (
     <div className="max-w-7xl mx-auto space-y-4 pb-20 md:pb-8">
@@ -91,42 +143,54 @@ export const TransactionHistory: React.FC = () => {
                 入出庫・受払履歴レポート (Audit Logs)
               </h2>
               <p className="text-xs text-slate-400">
-                全 {logs.length} 件の取引記録 / オフライン Delta 同期追跡
+                全 {logs.length} 件の取引記録 (表示中: <strong className="text-emerald-400 font-bold">{filteredLogs.length}</strong> 件) / 年月別集計対応
               </p>
             </div>
           </div>
         </div>
 
-        {/* Action Button */}
-        <button
-          onClick={handleExportLogsCsv}
-          className="flex items-center gap-1.5 px-4 py-2.5 bg-slate-800 hover:bg-slate-700 active:scale-95 text-slate-200 border border-slate-700 rounded-xl text-xs font-bold transition shadow-sm"
-        >
-          <Download className="w-4 h-4 text-emerald-400" />
-          <span>履歴 CSV 出力</span>
-        </button>
+        {/* Action Buttons */}
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={handlePruneOldLogs}
+            className="flex items-center gap-1.5 px-3.5 py-2.5 bg-slate-800 hover:bg-rose-950/40 text-slate-300 hover:text-rose-300 border border-slate-700 hover:border-rose-700/50 rounded-xl text-xs font-bold transition shadow-sm"
+            title="6ヶ月以上前の古いログを整理"
+          >
+            <Trash2 className="w-4 h-4 text-rose-400" />
+            <span>ログ整理</span>
+          </button>
+
+          <button
+            onClick={handleExportLogsCsv}
+            className="flex items-center gap-1.5 px-4 py-2.5 bg-slate-800 hover:bg-slate-700 active:scale-95 text-slate-200 border border-slate-700 rounded-xl text-xs font-bold transition shadow-sm"
+          >
+            <Download className="w-4 h-4 text-emerald-400" />
+            <span>{selectedYear === 'ALL' ? '全期間' : `${selectedYear}年`} CSV 出力</span>
+          </button>
+        </div>
       </div>
 
-      {/* Summary KPI Cards */}
+      {/* Summary KPI Cards for Selected Period */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <div className="bg-slate-900 border border-slate-800 rounded-2xl p-3.5 sm:p-4">
-          <span className="text-xs text-slate-400 font-semibold block">総入庫数量 (換算)</span>
+          <span className="text-xs text-slate-400 font-semibold block">期間内 入庫数量 (換算)</span>
           <div className="text-2xl sm:text-3xl font-black text-emerald-400 mt-1">
             +{totalInCount}
           </div>
         </div>
 
         <div className="bg-slate-900 border border-slate-800 rounded-2xl p-3.5 sm:p-4">
-          <span className="text-xs text-slate-400 font-semibold block">総払出数量 (換算)</span>
+          <span className="text-xs text-slate-400 font-semibold block">期間内 払出数量 (換算)</span>
           <div className="text-2xl sm:text-3xl font-black text-rose-400 mt-1">
             -{totalOutCount}
           </div>
         </div>
 
         <div className="bg-slate-900 border border-slate-800 rounded-2xl p-3.5 sm:p-4">
-          <span className="text-xs text-slate-400 font-semibold block">総トランザクション数</span>
+          <span className="text-xs text-slate-400 font-semibold block">期間内 取引件数</span>
           <div className="text-2xl sm:text-3xl font-black text-blue-400 mt-1">
-            {logs.length} <span className="text-xs font-normal text-slate-400">件</span>
+            {filteredLogs.length} <span className="text-xs font-normal text-slate-400">/ 全 {logs.length} 件</span>
           </div>
         </div>
 
@@ -139,7 +203,7 @@ export const TransactionHistory: React.FC = () => {
         </div>
       </div>
 
-      {/* Filter Bar */}
+      {/* Filter Bar with Year & Month classification */}
       <div className="bg-slate-900/90 border border-slate-800 rounded-3xl p-3.5 sm:p-4 shadow-lg space-y-3">
         <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
           <div className="relative flex-1">
@@ -153,9 +217,10 @@ export const TransactionHistory: React.FC = () => {
             />
           </div>
 
+          {/* Action Type Filter */}
           <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none">
             {[
-              { key: 'ALL', label: 'すべて' },
+              { key: 'ALL', label: '全操作' },
               { key: 'IN', label: '入荷のみ' },
               { key: 'OUT', label: '払出のみ' },
               { key: 'ORDER', label: '発注依頼' },
@@ -163,7 +228,7 @@ export const TransactionHistory: React.FC = () => {
               <button
                 key={f.key}
                 onClick={() => setFilterAction(f.key)}
-                className={`py-2 px-3.5 rounded-xl text-xs font-bold whitespace-nowrap transition border ${
+                className={`py-2 px-3 rounded-xl text-xs font-bold whitespace-nowrap transition border ${
                   filterAction === f.key
                     ? 'bg-blue-600 border-blue-400 text-white'
                     : 'bg-slate-950/60 border-slate-800 text-slate-400 hover:bg-slate-800'
@@ -172,6 +237,49 @@ export const TransactionHistory: React.FC = () => {
                 {f.label}
               </button>
             ))}
+          </div>
+        </div>
+
+        {/* Year and Month Filters */}
+        <div className="pt-2 border-t border-slate-800/80 space-y-2">
+          {/* Year Dropdown & Month Pills */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+            <div className="flex items-center gap-2 shrink-0">
+              <Calendar className="w-4 h-4 text-emerald-400" />
+              <span className="text-xs font-bold text-slate-300">対象年:</span>
+              <select
+                value={selectedYear}
+                onChange={(e) => setSelectedYear(e.target.value)}
+                className="px-3 py-1.5 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white font-bold focus:outline-none focus:border-emerald-500"
+              >
+                <option value="ALL">全年度</option>
+                {availableYears.map((y) => (
+                  <option key={y} value={y.toString()}>
+                    {y} 年
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* Month Pills */}
+            <div className="flex items-center gap-1 overflow-x-auto pb-1 scrollbar-none flex-1 max-w-full sm:justify-end">
+              {MONTHS.map((m) => {
+                const isSelected = selectedMonth === m.key;
+                return (
+                  <button
+                    key={m.key}
+                    onClick={() => setSelectedMonth(m.key)}
+                    className={`py-1 px-2.5 rounded-lg text-xs font-bold transition border shrink-0 ${
+                      isSelected
+                        ? 'bg-emerald-600 border-emerald-400 text-white shadow-sm'
+                        : 'bg-slate-950 border-slate-800 text-slate-400 hover:bg-slate-800 hover:text-slate-200'
+                    }`}
+                  >
+                    {m.label}
+                  </button>
+                );
+              })}
+            </div>
           </div>
         </div>
       </div>

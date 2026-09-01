@@ -42,6 +42,7 @@ export const ItemMasterTable: React.FC = () => {
     recordTransaction,
     setActiveTab,
     boxConfigs,
+    batchMoveItemsToBox,
   } = useInventory();
   const isFieldMode = settings.viewMode === 'FIELD';
 
@@ -54,6 +55,10 @@ export const ItemMasterTable: React.FC = () => {
   const [editingBoxConfig, setEditingBoxConfig] = useState<StorageBoxConfig | null>(null);
   const [editingBoxName, setEditingBoxName] = useState<string | undefined>(undefined);
   const [editingBoxItemCount, setEditingBoxItemCount] = useState<number>(0);
+
+  // Batch Move State
+  const [isBatchMoveOpen, setIsBatchMoveOpen] = useState(false);
+  const [targetMoveBox, setTargetMoveBox] = useState('');
 
   // Filters
   const [searchQuery, setSearchQuery] = useState('');
@@ -471,21 +476,32 @@ export const ItemMasterTable: React.FC = () => {
         </div>
       </div>
 
-      {/* Floating Order Bar */}
+      {/* Floating Action Bar (When items selected) */}
       {selectedOrderIds.length > 0 && (
-        <div className="sticky top-20 z-20 bg-amber-950/90 backdrop-blur-md p-3 rounded-2xl border border-amber-700/60 shadow-xl flex items-center justify-between gap-3 animate-in fade-in slide-in-from-top-2">
+        <div className="sticky top-20 z-20 bg-indigo-950/90 backdrop-blur-md p-3 rounded-2xl border border-indigo-500/60 shadow-xl flex flex-wrap items-center justify-between gap-3 animate-in fade-in slide-in-from-top-2">
           <div className="flex items-center gap-2">
-            <ShoppingCart className="w-5 h-5 text-amber-400" />
+            <CheckSquare className="w-5 h-5 text-indigo-400" />
             <span className="text-xs sm:text-sm font-black text-white">
-              発注対象として <strong className="text-amber-300">{selectedOrderIds.length}</strong> 件の品目を選択中
+              <strong className="text-amber-300">{selectedOrderIds.length}</strong> 件の品目を選択中
             </span>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              onClick={() => {
+                setTargetMoveBox(boxGroups[0]?.boxName || '端子ボックス (A-01)');
+                setIsBatchMoveOpen(true);
+              }}
+              className="px-3.5 py-1.5 bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-500 hover:to-blue-500 text-white font-extrabold text-xs rounded-xl shadow-lg shadow-indigo-950 transition flex items-center gap-1.5"
+            >
+              <Box className="w-4 h-4" />
+              <span>📦 別の保管箱へ一括移動</span>
+            </button>
             <button
               onClick={() => setIsPurchaseOrderOpen(true)}
-              className="px-4 py-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs rounded-xl shadow transition"
+              className="px-3.5 py-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs rounded-xl shadow transition flex items-center gap-1.5"
             >
-              発注見積書を生成
+              <ShoppingCart className="w-4 h-4" />
+              <span>発注見積書を生成</span>
             </button>
             <button
               onClick={() => setSelectedOrderIds([])}
@@ -1030,6 +1046,89 @@ export const ItemMasterTable: React.FC = () => {
           onClose={() => setIsPurchaseOrderOpen(false)}
           initialSelectedItems={selectedOrderItems}
         />
+      )}
+
+      {/* 📦 選択品目の一括保管箱移動モーダル */}
+      {isBatchMoveOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-950/80 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-slate-900 border border-indigo-500/50 rounded-3xl w-full max-w-md overflow-hidden shadow-2xl flex flex-col">
+            <div className="px-5 py-4 border-b border-slate-800 flex items-center justify-between bg-indigo-950/40">
+              <div className="flex items-center gap-2">
+                <Box className="w-5 h-5 text-indigo-400" />
+                <h3 className="font-extrabold text-base text-white">
+                  📦 選択品目の一括保管箱移動
+                </h3>
+              </div>
+              <button
+                onClick={() => setIsBatchMoveOpen(false)}
+                className="p-1.5 text-slate-400 hover:text-white rounded-xl hover:bg-slate-800 transition"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-5 space-y-4">
+              <p className="text-xs text-slate-300 leading-relaxed">
+                選択された <strong className="text-amber-300 font-bold">{selectedOrderIds.length} 件</strong> の品目を、新しい保管ボックスへ一括で移動します。
+              </p>
+
+              {/* Selected Items preview */}
+              <div className="bg-slate-950 p-3 rounded-2xl border border-slate-800 max-h-36 overflow-y-auto space-y-1">
+                {items
+                  .filter((i) => selectedOrderIds.includes(i.id))
+                  .map((item) => (
+                    <div key={item.id} className="text-xs flex items-center justify-between text-slate-300">
+                      <span className="truncate flex-1 font-semibold">{item.name}</span>
+                      <span className="text-[10px] text-slate-500 shrink-0 ml-2">現在: {item.location}</span>
+                    </div>
+                  ))}
+              </div>
+
+              {/* Destination Box Selector */}
+              <div>
+                <label className="block text-xs font-bold text-slate-300 mb-1.5">
+                  移動先の保管箱を選択：
+                </label>
+                <select
+                  value={targetMoveBox}
+                  onChange={(e) => setTargetMoveBox(e.target.value)}
+                  className="w-full px-3.5 py-2.5 bg-slate-950 border border-indigo-500/60 rounded-xl text-white font-bold text-xs sm:text-sm focus:outline-none focus:border-indigo-400"
+                >
+                  {boxGroups.map((b) => (
+                    <option key={b.boxName} value={b.boxName}>
+                      {b.boxName} ({b.itemCount} 品目格納中)
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="pt-2 flex items-center justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setIsBatchMoveOpen(false)}
+                  className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs rounded-xl transition"
+                >
+                  キャンセル
+                </button>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    if (!targetMoveBox.trim() || selectedOrderIds.length === 0) return;
+                    const ok = await batchMoveItemsToBox(selectedOrderIds, targetMoveBox.trim());
+                    if (ok) {
+                      setIsBatchMoveOpen(false);
+                      setSelectedOrderIds([]);
+                    }
+                  }}
+                  className="px-5 py-2 bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-500 hover:to-blue-500 text-white font-extrabold text-xs rounded-xl shadow-lg shadow-indigo-950 transition flex items-center gap-1.5"
+                >
+                  <Box className="w-4 h-4" />
+                  <span>この {selectedOrderIds.length} 件を移動する</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Storage Box Customization & Rename Modal */}
