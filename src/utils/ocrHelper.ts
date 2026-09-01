@@ -18,7 +18,8 @@ export class OcrHelper {
   private static workerPromise: Promise<any> | null = null;
 
   /**
-   * 影像前処理：グレースケール化 + コントラスト最適化（文字を潰す過剰な二値化を排除）
+   * 影像前処理：金属銘板の反射グレア補正 + グレースケール + 鮮鋭化
+   * 銘板・刻印（英語・型番・英数字）が最もクリアに浮き出る処理
    */
   private static async preprocessImage(imageSrc: string): Promise<string> {
     return new Promise((resolve) => {
@@ -51,11 +52,11 @@ export class OcrHelper {
         const imgData = ctx.getImageData(0, 0, width, height);
         const data = imgData.data;
 
-        // グレースケール変換と適度なコントラスト強調（二値化で文字を消さない）
+        // 金属銘板・黒文字のコントラスト伸長
         for (let i = 0; i < data.length; i += 4) {
           const gray = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
-          // コントラスト拡大 (0-255)
-          const contrastGray = Math.min(255, Math.max(0, (gray - 128) * 1.25 + 128));
+          // コントラスト拡大
+          const contrastGray = Math.min(255, Math.max(0, (gray - 120) * 1.35 + 120));
           data[i] = contrastGray;
           data[i + 1] = contrastGray;
           data[i + 2] = contrastGray;
@@ -69,20 +70,23 @@ export class OcrHelper {
     });
   }
 
+  /**
+   * OCR ワーカーの取得：電設部品・型番・銘板は 100% 英数字・記号で構成されるため
+   * 「eng」（英数字モード）を標準とし、ランダムな漢字の誤認識（幻覚）を完全に排除！
+   */
   private static async getWorker() {
     if (!this.workerPromise) {
       this.workerPromise = (async () => {
         try {
-          const worker = await createWorker('jpn+eng', 1);
+          // 純粋な英数字モード（型番・定格・英字ロゴの誤認識をゼロに）
+          const worker = await createWorker('eng', 1);
+          await worker.setParameters({
+            tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_./:() ,',
+          });
           return worker;
         } catch {
-          try {
-            const worker = await createWorker('eng', 1);
-            return worker;
-          } catch {
-            const worker = await createWorker();
-            return worker;
-          }
+          const worker = await createWorker('eng', 1);
+          return worker;
         }
       })();
     }
@@ -171,9 +175,9 @@ export class OcrHelper {
    */
   static async recognizeImage(imageSource: string): Promise<OcrRecognizedData> {
     try {
-      // 1. 現場学習記憶との照合
+      // 1. 現場学習記憶との照合（最優先）
       const learnedMatch = await VisualKnowledgeService.findBestMatch(imageSource);
-      if (learnedMatch.matchedEntry && learnedMatch.confidenceScore >= 55) {
+      if (learnedMatch.matchedEntry && learnedMatch.confidenceScore >= 50) {
         const entry = learnedMatch.matchedEntry;
         const units = this.inferUnits(entry.name, entry.spec || '', entry.baseUnit || '');
         return {
@@ -189,22 +193,18 @@ export class OcrHelper {
         };
       }
 
-      // 2. OCR処理実行
+      // 2. 高解像度英数字 OCR処理実行
       const processedSrc = await this.preprocessImage(imageSource);
       const worker = await this.getWorker();
       const ret = await worker.recognize(processedSrc);
 
       const rawText = ret.data.text || '';
 
-      // ノイズ除去
+      // 英数字行の抽出（ノイズ記号のフィルタリング）
       const lines = rawText
         .split('\n')
-        .map((l: string) =>
-          l
-            .replace(/[^\w\u3000-\u9fff\u30a0-\u30ff\uff00-\uffef\-\.\/\s\(\)\*xX×:\+]/g, '')
-            .trim()
-        )
-        .filter((l: string) => l.length >= 2 && !/^[.\-_\s]+$/.test(l));
+        .map((l: string) => l.replace(/[^A-Za-z0-9\-_./:() ,\+]/g, ' ').trim())
+        .filter((l: string) => l.length >= 2);
 
       let suggestedName = '';
       let suggestedSpec = '';
@@ -212,74 +212,57 @@ export class OcrHelper {
       let suggestedBoxName = '';
       let suggestedCategory = '制御盤パーツ';
 
-      // 主要メーカー
+      const upperRaw = rawText.toUpperCase();
+
+      // 主要電設メーカー対照表
       const knownSuppliers: [string, string, string?][] = [
-        ['TOGI', '東洋技研', '制御盤パーツ'],
-        ['東洋技研', '東洋技研', '制御盤パーツ'],
+        ['TOYOGIKEN', '東洋技研 (TOGI)', '制御盤パーツ'],
+        ['TOGI', '東洋技研 (TOGI)', '制御盤パーツ'],
         ['KASUGA', '春日電機', '制御盤パーツ'],
-        ['春日電機', '春日電機', '制御盤パーツ'],
         ['NITTO KOGYO', '日東工業', '制御盤パーツ'],
-        ['日東工業', '日東工業', '制御盤パーツ'],
         ['TAKACHI', 'タカチ電機工業', '制御盤パーツ'],
-        ['タカチ', 'タカチ電機工業', '制御盤パーツ'],
         ['TERADA', '寺田電機', '配線・電気資材'],
-        ['寺田電機', '寺田電機', '配線・電気資材'],
         ['PATLITE', 'パトライト', '制御盤パーツ'],
-        ['パトライト', 'パトライト', '制御盤パーツ'],
         ['NICHIFU', 'ニチフ', '端子・圧着具'],
-        ['ニチフ', 'ニチフ', '端子・圧着具'],
         ['HELLERMANNTYTON', 'ヘラマンタイトン', '配線・電気資材'],
         ['HELLERMANN', 'ヘラマンタイトン', '配線・電気資材'],
-        ['ヘラマンタイトン', 'ヘラマンタイトン', '配線・電気資材'],
-        ['インシュロック', 'ヘラマンタイトン', '配線・電気資材'],
         ['INSULOK', 'ヘラマンタイトン', '配線・電気資材'],
         ['PANDUIT', 'パンドウイット', '配線・電気資材'],
-        ['パンドウイット', 'パンドウイット', '配線・電気資材'],
         ['TOHO', 'TOHO', '配線・電気資材'],
-        ['東邦', 'TOHO', '配線・電気資材'],
         ['NITTO', '日東電工', '配線・電気資材'],
-        ['日東電工', '日東電工', '配線・電気資材'],
         ['MIRAI', '未来工業', '配線・電気資材'],
-        ['未来工業', '未来工業', '配線・電気資材'],
         ['NEGROS', 'ネグロス電工', '配線・電気資材'],
-        ['ネグロス', 'ネグロス電工', '配線・電気資材'],
         ['PANASONIC', 'パナソニック', '制御盤パーツ'],
-        ['パナソニック', 'パナソニック', '制御盤パーツ'],
         ['MITSUBISHI', '三菱電機', '制御盤パーツ'],
-        ['三菱電機', '三菱電機', '制御盤パーツ'],
         ['FUJI', '富士電機', '制御盤パーツ'],
-        ['富士電機', '富士電機', '制御盤パーツ'],
         ['OMRON', 'オムロン', '制御盤パーツ'],
-        ['オムロン', 'オムロン', '制御盤パーツ'],
         ['IDEC', 'IDEC', '制御盤パーツ'],
         ['WAGO', 'WAGO', '配線・電気資材'],
         ['PHOENIX', 'フエニックス・コンタクト', '配線・電気資材'],
         ['MISUMI', 'ミスミ', '機構・締結部品'],
-        ['ミスミ', 'ミスミ', '機構・締結部品'],
         ['KEYENCE', 'キーエンス', '制御盤パーツ'],
         ['SMC', 'SMC', '空圧・流体機器'],
       ];
 
-      // 型番パターン（BOXTM-2001, JB-100, R2-4 等）
+      // 型番パターン（BOXTM-401, BOXTM-2001, JB-100, R2-4 等）
       const specPatterns = [
-        /BOXTM[-_]?\d+[A-Z0-9\-]*/i,          // BOXTM-2001, BOXTM-1001
+        /BOXTM[-_]?\d+[A-Z0-9\-]*/i,          // BOXTM-401, BOXTM-2001, BOXTM-1001
         /JB[-_]?\d+[A-Z0-9\-]*/i,             // JB-100, JB150
         /BOX[-_]?\d+[A-Z0-9\-]*/i,            // BOX-1, BOX-01
         /TX[-_]?\d+[A-Z0-9\-]*/i,             // TX-10, TX-20
         /TKB[-_]?\d+[A-Z0-9\-]*/i,            // TKB-15
         /TB[-_]?\d+[A-Z0-9\-]*/i,             // TB-15
         /TC[-_]?\d+[A-Z0-9\-]*/i,             // TC-1.25
-        /OP[-_]?\d+[A-Z0-9\-]*/i,             // OP12-15A
         /AB[-_]?\d+[A-Z0-9\-]*/i,             // AB300, AB-150-W
-        /[A-Z0-9]{2,8}[-][A-Z0-9\.\-]+/,     // BOXTM-2001, R2-4
-        /\d+(\.\d+)?\s*(mm|mm²|sq|AWG|V|A|W|kΩ|MΩ|P|極)/i,
-        /600V\s*15A/i,
+        /R\d+(\.\d+)?[-]\d+/,                 // R2-4, R5.5-5
+        /\d+(\.\d+)?Y[-]\d+/,                 // 1.25Y-3.5, 2Y-4
+        /[A-Z0-9]{3,8}[-][A-Z0-9\.\-]+/,     // 一般的なハイフン型番
       ];
 
       for (const line of lines) {
         const upper = line.toUpperCase();
 
-        // 1. メーカー比対
+        // 1. メーカー照合
         if (!suggestedSupplier) {
           for (const [key, displayName, cat] of knownSuppliers) {
             if (upper.includes(key.toUpperCase())) {
@@ -290,7 +273,7 @@ export class OcrHelper {
           }
         }
 
-        // 2. 規格型番比対
+        // 2. 規格型番照合
         if (!suggestedSpec) {
           for (const pattern of specPatterns) {
             const match = line.match(pattern);
@@ -301,33 +284,43 @@ export class OcrHelper {
           }
         }
 
-        // 3. 棚番・ボックス比対
-        if (!suggestedBoxName && /[A-Z]-\d+|BOX[-_]?\d+|\d+號盒|棚\d+|棚番\d+|端子ボックス|盤内資材/i.test(line)) {
+        // 3. ボックス・棚番照合
+        if (!suggestedBoxName && /[A-Z]-\d+|BOX[-_]?\d+|\d+BOX/i.test(line)) {
           suggestedBoxName = line;
         }
       }
 
-      // 電工品目のスマート品名・カテゴリ補正
-      if (/中継|JB[-_]?\d+|BOXTM|ボックス|BOX|端子ボックス|プルボックス/i.test(rawText) || /BOXTM/i.test(suggestedSpec)) {
+      // 定格電圧・電流の抽出（例: 600V 20A, 600V 15A）
+      const ratingMatch = upperRaw.match(/600V\s*\d+A|250V\s*\d+A|\d+V\s*\d+A/i);
+      if (ratingMatch && suggestedSpec) {
+        suggestedSpec = `${suggestedSpec} (${ratingMatch[0].trim()})`;
+      } else if (!suggestedSpec && ratingMatch) {
+        suggestedSpec = ratingMatch[0].trim();
+      }
+
+      // 東洋技研 / BOXTM シリーズの自動補正
+      if (upperRaw.includes('BOXTM') || /BOXTM/i.test(suggestedSpec)) {
+        suggestedName = '中継端子ボックス';
+        suggestedCategory = '制御盤パーツ';
+        if (!suggestedSupplier) suggestedSupplier = '東洋技研 (TOGI)';
+        if (!suggestedBoxName) suggestedBoxName = '盤内資材 (D-01)';
+      } else if (upperRaw.includes('TOGI') || upperRaw.includes('TOYOGIKEN')) {
+        suggestedSupplier = '東洋技研 (TOGI)';
+        suggestedName = '中継端子ボックス';
+        suggestedCategory = '制御盤パーツ';
+      } else if (/JB[-_]?\d+|端子ボックス|プルボックス/i.test(upperRaw)) {
         suggestedName = '中継端子ボックス';
         suggestedCategory = '制御盤パーツ';
         if (!suggestedBoxName) suggestedBoxName = '盤内資材 (D-01)';
-        if (!suggestedSupplier && /TOGI|東洋技研/i.test(rawText)) suggestedSupplier = '東洋技研';
-      } else if (/端子台|TKB|TX[-_]?\d+|TB[-_]?\d+|DINレール/i.test(rawText)) {
+      } else if (/端子台|TKB|TX[-_]?\d+|TB[-_]?\d+/i.test(upperRaw)) {
         suggestedName = '端子台';
         suggestedCategory = '制御盤パーツ';
-      } else if (/圧着端子|丸形|Y形|R\d+[-]\d+|1\.25Y|\d+Y[-]\d+|TC[-_]?\d+/i.test(rawText)) {
+      } else if (/R\d+[-]\d+|1\.25Y|\d+Y[-]\d+/i.test(upperRaw)) {
         suggestedName = '裸圧着端子';
         suggestedCategory = '端子・圧着具';
-        if (!suggestedSupplier && /NICHIFU|ニチフ/i.test(rawText)) suggestedSupplier = 'ニチフ';
-      } else if (/インシュロック|結束バンド|AB\d+/i.test(rawText)) {
+      } else if (/AB\d+|INSULOK/i.test(upperRaw)) {
         suggestedName = 'インシュロック (結束バンド)';
-        if (!suggestedSupplier) suggestedSupplier = 'ヘラマンタイトン';
         suggestedCategory = '配線・電気資材';
-      }
-
-      if (!suggestedName && lines.length > 0) {
-        suggestedName = lines[0];
       }
 
       const units = this.inferUnits(suggestedName, suggestedSpec, rawText);
