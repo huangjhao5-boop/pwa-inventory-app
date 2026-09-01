@@ -10,6 +10,9 @@ import {
   LinkedBarcode,
   StorageBoxConfig,
   DEFAULT_STORAGE_BOXES,
+  CheckedOutItem,
+  ReturnCondition,
+  RETURN_CONDITIONS,
 } from '../types/inventory';
 import { LocalDatabaseService } from '../services/db';
 import { cloudSync, FirebaseConfigOptions } from '../services/firebase';
@@ -27,6 +30,7 @@ export interface InventoryContextType {
   items: ItemMaster[];
   logs: InventoryLog[];
   pendingInbounds: PendingInbound[];
+  checkedOutList: CheckedOutItem[];
   activeTab: TabKey;
   setActiveTab: (tab: TabKey) => void;
   settings: AppSettings;
@@ -42,6 +46,29 @@ export interface InventoryContextType {
   deleteBoxConfig: (boxName: string) => Promise<boolean>;
   batchMoveItemsToBox: (itemIds: string[], targetBoxName: string) => Promise<boolean>;
   clearOldLogs: (beforeDate: Date) => Promise<number>;
+
+  // Checked-out items tracking & return
+  recordPcOutbound: (params: {
+    item: ItemMaster;
+    quantity: number;
+    unit: string;
+    multiplier: number;
+    operator: string;
+    destination?: string;
+    note?: string;
+    trackAsCheckedOut?: boolean;
+  }) => Promise<boolean>;
+  returnCheckedOutItem: (
+    checkoutId: string,
+    params: {
+      returnCondition: ReturnCondition;
+      returnedBaseQty: number;
+      isOpenPackage: boolean;
+      returnNote?: string;
+    }
+  ) => Promise<boolean>;
+  markCheckedOutAsConsumed: (checkoutId: string, note?: string) => Promise<boolean>;
+  deleteCheckedOutRecord: (checkoutId: string) => Promise<boolean>;
 
   isOnline: boolean;
   isCloudConnected: boolean;
@@ -164,6 +191,28 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
       localStorage.setItem('smart_inventory_box_configs', JSON.stringify(configs));
     } catch (e) {
       console.error('Failed to save box configs:', e);
+    }
+  };
+
+  // ─── Checked-Out / Dispatched Items State (現場持出・未返却リスト) ───
+  const [checkedOutList, setCheckedOutList] = useState<CheckedOutItem[]>(() => {
+    try {
+      const saved = localStorage.getItem('smart_inventory_checked_out_list');
+      if (saved) {
+        return JSON.parse(saved);
+      }
+    } catch {
+      // fallback
+    }
+    return [];
+  });
+
+  const saveCheckedOutListToStorage = (list: CheckedOutItem[]) => {
+    setCheckedOutList(list);
+    try {
+      localStorage.setItem('smart_inventory_checked_out_list', JSON.stringify(list));
+    } catch (e) {
+      console.error('Failed to save checked out list:', e);
     }
   };
 
@@ -824,6 +873,179 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
     }
   }, [settings, addToast, closeBottomSheet]);
 
+  // ─── PC Outbound & Checked-Out Items Management ───
+  const recordPcOutbound = useCallback(
+    async (params: {
+      item: ItemMaster;
+      quantity: number;
+      unit: string;
+      multiplier: number;
+      operator: string;
+      destination?: string;
+      note?: string;
+      trackAsCheckedOut?: boolean;
+    }): Promise<boolean> => {
+      const {
+        item,
+        quantity,
+        unit,
+        multiplier,
+        operator,
+        destination,
+        note,
+        trackAsCheckedOut = true,
+      } = params;
+
+      const baseQuantity = Math.round(quantity * multiplier);
+      if (item.currentStock < baseQuantity) {
+        addToast(
+          'error',
+          `⚠️ 在庫不足: 出庫数量 (${baseQuantity}${item.baseUnit}) が現在庫 (${item.currentStock}${item.baseUnit}) を超過しています！`
+        );
+        return false;
+      }
+
+      const outNote = [
+        destination ? `現場/用途: ${destination}` : '',
+        note ? `メモ: ${note}` : '',
+      ]
+        .filter(Boolean)
+        .join(' | ');
+
+      const success = await recordTransaction(item, 'OUT', quantity, unit, multiplier, outNote);
+      if (!success) return false;
+
+      if (trackAsCheckedOut) {
+        const newRecord: CheckedOutItem = {
+          id: `checkout-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+          itemId: item.id,
+          itemCode: item.code,
+          itemName: item.name,
+          spec: item.spec,
+          supplier: item.supplier,
+          imageUrl: item.imageUrl,
+          location: item.location,
+          outQuantity: quantity,
+          outUnit: unit,
+          multiplier,
+          outBaseQuantity: baseQuantity,
+          operator: operator.trim() || settings.activeOperator || '現場作業員',
+          destination: destination?.trim() || '現場持出',
+          checkedOutAt: new Date().toISOString(),
+          status: 'CHECKED_OUT',
+        };
+
+        const updated = [newRecord, ...checkedOutList];
+        saveCheckedOutListToStorage(updated);
+      }
+
+      addToast(
+        'success',
+        `「${item.name}」${quantity} ${unit}（${baseQuantity}${item.baseUnit}）を払出・持出記録しました`
+      );
+      return true;
+    },
+    [recordTransaction, checkedOutList, settings.activeOperator, addToast]
+  );
+
+  const returnCheckedOutItem = useCallback(
+    async (
+      checkoutId: string,
+      params: {
+        returnCondition: ReturnCondition;
+        returnedBaseQty: number;
+        isOpenPackage: boolean;
+        returnNote?: string;
+      }
+    ): Promise<boolean> => {
+      const target = checkedOutList.find((c) => c.id === checkoutId);
+      if (!target) return false;
+
+      const { returnCondition, returnedBaseQty, isOpenPackage, returnNote } = params;
+      const targetItem = itemsRef.current.find((i) => i.id === target.itemId);
+
+      // Return stock into inventory
+      if (returnedBaseQty > 0 && targetItem) {
+        const condLabel = RETURN_CONDITIONS.find((r) => r.key === returnCondition)?.label || '';
+        const noteStr = [
+          `【現場返却】${condLabel}`,
+          isOpenPackage ? '📦 開封品あり(残量端数)' : '未開封全量',
+          returnNote ? `メモ: ${returnNote}` : '',
+        ]
+          .filter(Boolean)
+          .join(' | ');
+
+        await recordTransaction(
+          targetItem,
+          'IN',
+          returnedBaseQty,
+          targetItem.baseUnit,
+          1,
+          noteStr
+        );
+      }
+
+      // Update CheckedOutItem status
+      const updated = checkedOutList.map((c) => {
+        if (c.id === checkoutId) {
+          return {
+            ...c,
+            status: 'RETURNED' as const,
+            returnedAt: new Date().toISOString(),
+            returnedBaseQuantity: returnedBaseQty,
+            returnCondition,
+            isPackageOpened: isOpenPackage,
+            returnNote,
+          };
+        }
+        return c;
+      });
+
+      saveCheckedOutListToStorage(updated);
+      addToast(
+        'success',
+        `「${target.itemName}」の返却・棚戻しを完了しました（戻し数量: ${returnedBaseQty}${targetItem?.baseUnit || ''}）`
+      );
+      return true;
+    },
+    [checkedOutList, recordTransaction, addToast]
+  );
+
+  const markCheckedOutAsConsumed = useCallback(
+    async (checkoutId: string, note?: string): Promise<boolean> => {
+      const target = checkedOutList.find((c) => c.id === checkoutId);
+      if (!target) return false;
+
+      const updated = checkedOutList.map((c) => {
+        if (c.id === checkoutId) {
+          return {
+            ...c,
+            status: 'CONSUMED' as const,
+            returnedAt: new Date().toISOString(),
+            returnedBaseQuantity: 0,
+            returnNote: note || '現場で全量使用完了',
+          };
+        }
+        return c;
+      });
+
+      saveCheckedOutListToStorage(updated);
+      addToast('info', `「${target.itemName}」を現場消費完了（返却なし）として記録しました`);
+      return true;
+    },
+    [checkedOutList, addToast]
+  );
+
+  const deleteCheckedOutRecord = useCallback(
+    async (checkoutId: string): Promise<boolean> => {
+      const updated = checkedOutList.filter((c) => c.id !== checkoutId);
+      saveCheckedOutListToStorage(updated);
+      addToast('info', '持出記録を削除しました');
+      return true;
+    },
+    [checkedOutList, addToast]
+  );
+
   // ─── Pending Inbound Approval ───
   const approvePendingInbound = useCallback(async (pending: PendingInbound) => {
     try {
@@ -994,9 +1216,10 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
 
   return (
     <InventoryContext.Provider value={{
-      items, logs, pendingInbounds, activeTab, setActiveTab,
+      items, logs, pendingInbounds, checkedOutList, activeTab, setActiveTab,
       settings, updateSettings, toasts, addToast, removeToast,
       boxConfigs, updateBoxConfig, addBoxConfig, deleteBoxConfig, batchMoveItemsToBox, clearOldLogs,
+      recordPcOutbound, returnCheckedOutItem, markCheckedOutAsConsumed, deleteCheckedOutRecord,
       isOnline, isCloudConnected, setIsCloudConnected,
       pendingSyncCount: pendingCount, pendingCount, isSyncing,
       triggerManualSync: triggerSync, triggerSync, refreshPendingCount,

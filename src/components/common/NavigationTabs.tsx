@@ -11,18 +11,21 @@ import {
   Search,
   Inbox,
   GraduationCap,
+  Truck,
 } from 'lucide-react';
 
 export const NavigationTabs: React.FC = () => {
-  const { activeTab, setActiveTab, batchScanList, pendingInbounds, settings } = useInventory();
+  const { activeTab, setActiveTab, batchScanList, pendingInbounds, checkedOutList, settings } = useInventory();
   const isFieldMode = settings.viewMode === 'FIELD';
 
   const pendingCount = pendingInbounds.filter((p) => p.status === 'PENDING').length;
+  const activeCheckedOutCount = checkedOutList.filter((c) => c.status === 'CHECKED_OUT').length;
 
   // 現場作業モード
   const fieldTabs: { key: TabKey; label: string; icon: React.FC<{ className?: string }>; badge?: number }[] = [
     { key: 'SCAN', label: '📷 スキャン', icon: ScanLine },
     { key: 'BATCH', label: '📋 連続検品', icon: ListChecks, badge: batchScanList.length },
+    { key: 'CHECKOUT', label: '🚚 現場持出', icon: Truck, badge: activeCheckedOutCount },
     { key: 'ITEMS', label: '🔍 在庫検索', icon: Search },
     { key: 'SETTINGS', label: '⚙️ 設定', icon: Settings },
   ];
@@ -31,6 +34,7 @@ export const NavigationTabs: React.FC = () => {
   const adminTabs: { key: TabKey; label: string; icon: React.FC<{ className?: string }>; badge?: number }[] = [
     { key: 'APPROVAL', label: '📥 入荷承認待ち', icon: Inbox, badge: pendingCount },
     { key: 'ITEMS', label: '📦 品目マスタ管理', icon: Layers },
+    { key: 'CHECKOUT', label: '🚚 現場持出・未返却', icon: Truck, badge: activeCheckedOutCount },
     { key: 'AI_STUDIO', label: '🎓 AI学習指導', icon: GraduationCap },
     { key: 'PRINT', label: '🖨️ ラベル一括印刷', icon: Printer },
     { key: 'LOGS', label: '📜 入出庫履歴ログ', icon: History },

@@ -183,6 +183,51 @@ export interface AppSettings {
   };
 }
 
+export type ReturnCondition = 'UNOPENED' | 'LIGHTLY_USED' | 'HALF_USED' | 'MOSTLY_USED' | 'EXACT_COUNT';
+
+export interface ReturnConditionOption {
+  key: ReturnCondition;
+  label: string;            // '🟢 未開封 (全量残)' | '🟡 少許使用・残80%' | '🟠 半分使用・残50%' | '🔴 ほぼ使用・残少許' | '🔢 正確な実数を入力'
+  ratio: number;            // 1.0, 0.8, 0.5, 0.2, or 0 for exact
+  isOpenPackage: boolean;   // true if package was opened
+  description: string;
+}
+
+export const RETURN_CONDITIONS: ReturnConditionOption[] = [
+  { key: 'UNOPENED', label: '🟢 未開封 (100% 残量)', ratio: 1.0, isOpenPackage: false, description: '未開封のまま全量返却' },
+  { key: 'LIGHTLY_USED', label: '🟡 少し使用 (約80% 残量)', ratio: 0.8, isOpenPackage: true, description: '開封済み・約8割残り' },
+  { key: 'HALF_USED', label: '🟠 半分使用 (約50% 残量)', ratio: 0.5, isOpenPackage: true, description: '開封済み・約半分残り' },
+  { key: 'MOSTLY_USED', label: '🔴 ほぼ使用 (約20% 残量)', ratio: 0.2, isOpenPackage: true, description: '開封済み・残り僅か' },
+  { key: 'EXACT_COUNT', label: '🔢 端数実数を手入力', ratio: 0, isOpenPackage: true, description: '正確な残り数量を入力' },
+];
+
+/**
+ * 現場持出・未返却管理データ
+ */
+export interface CheckedOutItem {
+  id: string;
+  itemId: string;
+  itemCode: string;
+  itemName: string;
+  spec?: string;
+  supplier?: string;
+  imageUrl?: string;
+  location: string;             // 本来の保管場所 (戻し先)
+  outQuantity: number;          // 持出・払出入力数量 (例: 2)
+  outUnit: string;              // 持出単位 (例: 袋, 箱, 本)
+  multiplier: number;           // 換算倍率
+  outBaseQuantity: number;      // 持出基準数量 (例: 200本)
+  operator: string;             // 持出作業員 (例: M.K(TW), 田中)
+  destination?: string;         // 現場名・工事番号・用途 (例: A棟制御盤配線, 現場持出)
+  checkedOutAt: string;         // 持出日時 ISO
+  status: 'CHECKED_OUT' | 'RETURNED' | 'CONSUMED'; // 持出中 / 返却済 / 全消費完了
+  returnedAt?: string;          // 返却日時
+  returnedBaseQuantity?: number;// 実際に返却された基準数量
+  returnCondition?: ReturnCondition; // 返却時の開封・残量状態
+  isPackageOpened?: boolean;    // 開封済みフラグ
+  returnNote?: string;          // 返却時メモ
+}
+
 export type LabelLayout = 'A-ONE-24' | 'A-ONE-44' | 'SINGLE-THERMAL';
 
-export type TabKey = 'SCAN' | 'BATCH' | 'APPROVAL' | 'ITEMS' | 'AI_STUDIO' | 'LOGS' | 'PRINT' | 'SETTINGS';
+export type TabKey = 'SCAN' | 'BATCH' | 'APPROVAL' | 'ITEMS' | 'CHECKOUT' | 'AI_STUDIO' | 'LOGS' | 'PRINT' | 'SETTINGS';

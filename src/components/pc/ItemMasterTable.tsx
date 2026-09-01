@@ -6,6 +6,7 @@ import { CsvImportExportModal } from './CsvImportExportModal';
 import { CsvExportModal } from './CsvExportModal';
 import { PurchaseOrderModal } from './PurchaseOrderModal';
 import { StorageBoxModal, BOX_ICONS, BOX_COLORS } from './StorageBoxModal';
+import { PcOutboundModal } from './PcOutboundModal';
 import { StorageBoxConfig } from '../../types/inventory';
 import {
   Package,
@@ -30,6 +31,7 @@ import {
   X,
   ArrowRight,
   Settings2,
+  ArrowUpCircle,
 } from 'lucide-react';
 
 export const ItemMasterTable: React.FC = () => {
@@ -76,6 +78,8 @@ export const ItemMasterTable: React.FC = () => {
   const [isCsvImportOpen, setIsCsvImportOpen] = useState(false);
   const [isCsvExportOpen, setIsCsvExportOpen] = useState(false);
   const [isPurchaseOrderOpen, setIsPurchaseOrderOpen] = useState(false);
+  const [isOutboundModalOpen, setIsOutboundModalOpen] = useState(false);
+  const [outboundTargetItem, setOutboundTargetItem] = useState<ItemMaster | null>(null);
 
   // Photo Zoom Lightbox
   const [zoomedImage, setZoomedImage] = useState<string | null>(null);
@@ -304,6 +308,17 @@ export const ItemMasterTable: React.FC = () => {
           )}
 
           <button
+            onClick={() => {
+              setOutboundTargetItem(null);
+              setIsOutboundModalOpen(true);
+            }}
+            className="flex items-center gap-1.5 px-4 py-2 bg-gradient-to-r from-rose-600 to-red-600 hover:from-rose-500 hover:to-red-500 active:scale-95 text-white rounded-xl text-xs font-extrabold shadow-lg shadow-rose-950/40 transition"
+          >
+            <ArrowUpCircle className="w-4 h-4 stroke-[2.5]" />
+            <span>📤 払出・持出登録</span>
+          </button>
+
+          <button
             onClick={handleCreateNew}
             className="flex items-center gap-1.5 px-4 py-2 bg-blue-600 hover:bg-blue-500 active:scale-95 text-white rounded-xl text-xs font-extrabold shadow-lg shadow-blue-900/40 transition"
           >
@@ -495,6 +510,17 @@ export const ItemMasterTable: React.FC = () => {
             >
               <Box className="w-4 h-4" />
               <span>📦 別の保管箱へ一括移動</span>
+            </button>
+            <button
+              onClick={() => {
+                const firstItem = items.find((i) => selectedOrderIds.includes(i.id));
+                setOutboundTargetItem(firstItem || null);
+                setIsOutboundModalOpen(true);
+              }}
+              className="px-3.5 py-1.5 bg-rose-600 hover:bg-rose-500 text-white font-extrabold text-xs rounded-xl shadow transition flex items-center gap-1.5"
+            >
+              <ArrowUpCircle className="w-4 h-4" />
+              <span>📤 払出・持出</span>
             </button>
             <button
               onClick={() => setIsPurchaseOrderOpen(true)}
@@ -820,6 +846,19 @@ export const ItemMasterTable: React.FC = () => {
                             <Box className="w-3.5 h-3.5" />
                             <span>移箱</span>
                           </button>
+
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setOutboundTargetItem(item);
+                              setIsOutboundModalOpen(true);
+                            }}
+                            className="flex items-center gap-1 px-2 py-1 rounded-lg font-bold text-rose-300 hover:text-white bg-rose-950/70 hover:bg-rose-900 border border-rose-700/60 transition"
+                            title="この品目を払出・現場持出"
+                          >
+                            <ArrowUpCircle className="w-3.5 h-3.5" />
+                            <span>払出</span>
+                          </button>
                         </div>
 
                         <div className="flex items-center gap-1">
@@ -991,6 +1030,17 @@ export const ItemMasterTable: React.FC = () => {
                               <Box className="w-4 h-4" />
                             </button>
                             <button
+                              type="button"
+                              onClick={() => {
+                                setOutboundTargetItem(item);
+                                setIsOutboundModalOpen(true);
+                              }}
+                              className="p-1.5 text-slate-400 hover:text-rose-400 hover:bg-slate-800 rounded-lg transition"
+                              title="払出・現場持出"
+                            >
+                              <ArrowUpCircle className="w-4 h-4" />
+                            </button>
+                            <button
                               onClick={() => openQRGenerator(item)}
                               className="p-1.5 text-slate-400 hover:text-blue-400 hover:bg-slate-800 rounded-lg transition"
                               title="QRコード表示"
@@ -1122,6 +1172,17 @@ export const ItemMasterTable: React.FC = () => {
                       title="保管箱を移動"
                     >
                       <Box className="w-4 h-4" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setOutboundTargetItem(item);
+                        setIsOutboundModalOpen(true);
+                      }}
+                      className="p-1.5 text-slate-400 hover:text-rose-400 hover:bg-slate-800 rounded-lg transition"
+                      title="払出・現場持出"
+                    >
+                      <ArrowUpCircle className="w-4 h-4" />
                     </button>
                     <button
                       type="button"
@@ -1267,6 +1328,18 @@ export const ItemMasterTable: React.FC = () => {
           boxConfig={editingBoxConfig}
           currentBoxName={editingBoxName}
           itemCountInBox={editingBoxItemCount}
+        />
+      )}
+
+      {/* PC Outbound & Field Checkout Modal */}
+      {isOutboundModalOpen && (
+        <PcOutboundModal
+          isOpen={isOutboundModalOpen}
+          onClose={() => {
+            setIsOutboundModalOpen(false);
+            setOutboundTargetItem(null);
+          }}
+          initialItem={outboundTargetItem}
         />
       )}
 

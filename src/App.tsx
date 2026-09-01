@@ -13,6 +13,7 @@ import { PendingApprovalView } from './components/pc/PendingApprovalView';
 import { AiTrainingStudio } from './components/pc/AiTrainingStudio';
 import { LabelPrinter } from './components/pc/LabelPrinter';
 import { TransactionHistory } from './components/pc/TransactionHistory';
+import { CheckedOutItemsView } from './components/pc/CheckedOutItemsView';
 import { SettingsView } from './components/common/SettingsView';
 import { ScanLine, Layers, ListChecks, Inbox } from 'lucide-react';
 
@@ -100,6 +101,9 @@ const MainContent: React.FC = () => {
 
         {/* Tab 3: Item Master Management */}
         {activeTab === 'ITEMS' && <ItemMasterTable />}
+
+        {/* Tab: Checked-Out & Return Management (現場持出・未返却管理) */}
+        {activeTab === 'CHECKOUT' && <CheckedOutItemsView />}
 
         {/* Tab: AI Training Studio (現場AI学習・対答案スタジオ) */}
         {activeTab === 'AI_STUDIO' && <AiTrainingStudio />}
