@@ -847,6 +847,34 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
         synced: cloudSync.isCloudEnabled(),
       };
 
+      // 🛑 廃番品の全量消化判定（在庫0になった時点でマスタから自動削除）
+      if (item.isDiscontinued && newStock <= 0) {
+        const autoDeleteLog: InventoryLog = {
+          ...log,
+          note: `${note ? note + ' | ' : ''}【🛑 廃番品全量消化に伴うマスタ自動削除】`.trim(),
+        };
+
+        setItems((prev) => prev.filter((i) => i.id !== item.id));
+        setLogs((prev) => [autoDeleteLog, ...prev]);
+        closeBottomSheet();
+
+        addToast(
+          'warning',
+          `🛑 廃番品「${item.name}」の全在庫（${item.currentStock}${item.baseUnit}）を使用完了したため、マスタから自動削除しました`
+        );
+
+        Promise.all([
+          LocalDatabaseService.deleteItem(item.id),
+          LocalDatabaseService.addLog(autoDeleteLog),
+        ]).then(() => {
+          if (cloudSync.isCloudEnabled()) {
+            cloudSync.deleteItemFromCloud(item.id);
+            cloudSync.syncLogToCloud(autoDeleteLog);
+          }
+        });
+        return true;
+      }
+
       setItems((prev) => prev.map((i) => (i.id === item.id ? updatedItem : i)));
       setLogs((prev) => [log, ...prev]);
       closeBottomSheet();

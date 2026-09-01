@@ -20,6 +20,7 @@ import {
   Check,
   Link2,
   FileText,
+  AlertTriangle,
 } from 'lucide-react';
 
 interface ItemFormModalProps {
@@ -82,6 +83,8 @@ export const ItemFormModal: React.FC<ItemFormModalProps> = ({
   const [qrCode, setQrCode] = useState('');
   const [orderUrl, setOrderUrl] = useState('');
   const [note, setNote] = useState('');
+  const [isDiscontinued, setIsDiscontinued] = useState(false);
+  const [discontinuedReason, setDiscontinuedReason] = useState('');
 
   // Dropdown open states for autocomplete
   const [showSupplierDropdown, setShowSupplierDropdown] = useState(false);
@@ -159,6 +162,8 @@ export const ItemFormModal: React.FC<ItemFormModalProps> = ({
       setQrCode(initialItem.qrCode || `INV:v1:${initialItem.code}`);
       setOrderUrl(initialItem.orderUrl || '');
       setNote(initialItem.note || '');
+      setIsDiscontinued(Boolean(initialItem.isDiscontinued));
+      setDiscontinuedReason(initialItem.discontinuedReason || '');
       setConversions(
         initialItem.unitConversions?.filter((c) => c.unit !== initialItem.baseUnit) || []
       );
@@ -177,6 +182,8 @@ export const ItemFormModal: React.FC<ItemFormModalProps> = ({
       setQrCode('');
       setOrderUrl('');
       setNote('');
+      setIsDiscontinued(false);
+      setDiscontinuedReason('');
       setConversions([
         { unit: '箱', multiplier: 50 },
         { unit: '袋', multiplier: 10 },
@@ -311,6 +318,8 @@ export const ItemFormModal: React.FC<ItemFormModalProps> = ({
       aliasCodes: aliasCodes.length > 0 ? aliasCodes : undefined,
       updatedAt: new Date().toISOString(),
       note: note.trim() || undefined,
+      isDiscontinued: Boolean(isDiscontinued),
+      discontinuedReason: discontinuedReason.trim() || undefined,
     };
 
     // AIの能動学習：写真や品目情報を記憶バンクへ学習保存
@@ -722,6 +731,61 @@ export const ItemFormModal: React.FC<ItemFormModalProps> = ({
                 placeholder="例: 開封済みの端数袋から優先使用すること / 類似型番との混用注意 / ロット番号確認必須"
                 className="w-full px-3.5 py-2 bg-slate-800 border border-slate-700 rounded-xl text-white text-xs placeholder-slate-500 focus:outline-none focus:border-amber-400 resize-none"
               />
+            </div>
+
+            {/* 🛑 廃番設定 (Discontinued: 今後入庫せず・在庫全量消化で自動削除) */}
+            <div
+              className={`col-span-full p-4 rounded-2xl border transition ${
+                isDiscontinued
+                  ? 'bg-rose-950/40 border-rose-600/60 shadow-lg shadow-rose-950/40'
+                  : 'bg-slate-950/50 border-slate-800 hover:border-slate-700'
+              }`}
+            >
+              <label className="flex items-center justify-between cursor-pointer select-none">
+                <div className="flex items-center gap-3">
+                  <span
+                    className={`p-2 rounded-xl transition ${
+                      isDiscontinued ? 'bg-rose-600 text-white' : 'bg-slate-800 text-slate-400'
+                    }`}
+                  >
+                    <AlertTriangle className="w-5 h-5" />
+                  </span>
+                  <div>
+                    <span className="font-extrabold text-xs sm:text-sm text-white flex items-center gap-2">
+                      <span>🛑 この品目を「廃番品」に指定する</span>
+                      {isDiscontinued && (
+                        <span className="px-2 py-0.5 rounded-full bg-rose-600 text-white text-[10px] font-black animate-pulse">
+                          廃番設定中 (追加発注・入庫なし)
+                        </span>
+                      )}
+                    </span>
+                    <p className="text-[11px] text-slate-400 mt-0.5 leading-relaxed">
+                      今後、追加発注や入荷を行わず、出庫や現場使用によって<strong>在庫がゼロ（全量消化）になった時点で、自動的にマスタから削除</strong>されます。
+                    </p>
+                  </div>
+                </div>
+                <input
+                  type="checkbox"
+                  checked={isDiscontinued}
+                  onChange={(e) => setIsDiscontinued(e.target.checked)}
+                  className="w-5 h-5 rounded-lg text-rose-600 bg-slate-800 border-slate-700 focus:ring-rose-500 focus:ring-offset-slate-900 cursor-pointer"
+                />
+              </label>
+
+              {isDiscontinued && (
+                <div className="mt-3.5 pt-3.5 border-t border-rose-900/40 space-y-1.5 animate-in fade-in">
+                  <label className="block text-[11px] font-bold text-rose-300">
+                    廃番理由 / 後継品・代替型番メモ（任意）
+                  </label>
+                  <input
+                    type="text"
+                    value={discontinuedReason}
+                    onChange={(e) => setDiscontinuedReason(e.target.value)}
+                    placeholder="例: メーカー製造中止のため型番変更 / 後継品: BOXTM-2001 へ移行"
+                    className="w-full px-3 py-2 bg-slate-900 border border-rose-700/60 rounded-xl text-white text-xs placeholder-slate-500 focus:outline-none focus:border-rose-400"
+                  />
+                </div>
+              )}
             </div>
           </div>
 

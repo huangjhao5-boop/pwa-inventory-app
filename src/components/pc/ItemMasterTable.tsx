@@ -69,7 +69,7 @@ export const ItemMasterTable: React.FC = () => {
   const [selectedCategory, setSelectedCategory] = useState<string>('ALL');
   const [selectedSupplier, setSelectedSupplier] = useState<string>('ALL');
   const [selectedLocation, setSelectedLocation] = useState<string>('ALL');
-  const [stockStatusFilter, setStockStatusFilter] = useState<'ALL' | 'LOW' | 'IN_STOCK' | 'OUT_OF_STOCK'>('ALL');
+  const [stockStatusFilter, setStockStatusFilter] = useState<'ALL' | 'LOW' | 'IN_STOCK' | 'OUT_OF_STOCK' | 'DISCONTINUED'>('ALL');
   const [sortBy, setSortBy] = useState<'UPDATED' | 'NAME' | 'CODE' | 'STOCK_ASC'>('UPDATED');
 
   // Order selection state
@@ -187,11 +187,13 @@ export const ItemMasterTable: React.FC = () => {
 
         let matchStock = true;
         if (stockStatusFilter === 'LOW') {
-          matchStock = item.currentStock <= item.safetyStock;
+          matchStock = !item.isDiscontinued && item.currentStock <= item.safetyStock;
         } else if (stockStatusFilter === 'IN_STOCK') {
           matchStock = item.currentStock > 0;
         } else if (stockStatusFilter === 'OUT_OF_STOCK') {
           matchStock = item.currentStock === 0;
+        } else if (stockStatusFilter === 'DISCONTINUED') {
+          matchStock = Boolean(item.isDiscontinued);
         }
 
         return matchQuery && matchCat && matchSup && matchLoc && matchStock;
@@ -210,7 +212,8 @@ export const ItemMasterTable: React.FC = () => {
       });
   }, [items, searchQuery, selectedCategory, selectedSupplier, selectedLocation, activeBoxFilter, stockStatusFilter, sortBy]);
 
-  const lowStockCount = items.filter((i) => i.currentStock <= i.safetyStock).length;
+  const lowStockCount = items.filter((i) => !i.isDiscontinued && i.currentStock <= i.safetyStock).length;
+  const discontinuedCount = items.filter((i) => i.isDiscontinued).length;
 
   const handleCreateNew = () => {
     setEditingItem(null);
@@ -251,7 +254,7 @@ export const ItemMasterTable: React.FC = () => {
   };
 
   const handleSelectAllLowStock = () => {
-    const lowIds = items.filter((i) => i.currentStock <= i.safetyStock).map((i) => i.id);
+    const lowIds = items.filter((i) => !i.isDiscontinued && i.currentStock <= i.safetyStock).map((i) => i.id);
     setSelectedOrderIds(lowIds);
     addToast('info', `要発注品 (${lowIds.length}件) を発注選択しました`);
   };
@@ -555,6 +558,20 @@ export const ItemMasterTable: React.FC = () => {
             >
               在庫ゼロ
             </button>
+            {discontinuedCount > 0 && (
+              <button
+                type="button"
+                onClick={() => setStockStatusFilter(stockStatusFilter === 'DISCONTINUED' ? 'ALL' : 'DISCONTINUED')}
+                className={`px-2.5 py-1 rounded-lg text-xs font-black flex items-center gap-1 transition ${
+                  stockStatusFilter === 'DISCONTINUED'
+                    ? 'bg-rose-600 text-white shadow-md shadow-rose-900/50'
+                    : 'text-rose-400 hover:bg-rose-950/60 border border-rose-800/50'
+                }`}
+                title="廃番品（残数消化で自動削除される品目）のみを表示"
+              >
+                <span>🛑 廃番品 ({discontinuedCount})</span>
+              </button>
+            )}
           </div>
         </div>
       </div>
@@ -849,6 +866,14 @@ export const ItemMasterTable: React.FC = () => {
                               <span className="truncate" title={item.note}>{item.note}</span>
                             </div>
                           )}
+                          {item.isDiscontinued && (
+                            <div className="mt-1.5 px-2 py-1 rounded-xl bg-rose-500/20 border border-rose-500/40 text-rose-200 text-[11px] flex items-center gap-1 font-bold">
+                              <span className="shrink-0 text-rose-400 font-black">🛑 廃番:</span>
+                              <span className="truncate" title={item.discontinuedReason || '在庫ゼロで自動削除'}>
+                                {item.discontinuedReason ? `${item.discontinuedReason} (消化時削除)` : '在庫消化で自動削除'}
+                              </span>
+                            </div>
+                          )}
                         </div>
                       </div>
 
@@ -1053,10 +1078,25 @@ export const ItemMasterTable: React.FC = () => {
                         </td>
 
                         <td className="py-2.5 px-3 font-bold text-white max-w-xs">
-                          <div className="truncate">{item.name}</div>
+                          <div className="truncate flex items-center gap-1.5">
+                            <span>{item.name}</span>
+                            {item.isDiscontinued && (
+                              <span
+                                className="px-1.5 py-0.2 rounded bg-rose-600 text-white text-[9px] font-black shrink-0"
+                                title={item.discontinuedReason || '在庫消化で自動削除'}
+                              >
+                                🛑 廃番
+                              </span>
+                            )}
+                          </div>
                           {item.note && (
                             <span className="inline-block mt-0.5 px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 text-[10px] font-bold border border-amber-500/30 truncate max-w-full" title={item.note}>
                               📌 {item.note}
+                            </span>
+                          )}
+                          {item.isDiscontinued && item.discontinuedReason && (
+                            <span className="inline-block mt-0.5 px-1.5 py-0.5 rounded bg-rose-500/20 text-rose-300 text-[10px] font-bold border border-rose-500/30 truncate max-w-full" title={item.discontinuedReason}>
+                              🛑 理由: {item.discontinuedReason}
                             </span>
                           )}
                         </td>
@@ -1208,6 +1248,14 @@ export const ItemMasterTable: React.FC = () => {
                       <div className="mt-1.5 px-2 py-1 rounded-xl bg-amber-500/15 border border-amber-500/30 text-amber-200 text-[11px] flex items-start gap-1">
                         <span className="shrink-0 text-amber-400 font-black">📌 注意:</span>
                         <span className="truncate" title={item.note}>{item.note}</span>
+                      </div>
+                    )}
+                    {item.isDiscontinued && (
+                      <div className="mt-1.5 px-2 py-1 rounded-xl bg-rose-500/20 border border-rose-500/40 text-rose-200 text-[11px] flex items-center gap-1 font-bold">
+                        <span className="shrink-0 text-rose-400 font-black">🛑 廃番:</span>
+                        <span className="truncate" title={item.discontinuedReason || '在庫ゼロで自動削除'}>
+                          {item.discontinuedReason ? `${item.discontinuedReason} (消化時削除)` : '在庫消化で自動削除'}
+                        </span>
                       </div>
                     )}
                   </div>

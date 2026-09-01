@@ -90,6 +90,8 @@ export interface ItemMaster {
   aliasCodes?: string[];             // 互換用エイリアスコード一覧
   updatedAt: string;          // 最終更新日時 ISO
   note?: string;              // 備考・メモ
+  isDiscontinued?: boolean;   // 廃番フラグ (以後入庫・追加発注なし。全量使用・在庫0でマスタから自動削除)
+  discontinuedReason?: string;// 廃番理由 / 代替品型番メモ (例: 型番変更によりTX-15へ移行)
 }
 
 /**

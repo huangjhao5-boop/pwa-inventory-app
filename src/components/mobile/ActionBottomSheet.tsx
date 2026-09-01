@@ -26,6 +26,7 @@ import {
   Plus,
   Trash2,
   Link2,
+  AlertTriangle,
 } from 'lucide-react';
 
 // ─── 電工向けプリセット（日本語） ───────────────────
@@ -611,6 +612,26 @@ export const ActionBottomSheet: React.FC = () => {
                 <div className="bg-amber-950/40 border border-amber-500/40 px-3.5 py-2 rounded-2xl flex items-start gap-2 text-xs text-amber-200 shadow-sm">
                   <span className="shrink-0 font-black text-amber-400">📌 注意:</span>
                   <span className="font-semibold leading-relaxed">{activeScannedItem.note}</span>
+                </div>
+              )}
+
+              {/* 🛑 廃番品警告バナー */}
+              {activeScannedItem.isDiscontinued && (
+                <div className="bg-rose-950/60 border border-rose-600/70 p-3.5 rounded-2xl flex items-start gap-2.5 text-xs text-rose-200 shadow-md">
+                  <AlertTriangle className="w-5 h-5 text-rose-400 shrink-0 mt-0.5" />
+                  <div>
+                    <div className="font-black text-sm text-white flex items-center gap-1.5">
+                      <span>🛑 廃番品 (追加発注・入荷なし)</span>
+                    </div>
+                    <p className="mt-0.5 text-[11px] text-rose-200 leading-relaxed">
+                      この品目は<strong>廃番指定</strong>されています。残在庫を出庫・使用してゼロになった時点で<strong>自動的にマスタから削除</strong>されます。
+                    </p>
+                    {activeScannedItem.discontinuedReason && (
+                      <div className="mt-1 text-[11px] text-rose-300 font-bold">
+                        理由: {activeScannedItem.discontinuedReason}
+                      </div>
+                    )}
+                  </div>
                 </div>
               )}
 
