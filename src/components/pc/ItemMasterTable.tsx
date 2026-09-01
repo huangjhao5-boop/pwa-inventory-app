@@ -1371,6 +1371,7 @@ export const ItemMasterTable: React.FC = () => {
           onClose={() => setIsCsvExportOpen(false)}
           allItems={items}
           filteredItems={filteredItems}
+          onSuccessToast={(msg) => addToast('success', msg)}
         />
       )}
 
