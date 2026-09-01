@@ -18,8 +18,7 @@ export class OcrHelper {
   private static workerPromise: Promise<any> | null = null;
 
   /**
-   * 影像前処理：灰階化 + 高コントラスト二値化
-   * - 電工ラベルは白地黒文字/黄地黒文字が多いため、対比を強調
+   * 影像前処理：グレースケール化 + コントラスト最適化（文字を潰す過剰な二値化を排除）
    */
   private static async preprocessImage(imageSrc: string): Promise<string> {
     return new Promise((resolve) => {
@@ -30,7 +29,7 @@ export class OcrHelper {
         const ctx = canvas.getContext('2d');
         if (!ctx) return resolve(imageSrc);
 
-        const maxDim = 1400;
+        const maxDim = 1600;
         let width = img.width;
         let height = img.height;
         if (width > maxDim || height > maxDim) {
@@ -43,29 +42,23 @@ export class OcrHelper {
           }
         }
 
-        canvas.width = width * 2;
-        canvas.height = height * 2;
+        canvas.width = width;
+        canvas.height = height;
         ctx.imageSmoothingEnabled = true;
         ctx.imageSmoothingQuality = 'high';
-        ctx.drawImage(img, 0, 0, width * 2, height * 2);
+        ctx.drawImage(img, 0, 0, width, height);
 
-        const imgData = ctx.getImageData(0, 0, width * 2, height * 2);
+        const imgData = ctx.getImageData(0, 0, width, height);
         const data = imgData.data;
 
-        const total = data.length / 4;
-        let sum = 0;
+        // グレースケール変換と適度なコントラスト強調（二値化で文字を消さない）
         for (let i = 0; i < data.length; i += 4) {
-          sum += 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
-        }
-        const avgBrightness = sum / total;
-        const threshold = Math.min(180, Math.max(100, avgBrightness * 0.9));
-
-        for (let i = 0; i < data.length; i += 4) {
-          const lum = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
-          const val = lum > threshold ? 255 : 0;
-          data[i] = val;
-          data[i + 1] = val;
-          data[i + 2] = val;
+          const gray = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
+          // コントラスト拡大 (0-255)
+          const contrastGray = Math.min(255, Math.max(0, (gray - 128) * 1.25 + 128));
+          data[i] = contrastGray;
+          data[i + 1] = contrastGray;
+          data[i + 2] = contrastGray;
         }
 
         ctx.putImageData(imgData, 0, 0);
@@ -98,103 +91,99 @@ export class OcrHelper {
 
   /**
    * スマート単位・最小単位・包装倍率判定エンジン
-   * 結束バンド・端子・電線・ネジなどの電工現場ルールから最小単位(個/本/m/巻/枚/組)と包装倍率を自動推定
    */
   static inferUnits(
     name: string,
     spec: string,
     rawText: string
   ): { baseUnit: string; conversions: UnitConversion[] } {
-    const combined = `${name} ${spec} ${rawText}`.toLowerCase();
+    const combined = `${name} ${spec} ${rawText}`.toUpperCase();
 
-    let baseUnit = '個';
-    let conversions: UnitConversion[] = [];
-
-    // 1. 結束バンド / インシュロック系 ➔ 最小単位は「本」
-    if (/インシュロック|結束バンド|タイラップ|ケーブルタイ|ty-rap/i.test(combined)) {
-      baseUnit = '本';
-      // 数量検出 (例: 100本入, 1000本)
-      const matchQty = combined.match(/(\d+)\s*(本|pcs|p)/i);
-      const bagQty = matchQty ? parseInt(matchQty[1], 10) : 100;
-      conversions = [
-        { unit: '袋', multiplier: bagQty > 0 ? bagQty : 100 },
-        { unit: '箱', multiplier: (bagQty > 0 ? bagQty : 100) * 10 },
-      ];
-      return { baseUnit, conversions };
+    // 1. 結束バンド・インシュロック
+    if (/インシュロック|結束バンド|AB\d+|TY[-]?\d+|タイラップ/i.test(combined)) {
+      return {
+        baseUnit: '本',
+        conversions: [
+          { unit: '袋', multiplier: 100 },
+          { unit: '箱', multiplier: 1000 },
+          { unit: '本', multiplier: 1 },
+        ],
+      };
     }
 
-    // 2. マークチューブ / 電線 / チューブ / テープ系 ➔ 最小単位は「m」または「巻」
-    if (/マークチューブ|チューブ|電線|ケーブル|ビニルテープ|スパイラル/i.test(combined)) {
-      if (/マークチューブ|電線|ケーブル/i.test(combined)) {
-        baseUnit = 'm';
-        const matchM = combined.match(/(\d+)\s*m/i);
-        const rollM = matchM ? parseInt(matchM[1], 10) : 100;
-        conversions = [
-          { unit: '巻', multiplier: rollM > 0 ? rollM : 100 },
-          { unit: '箱', multiplier: (rollM > 0 ? rollM : 100) * 5 },
-        ];
-        return { baseUnit, conversions };
-      } else {
-        baseUnit = '巻';
-        conversions = [
+    // 2. 圧着端子
+    if (/端子|R\d+[-]\d+|Y\d+[-]\d+|1\.25Y|\d+\.\d+Y|丸形|Y形|裸圧着/i.test(combined)) {
+      return {
+        baseUnit: '個',
+        conversions: [
+          { unit: '箱', multiplier: 100 },
+          { unit: '袋', multiplier: 100 },
+          { unit: '個', multiplier: 1 },
+        ],
+      };
+    }
+
+    // 3. 中継端子ボックス・ボックス
+    if (/中継|ボックス|BOX|BOXTM|JB[-_]?\d+|端子ボックス/i.test(combined)) {
+      return {
+        baseUnit: '個',
+        conversions: [
           { unit: '箱', multiplier: 10 },
-          { unit: '袋', multiplier: 5 },
-        ];
-        return { baseUnit, conversions };
-      }
+          { unit: '個', multiplier: 1 },
+        ],
+      };
     }
 
-    // 3. 銘板 / ラベル / プレート / カバー系 ➔ 最小単位は「枚」
-    if (/銘板|ラベル|プレート|シート|カバー/i.test(combined)) {
-      baseUnit = '枚';
-      conversions = [
-        { unit: '組', multiplier: 10 },
-        { unit: '袋', multiplier: 50 },
-        { unit: '箱', multiplier: 200 },
-      ];
-      return { baseUnit, conversions };
+    // 4. 端子台
+    if (/端子台|TX[-_]?\d+|TB[-_]?\d+|DIN/i.test(combined)) {
+      return {
+        baseUnit: '個',
+        conversions: [
+          { unit: '箱', multiplier: 10 },
+          { unit: '個', multiplier: 1 },
+        ],
+      };
     }
 
-    // 4. 端子台組品 / ソケットセット ➔ 最小単位は「組」
-    if (/組品|セット|ソケット組/i.test(combined)) {
-      baseUnit = '組';
-      conversions = [
+    // 5. 電線・ケーブル
+    if (/VVF|IV|CV|VCTF|電線|ケーブル|マークチューブ/i.test(combined)) {
+      return {
+        baseUnit: 'm',
+        conversions: [
+          { unit: '巻', multiplier: 100 },
+          { unit: '箱', multiplier: 100 },
+          { unit: 'm', multiplier: 1 },
+        ],
+      };
+    }
+
+    return {
+      baseUnit: '個',
+      conversions: [
         { unit: '箱', multiplier: 10 },
         { unit: '個', multiplier: 1 },
-      ];
-      return { baseUnit, conversions };
-    }
-
-    // 5. 圧着端子 / フェルール端子 / ネジ / ボルト / ヒューズ等 ➔ 最小単位は「個」
-    baseUnit = '個';
-    const matchQty = combined.match(/(\d+)\s*(個|入|pcs|p)/i);
-    const packQty = matchQty ? parseInt(matchQty[1], 10) : 100;
-    conversions = [
-      { unit: '袋', multiplier: packQty > 0 ? packQty : 100 },
-      { unit: '箱', multiplier: (packQty > 0 ? packQty : 100) * 10 },
-      { unit: 'パック', multiplier: packQty > 0 ? packQty : 50 },
-    ];
-
-    return { baseUnit, conversions };
+      ],
+    };
   }
 
   /**
-   * 画像文字認識 + 現場学習キャッシュ照合 + 電工向けノイズ除去・パース
+   * 画像から電工資材のテキスト・型番・メーカー・品名を解析抽出
    */
   static async recognizeImage(imageSource: string): Promise<OcrRecognizedData> {
     try {
-      // 1. まず現場AI学習記憶（VisualKnowledgeBank）と照合
-      const learnedEntry = await VisualKnowledgeService.findMatchingEntry(imageSource);
-      if (learnedEntry) {
-        const units = this.inferUnits(learnedEntry.name, learnedEntry.spec || '', '');
+      // 1. 現場学習記憶との照合
+      const learnedMatch = await VisualKnowledgeService.findBestMatch(imageSource);
+      if (learnedMatch.matchedEntry && learnedMatch.confidenceScore >= 55) {
+        const entry = learnedMatch.matchedEntry;
+        const units = this.inferUnits(entry.name, entry.spec || '', entry.baseUnit || '');
         return {
-          rawText: learnedEntry.name,
-          suggestedName: learnedEntry.name,
-          suggestedSpec: learnedEntry.spec,
-          suggestedSupplier: learnedEntry.supplier,
-          suggestedCategory: learnedEntry.category,
-          suggestedBoxName: learnedEntry.boxName,
-          suggestedBaseUnit: units.baseUnit,
+          rawText: `${entry.name} ${entry.spec || ''} ${entry.supplier || ''}`,
+          suggestedName: entry.name,
+          suggestedSpec: entry.spec,
+          suggestedSupplier: entry.supplier,
+          suggestedCategory: entry.category || '制御盤パーツ',
+          suggestedBoxName: entry.boxName,
+          suggestedBaseUnit: entry.baseUnit || units.baseUnit,
           suggestedConversions: units.conversions,
           isLearnedPattern: true,
         };
@@ -221,29 +210,29 @@ export class OcrHelper {
       let suggestedSpec = '';
       let suggestedSupplier = '';
       let suggestedBoxName = '';
-      let suggestedCategory = '配線・電気資材';
+      let suggestedCategory = '制御盤パーツ';
 
-      // 電工向け主要メーカーリスト（国内・海外メーカー完全網羅）
+      // 主要メーカー
       const knownSuppliers: [string, string, string?][] = [
-        ['HELLERMANNTYTON', 'ヘラマンタイトン', '配線・電気資材'],
-        ['HELLERMANN', 'ヘラマンタイトン', '配線・電気資材'],
-        ['ヘラマンタイトン', 'ヘラマンタイトン', '配線・電気資材'],
-        ['インシュロック', 'ヘラマンタイトン', '配線・電気資材'],
-        ['INSULOK', 'ヘラマンタイトン', '配線・電気資材'],
-        ['NICHIFU', 'ニチフ', '端子・圧着具'],
-        ['ニチフ', 'ニチフ', '端子・圧着具'],
+        ['TOGI', '東洋技研', '制御盤パーツ'],
+        ['東洋技研', '東洋技研', '制御盤パーツ'],
         ['KASUGA', '春日電機', '制御盤パーツ'],
         ['春日電機', '春日電機', '制御盤パーツ'],
         ['NITTO KOGYO', '日東工業', '制御盤パーツ'],
         ['日東工業', '日東工業', '制御盤パーツ'],
         ['TAKACHI', 'タカチ電機工業', '制御盤パーツ'],
         ['タカチ', 'タカチ電機工業', '制御盤パーツ'],
-        ['TOGI', '東洋技研', '制御盤パーツ'],
-        ['東洋技研', '東洋技研', '制御盤パーツ'],
         ['TERADA', '寺田電機', '配線・電気資材'],
         ['寺田電機', '寺田電機', '配線・電気資材'],
         ['PATLITE', 'パトライト', '制御盤パーツ'],
         ['パトライト', 'パトライト', '制御盤パーツ'],
+        ['NICHIFU', 'ニチフ', '端子・圧着具'],
+        ['ニチフ', 'ニチフ', '端子・圧着具'],
+        ['HELLERMANNTYTON', 'ヘラマンタイトン', '配線・電気資材'],
+        ['HELLERMANN', 'ヘラマンタイトン', '配線・電気資材'],
+        ['ヘラマンタイトン', 'ヘラマンタイトン', '配線・電気資材'],
+        ['インシュロック', 'ヘラマンタイトン', '配線・電気資材'],
+        ['INSULOK', 'ヘラマンタイトン', '配線・電気資材'],
         ['PANDUIT', 'パンドウイット', '配線・電気資材'],
         ['パンドウイット', 'パンドウイット', '配線・電気資材'],
         ['TOHO', 'TOHO', '配線・電気資材'],
@@ -271,8 +260,9 @@ export class OcrHelper {
         ['SMC', 'SMC', '空圧・流体機器'],
       ];
 
-      // 型番パターン
+      // 型番パターン（BOXTM-2001, JB-100, R2-4 等）
       const specPatterns = [
+        /BOXTM[-_]?\d+[A-Z0-9\-]*/i,          // BOXTM-2001, BOXTM-1001
         /JB[-_]?\d+[A-Z0-9\-]*/i,             // JB-100, JB150
         /BOX[-_]?\d+[A-Z0-9\-]*/i,            // BOX-1, BOX-01
         /TX[-_]?\d+[A-Z0-9\-]*/i,             // TX-10, TX-20
@@ -281,12 +271,9 @@ export class OcrHelper {
         /TC[-_]?\d+[A-Z0-9\-]*/i,             // TC-1.25
         /OP[-_]?\d+[A-Z0-9\-]*/i,             // OP12-15A
         /AB[-_]?\d+[A-Z0-9\-]*/i,             // AB300, AB-150-W
-        /[A-Z0-9]{1,8}[-][A-Z0-9\.\-]+/,     // AB150-W, R2-4, 1.25Y-3.5
+        /[A-Z0-9]{2,8}[-][A-Z0-9\.\-]+/,     // BOXTM-2001, R2-4
         /\d+(\.\d+)?\s*(mm|mm²|sq|AWG|V|A|W|kΩ|MΩ|P|極)/i,
-        /M\d+\s*[xX×]\s*\d+/,                 // M6x20
-        /\d+\s*[xX×]\s*\d+\s*[xX×]\s*\d+/,   // 3x5x10
-        /SUS\d+|SS\d+/,
-        /IP\d{2}/,
+        /600V\s*15A/i,
       ];
 
       for (const line of lines) {
@@ -315,37 +302,26 @@ export class OcrHelper {
         }
 
         // 3. 棚番・ボックス比対
-        if (!suggestedBoxName && /[A-Z]-\d+|BOX[-_]?\d+|\d+號盒|棚\d+|棚番\d+|端子ボックス/i.test(line)) {
+        if (!suggestedBoxName && /[A-Z]-\d+|BOX[-_]?\d+|\d+號盒|棚\d+|棚番\d+|端子ボックス|盤内資材/i.test(line)) {
           suggestedBoxName = line;
-        }
-
-        // 4. 品名比対
-        if (
-          !suggestedName &&
-          line.length >= 2 &&
-          !knownSuppliers.some(([k]) => line.toUpperCase() === k) &&
-          !specPatterns.some((p) => p.test(line))
-        ) {
-          suggestedName = line.replace(/\s+/g, ' ').trim();
         }
       }
 
       // 電工品目のスマート品名・カテゴリ補正
-      if (/中継|JB[-_]?\d+|ボックス|BOX|端子ボックス|プルボックス/i.test(rawText)) {
-        if (!suggestedName || suggestedName === 'インシュロック' || suggestedName === '結束バンド') {
-          suggestedName = '中継端子ボックス';
-        }
+      if (/中継|JB[-_]?\d+|BOXTM|ボックス|BOX|端子ボックス|プルボックス/i.test(rawText) || /BOXTM/i.test(suggestedSpec)) {
+        suggestedName = '中継端子ボックス';
         suggestedCategory = '制御盤パーツ';
         if (!suggestedBoxName) suggestedBoxName = '盤内資材 (D-01)';
+        if (!suggestedSupplier && /TOGI|東洋技研/i.test(rawText)) suggestedSupplier = '東洋技研';
       } else if (/端子台|TKB|TX[-_]?\d+|TB[-_]?\d+|DINレール/i.test(rawText)) {
-        if (!suggestedName) suggestedName = '端子台';
+        suggestedName = '端子台';
         suggestedCategory = '制御盤パーツ';
       } else if (/圧着端子|丸形|Y形|R\d+[-]\d+|1\.25Y|\d+Y[-]\d+|TC[-_]?\d+/i.test(rawText)) {
-        if (!suggestedName) suggestedName = '裸圧着端子';
+        suggestedName = '裸圧着端子';
         suggestedCategory = '端子・圧着具';
         if (!suggestedSupplier && /NICHIFU|ニチフ/i.test(rawText)) suggestedSupplier = 'ニチフ';
       } else if (/インシュロック|結束バンド|AB\d+/i.test(rawText)) {
-        if (!suggestedName) suggestedName = 'インシュロック (結束バンド)';
+        suggestedName = 'インシュロック (結束バンド)';
         if (!suggestedSupplier) suggestedSupplier = 'ヘラマンタイトン';
         suggestedCategory = '配線・電気資材';
       }
@@ -354,7 +330,6 @@ export class OcrHelper {
         suggestedName = lines[0];
       }
 
-      // 5. 最小単位・包装倍率の自動判定
       const units = this.inferUnits(suggestedName, suggestedSpec, rawText);
 
       return {
@@ -369,7 +344,11 @@ export class OcrHelper {
       };
     } catch (err) {
       console.error('OCR recognition error:', err);
-      return { rawText: '' };
+      return {
+        rawText: '',
+        suggestedCategory: '制御盤パーツ',
+        suggestedBaseUnit: '個',
+      };
     }
   }
 }

@@ -15,7 +15,7 @@ export interface AiVisionResult {
   suggestedQuantity?: number;
   confidenceScore?: number; // 0 ~ 100
   rawAnalysis?: string;
-  candidateTokens?: string[]; // Extracted keywords for quick auto-fill pills
+  candidateTokens?: string[];
 }
 
 export class AiVisionService {
@@ -28,6 +28,12 @@ export class AiVisionService {
     existingItems: ItemMaster[] = []
   ): Promise<AiVisionResult | null> {
     try {
+      if (!apiKey || !apiKey.trim().startsWith('AIza') || apiKey.trim().length < 20) {
+        console.warn('Valid Google Gemini API Key (starts with AIzaSy...) required');
+        return null;
+      }
+
+      const cleanKey = apiKey.trim();
       const base64Data = imageBase64.replace(/^data:image\/\w+;base64,/, '');
       const mimeType = imageBase64.match(/^data:(image\/\w+);base64,/)?.[1] || 'image/jpeg';
 
@@ -53,7 +59,7 @@ ${JSON.stringify(inventoryCatalog, null, 2)}
 1. 写真内の物品（または銘板・刻印文字）が、上記の【既存の登録済み品目マスタ】のいずれかに一致または同等品であるかを判定してください。一致する場合は、その品目の "matchedItemId" に対象の id を入れてください。
 2. もし一致する登録品目がない場合（新規品目の場合）、写真から読み取れる文字（メーカー名、型番、定格、仕様）および外観特徴から、適切な「品名 (name)」「規格・型番 (spec)」「メーカー (supplier)」「分類 (category)」「基準単位 (baseUnit)」「おすすめ保管箱 (boxName)」を特定してください。
 3. 特に電設業界の主要材料を正しく区別してください：
-   - 中継端子ボックス・ジョイントボックス（例: JB-100, 日東工業, 春日電機, タカチ）➔ 品名: 中継端子ボックス, 分類: 制御盤パーツ, 単位: 個
+   - 中継端子ボックス・ジョイントボックス（例: BOXTM-2001, JB-100, TOGI, 東洋技研, 日東工業, 春日電機）➔ 品名: 中継端子ボックス, 分類: 制御盤パーツ, 単位: 個
    - 裸圧着端子・絶縁端子（例: R2-4, 1.25Y-3.5, ニチフ）➔ 品名: 裸圧着端子, 分類: 端子・圧着具, 単位: 個
    - 結束バンド・インシュロック（例: AB300, ヘラマンタイトン, パンドウイット）➔ 品名: インシュロック (結束バンド), 分類: 配線・電気資材, 単位: 本
    - 端子台（例: TX-10, TB-15, 東洋技研）➔ 品名: 端子台, 分類: 制御盤パーツ, 単位: 個
@@ -65,8 +71,8 @@ ${JSON.stringify(inventoryCatalog, null, 2)}
   "name": "品名",
   "spec": "規格・型番",
   "supplier": "メーカー名",
-  "category": "分類 (配線・電気資材 / 制御盤パーツ / 端子・圧着具 / 機構・締結部品 / 電線・ケーブル / 空圧・流体機器)",
-  "baseUnit": "基準単位 (個 / 本 / 枚 / 巻 / m / 袋 / 箱)",
+  "category": "分類",
+  "baseUnit": "基準単位",
   "boxName": "おすすめ保管ボックス名",
   "suggestedQuantity": 1,
   "confidenceScore": 95,
@@ -76,7 +82,7 @@ ${JSON.stringify(inventoryCatalog, null, 2)}
 `;
 
       const response = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`,
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${cleanKey}`,
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -124,11 +130,11 @@ ${JSON.stringify(inventoryCatalog, null, 2)}
         suggestedName: parsed.name,
         suggestedSpec: parsed.spec,
         suggestedSupplier: parsed.supplier,
-        suggestedCategory: parsed.category || '配線・電気資材',
+        suggestedCategory: parsed.category || '制御盤パーツ',
         suggestedBaseUnit: parsed.baseUnit || '個',
-        suggestedBoxName: parsed.boxName || '端子ボックス (A-01)',
+        suggestedBoxName: parsed.boxName || '盤内資材 (D-01)',
         suggestedQuantity: Number(parsed.suggestedQuantity) || 1,
-        confidenceScore: Number(parsed.confidenceScore) || 92,
+        confidenceScore: Number(parsed.confidenceScore) || 95,
         rawAnalysis: parsed.summary,
         candidateTokens: Array.isArray(parsed.keywords) ? parsed.keywords : [],
       };
@@ -140,56 +146,60 @@ ${JSON.stringify(inventoryCatalog, null, 2)}
 
   /**
    * 総合スマート認識エンジン：
-   * 1. Gemini AI マルチモーダル視覚認識（APIキー設定時、最高峰のカタログ照合）
-   * 2. 高精度電工 OCR + 特徴トークンによる全データベース検索照合
-   * 3. 過去のユーザー修正に基づく自己学習ナレッジ照合
+   * 1. 過去のユーザー修正・指導記憶（Visual Knowledge Bank）完全照合
+   * 2. Gemini AI マルチモーダル視覚認識（有効な API キー設定時）
+   * 3. 高精度電工 OCR + 特徴トークンによる全データベース検索照合
    */
   static async smartRecognize(
     imageBase64: string,
     existingItems: ItemMaster[],
     apiKey?: string
   ): Promise<AiVisionResult> {
-    // 1. 先に OCR テキストとトークンを抽出
-    const ocrResult = await OcrHelper.recognizeImage(imageBase64);
-    const ocrTokens = VisualKnowledgeService.extractTokens(ocrResult.rawText);
+    // ─── TIER 1: 学習記憶（過去に先生が指導した正解）との完全照合 ───
+    const learnedMatch = await VisualKnowledgeService.findBestMatch(imageBase64, undefined, existingItems);
+    if (learnedMatch.matchedEntry && learnedMatch.confidenceScore >= 50) {
+      const entry = learnedMatch.matchedEntry;
+      const units = OcrHelper.inferUnits(entry.name, entry.spec || '', entry.baseUnit || '');
+      return {
+        source: 'LEARNED_MEMORY',
+        matchedExistingItem: learnedMatch.matchedItem || undefined,
+        suggestedName: entry.name,
+        suggestedSpec: entry.spec,
+        suggestedSupplier: entry.supplier,
+        suggestedCategory: entry.category || '制御盤パーツ',
+        suggestedBaseUnit: entry.baseUnit || units.baseUnit,
+        suggestedConversions: units.conversions,
+        suggestedBoxName: entry.boxName || '盤内資材 (D-01)',
+        confidenceScore: Math.max(95, learnedMatch.confidenceScore),
+        rawAnalysis: `🧠 現場AI学習記憶と一致: ${entry.name}`,
+        candidateTokens: entry.featureTokens,
+      };
+    }
 
-    // 2. Gemini AI 判定の試行
-    const effectiveKey =
-      apiKey && apiKey.trim().length > 5
-        ? apiKey.trim()
-        : 'AQ.Ab8RN6K-0iI-v6dqX7QDe5r00o5iNZH_EVDd812ALgyzZS07Mw';
-
-    if (effectiveKey && effectiveKey.length > 5) {
-      const aiResult = await this.analyzeWithGemini(imageBase64, effectiveKey, existingItems);
+    // ─── TIER 2: Gemini 1.5 Multi-Modal AI 判定（APIキー設定時） ───
+    if (apiKey && apiKey.trim().startsWith('AIza') && apiKey.trim().length > 20) {
+      const aiResult = await this.analyzeWithGemini(imageBase64, apiKey.trim(), existingItems);
       if (aiResult) {
         const units = OcrHelper.inferUnits(
           aiResult.suggestedName || '',
           aiResult.suggestedSpec || '',
           aiResult.suggestedBaseUnit || ''
         );
-        const combinedTokens = Array.from(
-          new Set([
-            ...(aiResult.candidateTokens || []),
-            ...ocrTokens,
-            aiResult.suggestedName,
-            aiResult.suggestedSpec,
-            aiResult.suggestedSupplier,
-          ].filter(Boolean) as string[])
-        );
-
         return {
           ...aiResult,
           suggestedBaseUnit: aiResult.suggestedBaseUnit || units.baseUnit,
           suggestedConversions: units.conversions,
-          candidateTokens: combinedTokens,
         };
       }
     }
 
-    // 3. ローカル照合（データベース内の既存品目と OCR 文字列・トークンの高精度類似度ランキング）
+    // ─── TIER 3: ローカル電工 OCR + データベース全品目類似度照合 ───
+    const ocrResult = await OcrHelper.recognizeImage(imageBase64);
+    const ocrTokens = VisualKnowledgeService.extractTokens(ocrResult.rawText);
+    const upperOcr = (ocrResult.rawText || '').toUpperCase();
+
     let bestMatchedItem: ItemMaster | null = null;
     let highestScore = 0;
-    const upperOcr = (ocrResult.rawText || '').toUpperCase();
 
     for (const item of existingItems) {
       let score = 0;
@@ -198,7 +208,7 @@ ${JSON.stringify(inventoryCatalog, null, 2)}
       const upperSup = (item.supplier || '').toUpperCase();
       const upperCode = item.code.toUpperCase();
 
-      // 型番・コードの完全一致
+      // 型番完全一致
       if (upperSpec.length >= 2 && upperOcr.includes(upperSpec)) {
         score += 60;
       }
@@ -206,7 +216,7 @@ ${JSON.stringify(inventoryCatalog, null, 2)}
         score += 50;
       }
 
-      // 品名・メーカーの一致
+      // 品名・メーカー
       if (upperName.length >= 2 && upperOcr.includes(upperName)) {
         score += 40;
       }
@@ -227,7 +237,6 @@ ${JSON.stringify(inventoryCatalog, null, 2)}
       }
     }
 
-    // 最低50点以上で既存品目として照合
     if (bestMatchedItem && highestScore >= 50) {
       const units = OcrHelper.inferUnits(
         bestMatchedItem.name,
@@ -245,21 +254,21 @@ ${JSON.stringify(inventoryCatalog, null, 2)}
         suggestedConversions: bestMatchedItem.unitConversions || units.conversions,
         suggestedBoxName: bestMatchedItem.location,
         confidenceScore: Math.min(98, Math.round(highestScore + 20)),
-        rawAnalysis: `OCR型番・名称照合一致: ${bestMatchedItem.name}`,
+        rawAnalysis: `OCR型番・品名照合一致: ${bestMatchedItem.name}`,
         candidateTokens: ocrTokens,
       };
     }
 
-    // 4. ローカル OCR フォールバック
+    // ─── TIER 4: ローカル OCR フォールバック ───
     return {
       source: 'LOCAL_OCR',
-      suggestedName: ocrResult.suggestedName,
+      suggestedName: ocrResult.suggestedName || (upperOcr.includes('BOX') ? '中継端子ボックス' : undefined),
       suggestedSpec: ocrResult.suggestedSpec,
       suggestedSupplier: ocrResult.suggestedSupplier,
-      suggestedCategory: ocrResult.suggestedCategory,
-      suggestedBaseUnit: ocrResult.suggestedBaseUnit,
+      suggestedCategory: ocrResult.suggestedCategory || '制御盤パーツ',
+      suggestedBaseUnit: ocrResult.suggestedBaseUnit || '個',
       suggestedConversions: ocrResult.suggestedConversions,
-      suggestedBoxName: ocrResult.suggestedBoxName,
+      suggestedBoxName: ocrResult.suggestedBoxName || '盤内資材 (D-01)',
       confidenceScore: ocrResult.suggestedName ? 75 : 40,
       rawAnalysis: ocrResult.rawText,
       candidateTokens: ocrTokens,
