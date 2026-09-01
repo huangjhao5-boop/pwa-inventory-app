@@ -156,7 +156,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   viewMode: 'FIELD',
   autoTorch: false,
   requirePcApprovalForInbound: true,
-  geminiApiKey: 'AQ.Ab8RN6K-0iI-v6dqX7QDe5r00o5iNZH_EVDd812ALgyzZS07Mw',
+  geminiApiKey: '',
 };
 
 const InventoryContext = createContext<InventoryContextType | null>(null);
