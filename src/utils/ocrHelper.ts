@@ -230,8 +230,20 @@ export class OcrHelper {
         ['ヘラマンタイトン', 'ヘラマンタイトン', '配線・電気資材'],
         ['インシュロック', 'ヘラマンタイトン', '配線・電気資材'],
         ['INSULOK', 'ヘラマンタイトン', '配線・電気資材'],
-        ['NICHIFU', 'ニチフ', '配線・電気資材'],
-        ['ニチフ', 'ニチフ', '配線・電気資材'],
+        ['NICHIFU', 'ニチフ', '端子・圧着具'],
+        ['ニチフ', 'ニチフ', '端子・圧着具'],
+        ['KASUGA', '春日電機', '制御盤パーツ'],
+        ['春日電機', '春日電機', '制御盤パーツ'],
+        ['NITTO KOGYO', '日東工業', '制御盤パーツ'],
+        ['日東工業', '日東工業', '制御盤パーツ'],
+        ['TAKACHI', 'タカチ電機工業', '制御盤パーツ'],
+        ['タカチ', 'タカチ電機工業', '制御盤パーツ'],
+        ['TOGI', '東洋技研', '制御盤パーツ'],
+        ['東洋技研', '東洋技研', '制御盤パーツ'],
+        ['TERADA', '寺田電機', '配線・電気資材'],
+        ['寺田電機', '寺田電機', '配線・電気資材'],
+        ['PATLITE', 'パトライト', '制御盤パーツ'],
+        ['パトライト', 'パトライト', '制御盤パーツ'],
         ['PANDUIT', 'パンドウイット', '配線・電気資材'],
         ['パンドウイット', 'パンドウイット', '配線・電気資材'],
         ['TOHO', 'TOHO', '配線・電気資材'],
@@ -261,11 +273,18 @@ export class OcrHelper {
 
       // 型番パターン
       const specPatterns = [
-        /AB[-_]?\d+[A-Z0-9\-]*/i,              // AB300, AB-150-W
-        /[A-Z0-9]{1,6}[-][A-Z0-9\.\-]+/,      // AB150-W, R2-4, 1.25Y-3.5, TC-1.25
-        /\d+(\.\d+)?\s*(mm|mm²|sq|AWG|V|A|W|kΩ|MΩ)/i,
-        /M\d+\s*[xX×]\s*\d+/,                  // M6x20
-        /\d+\s*[xX×]\s*\d+\s*[xX×]\s*\d+/,    // 3x5x10
+        /JB[-_]?\d+[A-Z0-9\-]*/i,             // JB-100, JB150
+        /BOX[-_]?\d+[A-Z0-9\-]*/i,            // BOX-1, BOX-01
+        /TX[-_]?\d+[A-Z0-9\-]*/i,             // TX-10, TX-20
+        /TKB[-_]?\d+[A-Z0-9\-]*/i,            // TKB-15
+        /TB[-_]?\d+[A-Z0-9\-]*/i,             // TB-15
+        /TC[-_]?\d+[A-Z0-9\-]*/i,             // TC-1.25
+        /OP[-_]?\d+[A-Z0-9\-]*/i,             // OP12-15A
+        /AB[-_]?\d+[A-Z0-9\-]*/i,             // AB300, AB-150-W
+        /[A-Z0-9]{1,8}[-][A-Z0-9\.\-]+/,     // AB150-W, R2-4, 1.25Y-3.5
+        /\d+(\.\d+)?\s*(mm|mm²|sq|AWG|V|A|W|kΩ|MΩ|P|極)/i,
+        /M\d+\s*[xX×]\s*\d+/,                 // M6x20
+        /\d+\s*[xX×]\s*\d+\s*[xX×]\s*\d+/,   // 3x5x10
         /SUS\d+|SS\d+/,
         /IP\d{2}/,
       ];
@@ -311,9 +330,24 @@ export class OcrHelper {
         }
       }
 
-      // インシュロック系の場合はメーカーを「ヘラマンタイトン」に補正
-      if (!suggestedSupplier && (/インシュロック|AB\d+/i.test(rawText) || /インシュロック|AB\d+/i.test(suggestedSpec))) {
-        suggestedSupplier = 'ヘラマンタイトン';
+      // 電工品目のスマート品名・カテゴリ補正
+      if (/中継|JB[-_]?\d+|ボックス|BOX|端子ボックス|プルボックス/i.test(rawText)) {
+        if (!suggestedName || suggestedName === 'インシュロック' || suggestedName === '結束バンド') {
+          suggestedName = '中継端子ボックス';
+        }
+        suggestedCategory = '制御盤パーツ';
+        if (!suggestedBoxName) suggestedBoxName = '盤内資材 (D-01)';
+      } else if (/端子台|TKB|TX[-_]?\d+|TB[-_]?\d+|DINレール/i.test(rawText)) {
+        if (!suggestedName) suggestedName = '端子台';
+        suggestedCategory = '制御盤パーツ';
+      } else if (/圧着端子|丸形|Y形|R\d+[-]\d+|1\.25Y|\d+Y[-]\d+|TC[-_]?\d+/i.test(rawText)) {
+        if (!suggestedName) suggestedName = '裸圧着端子';
+        suggestedCategory = '端子・圧着具';
+        if (!suggestedSupplier && /NICHIFU|ニチフ/i.test(rawText)) suggestedSupplier = 'ニチフ';
+      } else if (/インシュロック|結束バンド|AB\d+/i.test(rawText)) {
+        if (!suggestedName) suggestedName = 'インシュロック (結束バンド)';
+        if (!suggestedSupplier) suggestedSupplier = 'ヘラマンタイトン';
+        suggestedCategory = '配線・電気資材';
       }
 
       if (!suggestedName && lines.length > 0) {

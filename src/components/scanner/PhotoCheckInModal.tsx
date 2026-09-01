@@ -4,6 +4,7 @@ import { ItemMaster, UnitConversion, PRESET_UNITS } from '../../types/inventory'
 import { AiVisionService, AiVisionResult } from '../../utils/geminiAiVision';
 import { VisualKnowledgeService } from '../../utils/visualKnowledgeService';
 import { ImageCompressor } from '../../utils/imageCompressor';
+import { ImageCropperModal } from './ImageCropperModal';
 import {
   Camera,
   Loader2,
@@ -16,6 +17,7 @@ import {
   Plus,
   RefreshCw,
   Zap,
+  Crop,
 } from 'lucide-react';
 
 interface PhotoCheckInModalProps {
@@ -33,6 +35,8 @@ export const PhotoCheckInModal: React.FC<PhotoCheckInModalProps> = ({
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [capturedImage, setCapturedImage] = useState<string | null>(initialImage || null);
+  const [rawUncroppedImage, setRawUncroppedImage] = useState<string | null>(initialImage || null);
+  const [isCropperOpen, setIsCropperOpen] = useState<boolean>(false);
   const [isAnalyzing, setIsAnalyzing] = useState<boolean>(false);
   const [aiResult, setAiResult] = useState<AiVisionResult | null>(null);
 
@@ -64,7 +68,7 @@ export const PhotoCheckInModal: React.FC<PhotoCheckInModalProps> = ({
   const [searchPickerQuery, setSearchPickerQuery] = useState('');
   const [showSearchPicker, setShowSearchPicker] = useState(false);
 
-  // Trigger analysis whenever capturedImage changes
+  // Trigger analysis whenever image changes
   const runImageAnalysis = async (base64Img: string) => {
     setIsAnalyzing(true);
     setAiResult(null);
@@ -86,7 +90,7 @@ export const PhotoCheckInModal: React.FC<PhotoCheckInModalProps> = ({
         setSelectedUnit(result.matchedExistingItem.baseUnit || '個');
         addToast('success', `🎯 既存品目「${result.matchedExistingItem.name}」と一致しました`);
       } else {
-        // Pre-fill new item form
+        // Pre-fill new item form automatically
         setFlowMode('CREATE_NEW');
         const codeGen = `NB-${Date.now().toString().slice(-6)}`;
         setNewItemCode(codeGen);
@@ -115,7 +119,8 @@ export const PhotoCheckInModal: React.FC<PhotoCheckInModalProps> = ({
     if (isOpen) {
       if (initialImage) {
         setCapturedImage(initialImage);
-        runImageAnalysis(initialImage);
+        setRawUncroppedImage(initialImage);
+        setIsCropperOpen(true);
       } else {
         // Auto trigger file picker if no initial image
         setTimeout(() => {
@@ -124,8 +129,10 @@ export const PhotoCheckInModal: React.FC<PhotoCheckInModalProps> = ({
       }
     } else {
       setCapturedImage(null);
+      setRawUncroppedImage(null);
       setAiResult(null);
       setSelectedMatchedItem(null);
+      setIsCropperOpen(false);
     }
   }, [isOpen, initialImage]);
 
@@ -137,11 +144,17 @@ export const PhotoCheckInModal: React.FC<PhotoCheckInModalProps> = ({
     const reader = new FileReader();
     reader.onload = async (ev) => {
       const rawBase64 = ev.target?.result as string;
-      const compressed = await ImageCompressor.compressImage(rawBase64, 480, 480, 0.7);
-      setCapturedImage(compressed);
-      runImageAnalysis(compressed);
+      const compressed = await ImageCompressor.compressImage(rawBase64, 800, 800, 0.8);
+      setRawUncroppedImage(compressed);
+      setIsCropperOpen(true); // Open cropping box immediately
     };
     reader.readAsDataURL(file);
+  };
+
+  const handleCropComplete = (croppedBase64: string) => {
+    setCapturedImage(croppedBase64);
+    setIsCropperOpen(false);
+    runImageAnalysis(croppedBase64);
   };
 
   // Execute Inbound / Outbound on Matched Existing Item
@@ -244,6 +257,22 @@ export const PhotoCheckInModal: React.FC<PhotoCheckInModalProps> = ({
         className="hidden"
       />
 
+      {/* Image Cropper Modal */}
+      {isCropperOpen && rawUncroppedImage && (
+        <ImageCropperModal
+          isOpen={isCropperOpen}
+          imageSrc={rawUncroppedImage}
+          onCropComplete={handleCropComplete}
+          onCancel={() => {
+            setIsCropperOpen(false);
+            if (!capturedImage) {
+              setCapturedImage(rawUncroppedImage);
+              runImageAnalysis(rawUncroppedImage);
+            }
+          }}
+        />
+      )}
+
       <div className="bg-slate-900 border border-indigo-500/50 rounded-3xl w-full max-w-xl overflow-hidden shadow-2xl flex flex-col max-h-[92vh]">
         {/* Header */}
         <div className="px-5 py-4 border-b border-slate-800 flex items-center justify-between bg-indigo-950/40">
@@ -259,7 +288,7 @@ export const PhotoCheckInModal: React.FC<PhotoCheckInModalProps> = ({
                 </span>
               </h3>
               <p className="text-xs text-slate-400">
-                条碼無しのバルク品・端子・ネジ等の写真を撮影して即座に入庫登録
+                条碼無しのバルク品・端子・中継ボックス等の写真を撮影して即座に入庫登録
               </p>
             </div>
           </div>
@@ -279,11 +308,21 @@ export const PhotoCheckInModal: React.FC<PhotoCheckInModalProps> = ({
           <div className="bg-slate-950 p-3 rounded-2xl border border-slate-800 flex items-center justify-between gap-3">
             <div className="flex items-center gap-3 min-w-0">
               {capturedImage ? (
-                <img
-                  src={capturedImage}
-                  alt="撮影写真"
-                  className="w-16 h-16 rounded-xl object-cover border border-slate-700 bg-black shrink-0"
-                />
+                <div className="relative group/crop">
+                  <img
+                    src={capturedImage}
+                    alt="撮影写真"
+                    className="w-16 h-16 rounded-xl object-cover border border-slate-700 bg-black shrink-0"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setIsCropperOpen(true)}
+                    className="absolute inset-0 bg-black/60 opacity-0 group-hover/crop:opacity-100 rounded-xl flex items-center justify-center transition text-white"
+                    title="枠を再調整"
+                  >
+                    <Crop className="w-4 h-4" />
+                  </button>
+                </div>
               ) : (
                 <div className="w-16 h-16 rounded-xl bg-slate-800 border border-slate-700 flex items-center justify-center text-slate-500 text-xs font-bold shrink-0">
                   <Camera className="w-6 h-6 text-slate-600" />
@@ -316,8 +355,19 @@ export const PhotoCheckInModal: React.FC<PhotoCheckInModalProps> = ({
               </div>
             </div>
 
-            {/* Retake buttons */}
+            {/* Retake & Crop buttons */}
             <div className="flex items-center gap-1.5 shrink-0">
+              {rawUncroppedImage && (
+                <button
+                  type="button"
+                  onClick={() => setIsCropperOpen(true)}
+                  className="px-2.5 py-2 bg-slate-800 hover:bg-slate-700 active:scale-95 text-amber-300 font-bold text-xs rounded-xl border border-slate-700 transition flex items-center gap-1"
+                  title="枠を再トリミング"
+                >
+                  <Crop className="w-3.5 h-3.5" />
+                  <span>枠調整</span>
+                </button>
+              )}
               <button
                 type="button"
                 onClick={() => fileInputRef.current?.click()}
@@ -603,7 +653,7 @@ export const PhotoCheckInModal: React.FC<PhotoCheckInModalProps> = ({
                     type="text"
                     value={newItemName}
                     onChange={(e) => setNewItemName(e.target.value)}
-                    placeholder="品名 (例: 裸圧着端子 丸形)"
+                    placeholder="品名 (例: 中継端子ボックス / 裸圧着端子)"
                     className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-white font-bold text-xs focus:outline-none focus:border-blue-500"
                   />
                 </div>
@@ -614,7 +664,7 @@ export const PhotoCheckInModal: React.FC<PhotoCheckInModalProps> = ({
                     type="text"
                     value={newItemSpec}
                     onChange={(e) => setNewItemSpec(e.target.value)}
-                    placeholder="例: R2-4 (0.5~2.0sq)"
+                    placeholder="例: JB-100 / R2-4"
                     className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-amber-300 font-mono font-bold text-xs focus:outline-none focus:border-blue-500"
                   />
                 </div>
@@ -625,7 +675,7 @@ export const PhotoCheckInModal: React.FC<PhotoCheckInModalProps> = ({
                     type="text"
                     value={newItemSupplier}
                     onChange={(e) => setNewItemSupplier(e.target.value)}
-                    placeholder="例: ニチフ (NICHIFU)"
+                    placeholder="例: 春日電機 / 日東工業 / ニチフ"
                     className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-white text-xs focus:outline-none focus:border-blue-500"
                   />
                 </div>
@@ -649,7 +699,7 @@ export const PhotoCheckInModal: React.FC<PhotoCheckInModalProps> = ({
                     type="text"
                     value={newItemBoxName}
                     onChange={(e) => setNewItemBoxName(e.target.value)}
-                    placeholder="例: 端子ボックス (A-01)"
+                    placeholder="例: 盤内資材 (D-01)"
                     className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-indigo-300 font-bold text-xs focus:outline-none focus:border-blue-500"
                   />
                 </div>
