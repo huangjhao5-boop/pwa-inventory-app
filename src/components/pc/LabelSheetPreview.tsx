@@ -1,17 +1,20 @@
 import React from 'react';
 import { ItemMaster, LabelLayout } from '../../types/inventory';
 import { QRCodeSVG } from 'qrcode.react';
+import { Scissors } from 'lucide-react';
 
 interface LabelSheetPreviewProps {
   items: { item: ItemMaster; printCount: number }[];
   layout: LabelLayout;
   pureQrOnly?: boolean;
+  showCutLines?: boolean;
 }
 
 export const LabelSheetPreview: React.FC<LabelSheetPreviewProps> = ({
   items,
   layout,
   pureQrOnly = false,
+  showCutLines = true,
 }) => {
   // Flatten items according to printCount
   const flattenedList: ItemMaster[] = [];
@@ -40,7 +43,7 @@ export const LabelSheetPreview: React.FC<LabelSheetPreviewProps> = ({
       >
         {/* Printable Grid */}
         <div
-          className={`grid gap-1.5 sm:gap-2 ${
+          className={`grid gap-2 sm:gap-2.5 ${
             is24
               ? 'grid-cols-2 sm:grid-cols-3'
               : is44
@@ -53,17 +56,31 @@ export const LabelSheetPreview: React.FC<LabelSheetPreviewProps> = ({
             return (
               <div
                 key={idx}
-                className={`border border-slate-300 rounded-lg p-2 flex items-center bg-white ${
+                className={`relative p-2 flex items-center bg-white transition ${
+                  showCutLines
+                    ? 'border-2 border-dashed border-slate-400/90 rounded-lg'
+                    : 'border border-slate-200 rounded-lg'
+                } ${
                   pureQrOnly ? 'justify-center p-3' : 'gap-2'
                 } ${
-                  is24 ? 'min-h-[90px]' : is44 ? 'min-h-[70px]' : 'min-h-[110px]'
+                  is24 ? 'min-h-[95px]' : is44 ? 'min-h-[75px]' : 'min-h-[110px]'
                 }`}
               >
+                {/* ✂️ Corner Cutting Mark Guide */}
+                {showCutLines && (
+                  <span
+                    className="absolute -top-2 -left-1 text-[10px] text-slate-400 bg-white px-0.5 leading-none select-none print:text-slate-500 flex items-center gap-0.5 pointer-events-none"
+                    title="キリトリ線"
+                  >
+                    <Scissors className="w-2.5 h-2.5 text-slate-400 rotate-90" />
+                  </span>
+                )}
+
                 {/* Pure QR code */}
                 <div className="shrink-0 bg-white p-0.5 flex flex-col items-center justify-center">
                   <QRCodeSVG
                     value={qrText}
-                    size={pureQrOnly ? (is44 ? 54 : is24 ? 76 : 100) : (is44 ? 42 : is24 ? 54 : 72)}
+                    size={pureQrOnly ? (is44 ? 58 : is24 ? 80 : 100) : (is44 ? 44 : is24 ? 56 : 72)}
                     level="M"
                     includeMargin={true}
                   />
@@ -76,7 +93,7 @@ export const LabelSheetPreview: React.FC<LabelSheetPreviewProps> = ({
                       <span className="font-mono text-[9px] font-bold text-slate-500 truncate">
                         {item.code}
                       </span>
-                      <span className="text-[9px] font-extrabold px-1 bg-slate-100 rounded text-blue-700">
+                      <span className="text-[8.5px] font-extrabold px-1 bg-slate-100 rounded text-blue-700 truncate">
                         {item.location}
                       </span>
                     </div>
@@ -89,17 +106,17 @@ export const LabelSheetPreview: React.FC<LabelSheetPreviewProps> = ({
                       {item.name}
                     </h5>
 
-                    <div className="flex items-center justify-between text-[9px] text-slate-600 truncate mt-0.5">
-                      {item.supplier ? (
-                        <span className="font-bold text-blue-700">{item.supplier}</span>
-                      ) : (
-                        <span></span>
-                      )}
-                      {item.spec && <span>{item.spec}</span>}
-                    </div>
+                    {item.spec && (
+                      <div className="text-[9.5px] font-mono font-bold text-amber-800 bg-amber-50/80 px-1 py-0.5 rounded truncate mt-0.5 border border-amber-200/50">
+                        {item.spec}
+                      </div>
+                    )}
 
-                    <div className="text-[8px] text-slate-400 font-mono mt-0.5 truncate">
-                      {qrText}
+                    <div className="flex items-center justify-between text-[9px] text-slate-600 truncate mt-0.5">
+                      {item.supplier && (
+                        <span className="font-bold text-blue-700 truncate">{item.supplier}</span>
+                      )}
+                      <span className="text-slate-400 font-mono text-[8px] truncate">{qrText}</span>
                     </div>
                   </div>
                 )}

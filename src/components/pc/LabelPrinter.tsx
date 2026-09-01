@@ -16,6 +16,7 @@ import {
   Building2,
   AlertTriangle,
   RotateCcw,
+  Scissors,
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 
@@ -23,6 +24,7 @@ export const LabelPrinter: React.FC = () => {
   const { items, addToast } = useInventory();
   const [layout, setLayout] = useState<LabelLayout>('A-ONE-24');
   const [pureQrOnly, setPureQrOnly] = useState<boolean>(true); // ユーザー要望によりデフォルトはQRコード単体（文字なし）
+  const [showCutLines, setShowCutLines] = useState<boolean>(true); // ユーザー要望：裁断用キリトリ線
   const [isExportingImage, setIsExportingImage] = useState(false);
 
   // ─── 絞り込みフィルター状態 ───
@@ -229,6 +231,16 @@ export const LabelPrinter: React.FC = () => {
                 ctx.fillText(codeEl?.textContent || '', x + 155, y + 115);
               }
             }
+
+            // ✂️ 裁断用キリトリ線（破線ガイド）を描画
+            if (showCutLines) {
+              ctx.save();
+              ctx.strokeStyle = '#94a3b8';
+              ctx.lineWidth = 1.5;
+              ctx.setLineDash([6, 4]);
+              ctx.strokeRect(x + 6, y + 6, cellWidth - 12, cellHeight - 12);
+              ctx.restore();
+            }
             resolve();
           };
 
@@ -403,6 +415,30 @@ export const LabelPrinter: React.FC = () => {
             </div>
             <p className="text-[11px] text-slate-400">
               {pureQrOnly ? '文字なしの純粋なQRコード画像のみを整列出力します' : '品名・ボックス名・型番・コードを印字した完全ラベル'}
+            </p>
+          </div>
+
+          {/* ✂️ Cutting Lines Toggle */}
+          <div className="bg-slate-950 p-3 rounded-2xl border border-slate-800 space-y-1.5">
+            <div className="flex items-center justify-between">
+              <label className="text-xs font-bold text-slate-300 flex items-center gap-1.5">
+                <Scissors className="w-3.5 h-3.5 text-amber-400" />
+                <span>✂️ 裁断用キリトリ線 (ガイド枠)</span>
+              </label>
+              <button
+                type="button"
+                onClick={() => setShowCutLines(!showCutLines)}
+                className={`px-3 py-1 rounded-xl text-xs font-bold transition ${
+                  showCutLines
+                    ? 'bg-emerald-600 text-white font-black shadow-md'
+                    : 'bg-slate-800 text-slate-400 hover:text-white'
+                }`}
+              >
+                {showCutLines ? '表示中 (ON)' : '非表示 (OFF)'}
+              </button>
+            </div>
+            <p className="text-[11px] text-slate-400">
+              ハサミやカッターで切り抜きやすい点線ガイド枠と裁断マークを各ラベルに付与します
             </p>
           </div>
 
@@ -729,6 +765,7 @@ export const LabelPrinter: React.FC = () => {
           items={selectedItemsWithCopies}
           layout={layout}
           pureQrOnly={pureQrOnly}
+          showCutLines={showCutLines}
         />
       </div>
     </div>
