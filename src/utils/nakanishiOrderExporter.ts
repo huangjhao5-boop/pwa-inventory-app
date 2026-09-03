@@ -96,7 +96,32 @@ export class NakanishiOrderExcelExporter {
     cellK10.font = { name: 'ＭＳ Ｐ明朝', size: 14, bold: true };
     cellK10.alignment = { horizontal: 'left', vertical: 'middle' };
 
-    // 2. 明細行 (Row 13 ~ Row 27) の書き換え（原版行高21.9pt、型番は左揃え、文字サイズ14pt）
+    // 2. 明細行 (Row 13 ~ Row 27) の書き換え（原版行高21.9pt、フォントは全セル【ＭＳ Ｐ明朝】に完全統一、文字長自動調整で超框防止）
+    const getVisualCharLength = (text: string): number => {
+      if (!text) return 0;
+      let len = 0;
+      for (let j = 0; j < text.length; j++) {
+        len += text.charCodeAt(j) > 255 ? 1 : 0.55;
+      }
+      return len;
+    };
+
+    const getMakerFontSize = (text: string): number => {
+      const len = getVisualCharLength(text);
+      if (len <= 4) return 14;
+      if (len <= 5.5) return 12;
+      if (len <= 8) return 10;
+      return 9;
+    };
+
+    const getModelFontSize = (text: string): number => {
+      const len = getVisualCharLength(text);
+      if (len <= 24) return 14;
+      if (len <= 30) return 12;
+      if (len <= 36) return 10;
+      return 9;
+    };
+
     const chunkSize = 15;
     for (let i = 0; i < chunkSize; i++) {
       const rowNum = 13 + i;
@@ -105,43 +130,44 @@ export class NakanishiOrderExcelExporter {
 
       const orderItem = orderItems[i];
 
-      // B: 通番 NO. 1 ~ 15 (フォント 16pt, 中央揃え)
+      // B: 通番 NO. 1 ~ 15 (フォント 16pt, 中央揃え, ＭＳ Ｐ明朝)
       const cellB = row.getCell('B');
       cellB.value = i + 1;
-      cellB.alignment = { horizontal: 'center', vertical: 'middle' };
+      cellB.alignment = { horizontal: 'center', vertical: 'middle', shrinkToFit: true };
       cellB.font = { name: 'ＭＳ Ｐ明朝', size: 16 };
 
       if (orderItem) {
-        // C: 工番 (フォント 14pt, 中央揃え)
+        // C: 工番 (フォント 14pt, 中央揃え, ＭＳ Ｐ明朝)
         const cellC = row.getCell('C');
         cellC.value = defaultJobCode || null;
-        cellC.alignment = { horizontal: 'center', vertical: 'middle' };
+        cellC.alignment = { horizontal: 'center', vertical: 'middle', shrinkToFit: true };
         cellC.font = { name: 'ＭＳ Ｐ明朝', size: 14 };
 
-        // D: メーカー (フォント 14pt, 中央揃え)
+        // D: メーカー (動的サイズ調整 14pt〜9pt で超框を完全防止, ＭＳ Ｐ明朝)
+        const mfrText = orderItem.item.supplier || '';
         const cellD = row.getCell('D');
-        cellD.value = orderItem.item.supplier || null;
+        cellD.value = mfrText || null;
         cellD.alignment = { horizontal: 'center', vertical: 'middle', shrinkToFit: true };
-        cellD.font = { name: 'ＭＳ Ｐ明朝', size: 14 };
+        cellD.font = { name: 'ＭＳ Ｐ明朝', size: getMakerFontSize(mfrText) };
 
-        // E: 型番 (フォント 14pt, 原版準拠の【左揃え left】)
-        const cellE = row.getCell('E');
+        // E: 型番 (動的サイズ調整 14pt〜9pt で超框を完全防止, 左揃え, ＭＳ Ｐ明朝)
         const modelVal = orderItem.note || (orderItem.item.spec ? `${orderItem.item.name} ${orderItem.item.spec}` : orderItem.item.name);
+        const cellE = row.getCell('E');
         cellE.value = modelVal;
         cellE.alignment = { horizontal: 'left', vertical: 'middle', shrinkToFit: true };
-        cellE.font = { name: 'ＭＳ Ｐ明朝', size: 14 };
+        cellE.font = { name: 'ＭＳ Ｐ明朝', size: getModelFontSize(modelVal) };
 
-        // F: 数量 (フォント 14pt, 中央揃え)
+        // F: 数量 (ＭＳ Ｐ明朝 に統一！)
         const cellF = row.getCell('F');
         cellF.value = orderItem.orderQuantity;
-        cellF.alignment = { horizontal: 'center', vertical: 'middle' };
-        cellF.font = { name: 'ＭＳ Ｐゴシック', size: 14 };
+        cellF.alignment = { horizontal: 'center', vertical: 'middle', shrinkToFit: true };
+        cellF.font = { name: 'ＭＳ Ｐ明朝', size: 14 };
 
-        // G: 単位 (フォント 14pt, 中央揃え)
+        // G: 単位 (ＭＳ Ｐ明朝 に統一！)
         const cellG = row.getCell('G');
         cellG.value = orderItem.orderUnit || orderItem.item.baseUnit;
-        cellG.alignment = { horizontal: 'center', vertical: 'middle' };
-        cellG.font = { name: 'ＭＳ Ｐゴシック', size: 14 };
+        cellG.alignment = { horizontal: 'center', vertical: 'middle', shrinkToFit: true };
+        cellG.font = { name: 'ＭＳ Ｐ明朝', size: 14 };
 
         // H: 仕入単価 (空欄)
         const cellH = row.getCell('H');
@@ -151,20 +177,20 @@ export class NakanishiOrderExcelExporter {
         const cellI = row.getCell('I');
         cellI.value = null;
 
-        // J: 希望納期 (フォント 14pt, 中央揃え)
+        // J: 希望納期 (フォント 14pt, 中央揃え, ＭＳ Ｐ明朝)
         const cellJ = row.getCell('J');
         cellJ.value = defaultDesiredDelivery;
-        cellJ.alignment = { horizontal: 'center', vertical: 'middle' };
+        cellJ.alignment = { horizontal: 'center', vertical: 'middle', shrinkToFit: true };
         cellJ.font = { name: 'ＭＳ Ｐ明朝', size: 14 };
 
         // K: 納期回答 (空欄)
         const cellK = row.getCell('K');
         cellK.value = null;
 
-        // L: 納品場所 (結合セルL:M / フォント 14pt, 中央揃え)
+        // L: 納品場所 (結合セルL:M / フォント 14pt, 中央揃え, ＭＳ Ｐ明朝)
         const cellL = row.getCell('L');
         cellL.value = defaultDeliveryLocation;
-        cellL.alignment = { horizontal: 'center', vertical: 'middle' };
+        cellL.alignment = { horizontal: 'center', vertical: 'middle', shrinkToFit: true };
         cellL.font = { name: 'ＭＳ Ｐ明朝', size: 14 };
       } else {
         // 未使用行のデータをクリア
@@ -225,6 +251,60 @@ export class NakanishiOrderExcelExporter {
 
       for (let r = 13; r <= 27; r++) {
         estimateSheet.getRow(r).height = 21.9;
+        const oItem = orderItems[r - 13];
+        const rRow = estimateSheet.getRow(r);
+        const cB = rRow.getCell('B');
+        cB.value = r - 12;
+        cB.alignment = { horizontal: 'center', vertical: 'middle', shrinkToFit: true };
+        cB.font = { name: 'ＭＳ Ｐ明朝', size: 16 };
+
+        if (oItem) {
+          const cC = rRow.getCell('C');
+          cC.value = defaultJobCode || null;
+          cC.alignment = { horizontal: 'center', vertical: 'middle', shrinkToFit: true };
+          cC.font = { name: 'ＭＳ Ｐ明朝', size: 14 };
+
+          const mText = oItem.item.supplier || '';
+          const cD = rRow.getCell('D');
+          cD.value = mText || null;
+          cD.alignment = { horizontal: 'center', vertical: 'middle', shrinkToFit: true };
+          cD.font = { name: 'ＭＳ Ｐ明朝', size: getMakerFontSize(mText) };
+
+          const mVal = oItem.note || (oItem.item.spec ? `${oItem.item.name} ${oItem.item.spec}` : oItem.item.name);
+          const cE = rRow.getCell('E');
+          cE.value = mVal;
+          cE.alignment = { horizontal: 'left', vertical: 'middle', shrinkToFit: true };
+          cE.font = { name: 'ＭＳ Ｐ明朝', size: getModelFontSize(mVal) };
+
+          const cF = rRow.getCell('F');
+          cF.value = oItem.orderQuantity;
+          cF.alignment = { horizontal: 'center', vertical: 'middle', shrinkToFit: true };
+          cF.font = { name: 'ＭＳ Ｐ明朝', size: 14 };
+
+          const cG = rRow.getCell('G');
+          cG.value = oItem.orderUnit || oItem.item.baseUnit;
+          cG.alignment = { horizontal: 'center', vertical: 'middle', shrinkToFit: true };
+          cG.font = { name: 'ＭＳ Ｐ明朝', size: 14 };
+
+          rRow.getCell('H').value = null;
+          rRow.getCell('I').value = null;
+
+          const cJ = rRow.getCell('J');
+          cJ.value = defaultDesiredDelivery;
+          cJ.alignment = { horizontal: 'center', vertical: 'middle', shrinkToFit: true };
+          cJ.font = { name: 'ＭＳ Ｐ明朝', size: 14 };
+
+          rRow.getCell('K').value = null;
+
+          const cL = rRow.getCell('L');
+          cL.value = defaultDeliveryLocation;
+          cL.alignment = { horizontal: 'center', vertical: 'middle', shrinkToFit: true };
+          cL.font = { name: 'ＭＳ Ｐ明朝', size: 14 };
+        } else {
+          ['C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L'].forEach((col) => {
+            rRow.getCell(col).value = null;
+          });
+        }
       }
 
       estimateSheet.pageSetup.fitToPage = true;
